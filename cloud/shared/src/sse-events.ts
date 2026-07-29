@@ -27,7 +27,9 @@ export type InternalSessionEvent =
   | { type: "turn_failed"; messageId: number; error: string; replica: string }
   | { type: "followup_queued"; content: string }
   | { type: "followup_consumed"; content: string }
-  | { type: "recovery"; messageId: number; action: "retried" | "cleared"; replica: string };
+  | { type: "recovery"; messageId: number; action: "retried" | "cleared"; replica: string }
+  | { type: "tool_start"; name: string; toolCallId: string; replica: string }
+  | { type: "tool_result"; name: string; toolCallId: string; isError: boolean; replica: string };
 
 export function mapInternalToWeb(
   sessionId: string,
@@ -54,6 +56,10 @@ export function mapInternalToWeb(
       return { type: "agent_followup_queued", content: event.content };
     case "followup_consumed":
       return { type: "agent_followup_consumed", content: event.content };
+    case "tool_start":
+      return { type: "agent_status", status: "tool", detail: event.name };
+    case "tool_result":
+      return { type: "agent_status", status: "streaming" };
     default:
       return null;
   }

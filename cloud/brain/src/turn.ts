@@ -1,12 +1,19 @@
 /**
- * Turn executor — advisory lock lane, hydrate, LLM stream, sandbox bash, follow-up drain.
+ * Turn executor — advisory lock, hydrate, LLM tool loop, follow-up drain.
  */
 import * as store from "@piclaw-cloud/store";
 import { newCounter } from "@piclaw-cloud/store/db";
 import { config } from "./config.ts";
 import { publish } from "./events.ts";
-import { streamCompletion } from "./llm.ts";
-import { runBash } from "./sandbox/session.ts";
+import { streamCompletionRound, type LlmUsage } from "./llm.ts";
+import {
+  assistantToolCallBlocks,
+  historyToOpenAi,
+  toolResultBlocks,
+  type OpenAiMessage,
+  type OpenAiToolCall,
+} from "./llm/messages.ts";
+import { dispatchTool } from "./tools/dispatcher.ts";
 
 export type TurnOutcome = "ran" | "queued";
 
@@ -39,18 +46,99 @@ export async function submitMessage(sessionId: string, content: string): Promise
   return "ran";
 }
 
-async function maybeSandboxPrefix(sessionId: string, history: store.MessageRow[]): Promise<string> {
-  const last = [...history].reverse().find((m) => m.role === "user");
-  const content = last?.content ?? "";
-  if (!content.startsWith("bash:")) return "";
-  const command = content.slice(5).trim();
-  if (!command) return "";
-  try {
-    return await runBash(sessionId, command);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `[sandbox error] ${message}`;
+function mergeUsage(total: LlmUsage, round: LlmUsage): LlmUsage {
+  return {
+    inputTokens: (total.inputTokens ?? 0) + (round.inputTokens ?? 0),
+    outputTokens: (total.outputTokens ?? 0) + (round.outputTokens ?? 0),
+    cachedTokens: (total.cachedTokens ?? 0) + (round.cachedTokens ?? 0),
+  };
+}
+
+function toOpenAiToolCalls(calls: Array<{ id: string; name: string; arguments: string }>): OpenAiToolCall[] {
+  return calls.map((call) => ({
+    id: call.id,
+    type: "function" as const,
+    function: { name: call.name, arguments: call.arguments },
+  }));
+}
+
+async function runToolLoop(
+  sessionId: string,
+  counter: ReturnType<typeof newCounter>,
+  onDelta: (text: string) => Promise<void>,
+  options: { recovery?: boolean } = {},
+): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
+  let messages: OpenAiMessage[] = historyToOpenAi(await store.hydrate(sessionId, counter));
+  let totalUsage: LlmUsage = { inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
+  let finalText = "";
+  let assistantMessageId: number | null = null;
+
+  for (let round = 0; round < config.maxToolRounds; round += 1) {
+    const result = await streamCompletionRound(messages, onDelta);
+    totalUsage = mergeUsage(totalUsage, result.usage);
+
+    if (result.toolCalls.length === 0) {
+      finalText = result.text;
+      assistantMessageId = await store.insertMessage(sessionId, "assistant", finalText, {
+        counter,
+        recoveryMarker: options.recovery ?? false,
+      });
+      messages.push({ role: "assistant", content: finalText });
+      break;
+    }
+
+    const toolCalls = toOpenAiToolCalls(result.toolCalls);
+    await store.insertMessage(sessionId, "assistant", result.text || "", {
+      counter,
+      contentBlocks: assistantToolCallBlocks(toolCalls),
+    });
+    messages.push({ role: "assistant", content: result.text || null, tool_calls: toolCalls });
+
+    for (const call of result.toolCalls) {
+      await publish(sessionId, {
+        type: "tool_start",
+        name: call.name,
+        toolCallId: call.id,
+        replica: config.replicaId,
+      });
+
+      let args: Record<string, unknown> = {};
+      let parseError: string | null = null;
+      try {
+        args = JSON.parse(call.arguments || "{}") as Record<string, unknown>;
+      } catch {
+        parseError = `Invalid tool arguments JSON for ${call.name}`;
+      }
+
+      const toolResult = parseError
+        ? { output: parseError, isError: true }
+        : await dispatchTool(sessionId, call.name, args);
+
+      await publish(sessionId, {
+        type: "tool_result",
+        name: call.name,
+        toolCallId: call.id,
+        isError: toolResult.isError,
+        replica: config.replicaId,
+      });
+
+      await store.insertMessage(sessionId, "tool", toolResult.output, {
+        counter,
+        contentBlocks: toolResultBlocks(call.id, call.name),
+      });
+      messages.push({ role: "tool", tool_call_id: call.id, content: toolResult.output });
+    }
+
+    if (round === config.maxToolRounds - 1) {
+      finalText = result.text || "Stopped: maximum tool rounds reached.";
+      assistantMessageId = await store.insertMessage(sessionId, "assistant", finalText, {
+        counter,
+        recoveryMarker: options.recovery ?? false,
+      });
+    }
   }
+
+  return { finalText, usage: totalUsage, assistantMessageId };
 }
 
 async function runTurnLocked(
@@ -64,37 +152,35 @@ async function runTurnLocked(
   await publish(sessionId, { type: "turn_started", messageId, replica: config.replicaId });
 
   try {
-    const history = await store.hydrate(sessionId, counter);
-    const sandboxPrefix = await maybeSandboxPrefix(sessionId, history);
-    const result = await streamCompletion(
-      history,
+    const { finalText, usage, assistantMessageId } = await runToolLoop(
+      sessionId,
+      counter,
       async (delta) => {
         await publish(sessionId, { type: "delta", text: delta, replica: config.replicaId });
       },
-      { prefix: sandboxPrefix ? `${sandboxPrefix}\n\n` : "" },
+      { recovery: options.recovery ?? false },
     );
 
-    const assistantId = await store.insertMessage(sessionId, "assistant", result.text, {
-      recoveryMarker: options.recovery ?? false,
-      counter,
-    });
-    await store.endTurn(sessionId, messageId, counter);
+    if (assistantMessageId == null) {
+      throw new Error("turn completed without assistant message");
+    }
 
+    await store.endTurn(sessionId, messageId, counter);
     const durationMs = Date.now() - startedAt;
     await store.logTokenUsage({
       sessionId,
-      messageId: assistantId,
+      messageId: assistantMessageId,
       model: config.openaiModel,
-      inputTokens: result.usage.inputTokens ?? 0,
-      outputTokens: result.usage.outputTokens ?? 0,
-      cacheReadTokens: result.usage.cachedTokens ?? 0,
+      inputTokens: usage.inputTokens ?? 0,
+      outputTokens: usage.outputTokens ?? 0,
+      cacheReadTokens: usage.cachedTokens ?? 0,
       durationMs,
     });
     await publish(sessionId, {
       type: "message",
-      id: assistantId,
+      id: assistantMessageId,
       role: "assistant",
-      content: result.text,
+      content: finalText,
       recovery: options.recovery ?? false,
     });
     await publish(sessionId, {

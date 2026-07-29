@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "bun test src",
     "start": "bun run src/main.ts",
     "scenario": "bun run scripts/scenario.ts",
-    "e2e": "bun run scripts/e2e-scenario.ts"
+    "e2e": "bun run scripts/e2e-scenario.ts",
+    "llm-e2e": "bun run scripts/llm-sandbox-e2e.ts"
   },
   "dependencies": {
     "@piclaw-cloud/shared": "workspace:*",

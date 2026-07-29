@@ -175,6 +175,12 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         if (parts[0] === "sessions" && parts[1]) {
           const sessionId = parts[1];
 
+          if (req.method === "GET" && parts.length === 2) {
+            const session = await store.getSession(sessionId);
+            if (!session) return json({ error: "unknown session" }, 404);
+            return json({ session });
+          }
+
           if (req.method === "GET" && parts[2] === "messages") {
             return json({ messages: await store.listMessages(sessionId) });
           }
@@ -220,7 +226,12 @@ export function startServer(): ReturnType<typeof Bun.serve> {
     },
     websocket: {
       async open(ws) {
-        const data = ws.data as { sessionId: string; chatJid: string; sandbox?: Awaited<ReturnType<typeof import("./sandbox/session.ts").ensureSandbox>>; terminal?: { pid: number; kill?: () => Promise<void> } };
+        const data = ws.data as {
+          sessionId: string;
+          chatJid: string;
+          sandbox?: Awaited<ReturnType<typeof import("./sandbox/session.ts").ensureSandbox>>;
+          terminal?: { pid: number; kill?: () => Promise<boolean> };
+        };
         try {
           const { ensureSandbox } = await import("./sandbox/session.ts");
           const sandbox = await ensureSandbox(data.sessionId);
@@ -253,7 +264,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         void data.sandbox.pty.sendInput(data.terminal.pid, new TextEncoder().encode(text));
       },
       close(ws) {
-        const data = ws.data as { terminal?: { kill?: () => Promise<void> } };
+        const data = ws.data as { terminal?: { kill?: () => Promise<boolean> } };
         void data.terminal?.kill?.().catch(() => {});
       },
     },

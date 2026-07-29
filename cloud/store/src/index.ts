@@ -7,6 +7,7 @@ export interface MessageRow {
   session_id: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  content_blocks: unknown | null;
   recovery_marker: boolean;
   created_at: string;
 }
@@ -61,11 +62,19 @@ export async function insertMessage(
   sessionId: string,
   role: MessageRow["role"],
   content: string,
-  options: { recoveryMarker?: boolean; counter?: RoundtripCounter } = {},
+  options: {
+    recoveryMarker?: boolean;
+    counter?: RoundtripCounter;
+    contentBlocks?: unknown | null;
+  } = {},
 ): Promise<number> {
   const rows = await counted(options.counter)`
-    INSERT INTO messages (session_id, role, content, recovery_marker)
-    VALUES (${sessionId}, ${role}, ${content}, ${options.recoveryMarker ?? false})
+    INSERT INTO messages (session_id, role, content, content_blocks, recovery_marker)
+    VALUES (
+      ${sessionId}, ${role}, ${content},
+      ${options.contentBlocks ?? null},
+      ${options.recoveryMarker ?? false}
+    )
     RETURNING id`;
   return Number(rows[0].id);
 }
@@ -73,7 +82,7 @@ export async function insertMessage(
 export async function listMessages(sessionId: string, limit = 50): Promise<MessageRow[]> {
   const rows = await sql`
     SELECT * FROM (
-      SELECT id, session_id, role, content, recovery_marker, created_at
+      SELECT id, session_id, role, content, content_blocks, recovery_marker, created_at
       FROM messages WHERE session_id = ${sessionId}
       ORDER BY id DESC LIMIT ${limit}
     ) sub ORDER BY id ASC`;
@@ -87,7 +96,7 @@ export async function hydrate(
 ): Promise<MessageRow[]> {
   const rows = await counted(counter)`
     SELECT * FROM (
-      SELECT id, session_id, role, content, recovery_marker, created_at
+      SELECT id, session_id, role, content, content_blocks, recovery_marker, created_at
       FROM messages WHERE session_id = ${sessionId}
       ORDER BY id DESC LIMIT ${limit}
     ) sub ORDER BY id ASC`;
@@ -208,7 +217,11 @@ export async function getStaleInflight(graceMs: number): Promise<InflightRow[]> 
 export async function hasAssistantReplyAfter(sessionId: string, messageId: number): Promise<boolean> {
   const rows = await sql`
     SELECT count(*) > 0 AS done FROM messages
-    WHERE session_id = ${sessionId} AND role = 'assistant' AND id > ${messageId}`;
+    WHERE session_id = ${sessionId} AND role = 'assistant' AND id > ${messageId}
+      AND (
+        content_blocks IS NULL
+        OR NOT (content_blocks ? 'tool_calls')
+      )`;
   return Boolean(rows[0]?.done);
 }
 
