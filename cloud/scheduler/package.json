@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "echo 'scheduler: phase 2'"
+    "typecheck": "tsc --noEmit",
+    "start": "bun run src/main.ts"
+  },
+  "dependencies": {
+    "@piclaw-cloud/store": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.3"
   }
 }

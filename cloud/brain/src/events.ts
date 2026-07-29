@@ -5,9 +5,9 @@ import { Redis } from "ioredis";
 import type { InternalSessionEvent } from "@piclaw-cloud/shared/sse-events";
 import { config } from "./config.ts";
 
-const publisher = new Redis(config.redisUrl);
-
 export type SessionEvent = InternalSessionEvent;
+
+const publisher = new Redis(config.redisUrl);
 
 export function channelFor(sessionId: string): string {
   return `session:${sessionId}`;

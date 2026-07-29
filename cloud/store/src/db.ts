@@ -19,7 +19,10 @@ export function counted(counter?: RoundtripCounter) {
 }
 
 export async function applyMigrations(): Promise<void> {
-  const migrationPath = new URL("../../migrations/001_core.sql", import.meta.url).pathname;
-  const ddl = await Bun.file(migrationPath).text();
-  await sql.unsafe(ddl);
+  const migrationsDir = new URL("../../migrations/", import.meta.url).pathname;
+  const entries = [...new Bun.Glob("*.sql").scanSync({ cwd: migrationsDir, absolute: true })].sort();
+  for (const path of entries) {
+    const ddl = await Bun.file(path).text();
+    await sql.unsafe(ddl);
+  }
 }

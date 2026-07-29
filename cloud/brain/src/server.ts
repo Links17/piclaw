@@ -4,7 +4,9 @@
 import { mapInternalToWeb } from "@piclaw-cloud/shared/sse-events";
 import * as store from "@piclaw-cloud/store";
 import { applyMigrations } from "@piclaw-cloud/store/db";
+import { AuthError, requireSessionAccess, resolveRequestUser } from "./auth.ts";
 import { config } from "./config.ts";
+import { QuotaExceededError } from "./quota.ts";
 import { subscribe, type SessionEvent } from "./events.ts";
 import { serveStaticRequest } from "./static.ts";
 import { submitMessage, sweepInflight } from "./turn.ts";
@@ -80,6 +82,21 @@ async function readJson(req: Request): Promise<Record<string, unknown>> {
   return (await req.json().catch(() => ({}))) as Record<string, unknown>;
 }
 
+type RequestContext = { userId: string };
+
+async function withAuth(req: Request, handler: (ctx: RequestContext) => Promise<Response>): Promise<Response> {
+  try {
+    const userId = await resolveRequestUser(req);
+    await store.setUserContext(userId);
+    return await handler({ userId });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return json({ error: error.message }, 401);
+    }
+    throw error;
+  }
+}
+
 export async function bootstrapSchema(): Promise<void> {
   await applyMigrations();
 }
@@ -132,7 +149,18 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname === "/agent/branches") {
-          return json(await getChatBranches());
+          return withAuth(req, async ({ userId }) => {
+            const sessions = await store.listSessions(userId);
+            return json({
+              chats: sessions.map((session) => ({
+                chat_jid: session.id,
+                root_chat_jid: session.id,
+                agent_name: session.title?.trim() || session.id,
+                title: session.title?.trim() || session.id,
+                is_root: true,
+              })),
+            });
+          });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/root-session") {
@@ -184,8 +212,15 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const content = String(body.content || "");
           if (!content) return json({ error: "content required" }, 400);
           const mode = typeof body.mode === "string" ? body.mode : null;
-          const result = await sendAgentMessage(chatJid, content, mode);
-          return json(result);
+          try {
+            const result = await sendAgentMessage(chatJid, content, mode);
+            return json(result);
+          } catch (error) {
+            if (error instanceof QuotaExceededError) {
+              return json({ ok: false, ...error.toJson() }, 429);
+            }
+            throw error;
+          }
         }
 
         if (req.method === "GET" && url.pathname === "/terminal/ws") {
@@ -199,55 +234,79 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         // ── Native session API ────────────────────────────────────────
 
         if (req.method === "POST" && url.pathname === "/sessions") {
-          const body = await readJson(req);
-          const id = typeof body.id === "string" ? body.id : crypto.randomUUID();
-          const title = typeof body.title === "string" ? body.title : "";
-          await store.createSession(id, title);
-          return json({ id });
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            const id = typeof body.id === "string" ? body.id : crypto.randomUUID();
+            const title = typeof body.title === "string" ? body.title : "";
+            await store.createSession(id, title, userId);
+            return json({ id });
+          });
         }
 
         if (parts[0] === "sessions" && parts[1]) {
           const sessionId = parts[1];
 
           if (req.method === "GET" && parts.length === 2) {
-            const session = await store.getSession(sessionId);
-            if (!session) return json({ error: "unknown session" }, 404);
-            return json({ session });
+            return withAuth(req, async ({ userId }) => {
+              await requireSessionAccess(sessionId, userId);
+              const session = await store.getSession(sessionId);
+              if (!session) return json({ error: "unknown session" }, 404);
+              return json({ session });
+            });
           }
 
           if (req.method === "GET" && parts[2] === "messages") {
-            return json({ messages: await store.listMessages(sessionId) });
+            return withAuth(req, async ({ userId }) => {
+              await requireSessionAccess(sessionId, userId);
+              return json({ messages: await store.listMessages(sessionId) });
+            });
           }
 
           if (req.method === "POST" && parts[2] === "messages") {
-            const body = await readJson(req);
-            const content = String(body.content || "");
-            if (!content) return json({ error: "content required" }, 400);
-            if (!(await store.getSession(sessionId))) return json({ error: "unknown session" }, 404);
+            return withAuth(req, async ({ userId }) => {
+              await requireSessionAccess(sessionId, userId);
+              const body = await readJson(req);
+              const content = String(body.content || "");
+              if (!content) return json({ error: "content required" }, 400);
+              if (!(await store.getSession(sessionId))) return json({ error: "unknown session" }, 404);
 
-            const outcomePromise = submitMessage(sessionId, content);
-            if (url.searchParams.get("wait") === "1") {
-              return json({ outcome: await outcomePromise, replica: config.replicaId });
-            }
-            const outcome = await Promise.race([
-              outcomePromise.catch(() => "ran" as const),
-              Bun.sleep(120).then(() => "ran" as const),
-            ]);
-            outcomePromise.catch((error) => {
-              console.error(`[${config.replicaId}] turn failed:`, error);
+              const outcomePromise = submitMessage(sessionId, content);
+              if (url.searchParams.get("wait") === "1") {
+                return json({ outcome: await outcomePromise, replica: config.replicaId });
+              }
+              const outcome = await Promise.race([
+                outcomePromise.catch(() => "ran" as const),
+                Bun.sleep(120).then(() => "ran" as const),
+              ]);
+              outcomePromise.catch((error) => {
+                console.error(`[${config.replicaId}] turn failed:`, error);
+              });
+              return json({ outcome, replica: config.replicaId });
             });
-            return json({ outcome, replica: config.replicaId });
           }
 
           if (req.method === "GET" && parts[2] === "stream") {
-            return sseResponse(sessionId);
+            return withAuth(req, async ({ userId }) => {
+              await requireSessionAccess(sessionId, userId);
+              return sseResponse(sessionId);
+            });
+          }
+
+          if (req.method === "GET" && parts[2] === "subagents") {
+            return withAuth(req, async ({ userId }) => {
+              await requireSessionAccess(sessionId, userId);
+              return json({ runs: await store.listSubagentRuns(sessionId) });
+            });
           }
 
           if (req.method === "GET" && parts[2] === "cursor") {
-            return json({
-              cursor: await store.getCursor(sessionId),
-              queued: await store.getQueuedFollowups(sessionId),
-              locked: await store.isSessionLocked(sessionId),
+            return withAuth(req, async ({ userId }) => {
+              await requireSessionAccess(sessionId, userId);
+              return json({
+                cursor: await store.getCursor(sessionId),
+                queued: await store.getQueuedFollowups(sessionId),
+                locked: await store.isSessionLocked(sessionId),
+              });
             });
           }
         }
@@ -260,6 +319,12 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
         return json({ error: "not found" }, 404);
       } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          return json(error.toJson(), 429);
+        }
+        if (error instanceof AuthError) {
+          return json({ error: error.message }, 401);
+        }
         const message = error instanceof Error ? error.message : String(error);
         return json({ error: message }, 500);
       }

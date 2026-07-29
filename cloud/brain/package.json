@@ -9,6 +9,7 @@
     "scenario": "bun run scripts/scenario.ts",
     "e2e": "bun run scripts/e2e-scenario.ts",
     "llm-e2e": "bun run scripts/llm-sandbox-e2e.ts",
+    "llm-subagent-e2e": "bun run scripts/llm-subagent-e2e.ts",
     "web-e2e": "bun run scripts/web-e2e-scenario.ts"
   },
   "dependencies": {

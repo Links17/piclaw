@@ -14,10 +14,27 @@ import {
   type OpenAiToolCall,
 } from "./llm/messages.ts";
 import { dispatchTool } from "./tools/dispatcher.ts";
+import { QuotaExceededError } from "./quota.ts";
 
 export type TurnOutcome = "ran" | "queued";
 
 export async function submitMessage(sessionId: string, content: string): Promise<TurnOutcome> {
+  await store.touchSessionActivity(sessionId);
+  const session = await store.getSession(sessionId);
+  if (session) {
+    const quota = await store.checkQuota(session.user_id, {
+      maxActiveSandboxes: config.maxActiveSandboxesPerUser,
+      maxDailyTokens: config.maxDailyTokensPerUser,
+    });
+    if (!quota.ok && quota.reason === "daily_token_limit") {
+      throw new QuotaExceededError(
+        "daily_tokens",
+        config.maxDailyTokensPerUser,
+        quota.dailyTokens ?? 0,
+      );
+    }
+  }
+
   const lock = await store.tryLockSession(sessionId);
   if (!lock) {
     const counter = newCounter();
@@ -176,6 +193,14 @@ async function runTurnLocked(
       cacheReadTokens: usage.cachedTokens ?? 0,
       durationMs,
     });
+    const owner = await store.getSession(sessionId);
+    if (owner) {
+      await store.incrementDailyTokenUsage(
+        owner.user_id,
+        usage.inputTokens ?? 0,
+        usage.outputTokens ?? 0,
+      );
+    }
     await publish(sessionId, {
       type: "message",
       id: assistantMessageId,

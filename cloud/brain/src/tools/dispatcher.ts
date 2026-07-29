@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "../sandbox/fs.ts";
 import { ensureSandbox } from "../sandbox/session.ts";
+import { formatCodingSubagentToolResult, runCodingSubagent } from "../subagents/gateway.ts";
 import { applyUniqueEdit } from "./edit.ts";
 import { resolveWorkspacePath, WORKSPACE_ROOT } from "./path.ts";
 import { TOOL_NAMES } from "./schemas.ts";
@@ -35,6 +36,8 @@ export async function dispatchTool(
         return await runWriteTool(sessionId, args);
       case "edit":
         return await runEditTool(sessionId, args);
+      case "coding_agent":
+        return await runCodingAgentTool(sessionId, args);
       default:
         return { output: `Unknown tool: ${name}`, isError: true };
     }
@@ -81,4 +84,17 @@ async function runEditTool(sessionId: string, args: Record<string, unknown>): Pr
   const updated = applyUniqueEdit(String(current), oldString, newString);
   await writeFile(sbx, path, updated);
   return { output: `Edited ${path}`, isError: false };
+}
+
+async function runCodingAgentTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const task = String(args.task ?? "").trim();
+  if (!task) return { output: "task is required", isError: true };
+  const constraints = typeof args.constraints === "string" ? args.constraints : undefined;
+  const timeoutMs = typeof args.timeout_ms === "number" ? args.timeout_ms : undefined;
+  const result = await runCodingSubagent(sessionId, { task, constraints, timeoutMs });
+  const isError = result.status !== "completed";
+  return {
+    output: formatCodingSubagentToolResult(result),
+    isError,
+  };
 }

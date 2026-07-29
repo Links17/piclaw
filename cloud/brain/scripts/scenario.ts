@@ -20,6 +20,7 @@ function startReplica(port: number, id: string) {
       CLOUD_REPLICA_ID: id,
       POC_REPLICA_ID: id,
       CLOUD_SANDBOX_ENABLED: "0",
+      CLOUD_CODING_WORKER_MODE: "mock",
     },
     stdout: "inherit",
     stderr: "inherit",
@@ -196,6 +197,27 @@ console.log("\n[4] per-turn DB roundtrips (via cursor after turn)");
   check(inflight === null, "turn finished cleanly");
   const { messages } = await get(A, `/sessions/${id}/messages`);
   check((messages as unknown[]).length >= 2, "user+assistant persisted");
+}
+
+console.log("\n[5] coding_agent subagent (mock-tools, no sandbox)");
+{
+  const { id } = await post(A, "/sessions", { title: "s5-coding" });
+  await post(A, `/sessions/${id}/messages?wait=1`, { content: "mock-tools:coding_agent" });
+  const { messages } = await get(A, `/sessions/${id}/messages`);
+  const rows = messages as Array<{ role: string; content: string; content_blocks?: { tool_calls?: Array<{ function?: { name?: string } }> } | null }>;
+  const hadCodingTool = rows.some(
+    (m) =>
+      m.role === "assistant" &&
+      (m.content_blocks?.tool_calls?.some((c) => c.function?.name === "coding_agent") ?? false),
+  );
+  check(hadCodingTool, "main agent invoked coding_agent tool");
+
+  const toolMsg = rows.find((m) => m.role === "tool" && m.content.includes('"status"'));
+  check(Boolean(toolMsg?.content.includes("completed")), "coding_agent returned completed status");
+
+  const { runs } = await get(A, `/sessions/${id}/subagents`);
+  const subRuns = (runs as Array<{ status: string; agent_type: string }>) ?? [];
+  check(subRuns.some((r) => r.agent_type === "coding" && r.status === "completed"), "subagent_runs persisted");
 }
 
 replicaA.kill();

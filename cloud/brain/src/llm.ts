@@ -33,6 +33,9 @@ export async function streamCompletionRound(
   if (prompt.startsWith("mock-tools:")) {
     return streamMockRound(messages, onDelta, prompt);
   }
+  if (prompt.startsWith("mock-coding:")) {
+    return streamMockRound(messages, onDelta, prompt);
+  }
   if (config.openaiBaseUrl && config.openaiApiKey) {
     return streamOpenAiRound(messages, onDelta);
   }
@@ -59,6 +62,9 @@ async function streamMockRound(
   // Deterministic tool-loop mock for integration tests.
   if (prompt.startsWith("mock-tools:")) {
     return mockToolsRound(messages, onDelta, prompt);
+  }
+  if (prompt.startsWith("mock-coding:")) {
+    return mockCodingRound(messages, onDelta, prompt);
   }
 
   let tokens = 8;
@@ -97,6 +103,22 @@ async function mockToolsRound(
   );
 
   if (!hasAssistantTools) {
+    if (prompt.includes("coding_agent") || prompt.includes("coding-agent")) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_mock_coding_agent",
+            name: "coding_agent",
+            arguments: JSON.stringify({
+              task: "mock-coding:create demo.ino hello world sketch",
+            }),
+          },
+        ],
+        finishReason: "tool_calls",
+        usage: { inputTokens: 1, cachedTokens: 0, outputTokens: 1 },
+      };
+    }
     if (prompt.includes("edit")) {
       return {
         text: "",
@@ -134,6 +156,68 @@ async function mockToolsRound(
 
   if (hasToolResults) {
     const text = prompt.includes("edit") ? "Updated the demo to hello agent." : "Created the hello world demo.";
+    await onDelta(text);
+    return {
+      text,
+      toolCalls: [],
+      finishReason: "stop",
+      usage: { inputTokens: 1, cachedTokens: 0, outputTokens: text.length },
+    };
+  }
+
+  return { text: "", toolCalls: [], finishReason: "stop", usage: { inputTokens: 0, cachedTokens: 0, outputTokens: 0 } };
+}
+
+async function mockCodingRound(
+  messages: OpenAiMessage[],
+  onDelta: (text: string) => Promise<void>,
+  prompt: string,
+): Promise<CompletionRound> {
+  const hasToolResults = messages.some((m) => m.role === "tool");
+  const hasAssistantTools = messages.some(
+    (m) => m.role === "assistant" && "tool_calls" in m && (m.tool_calls?.length ?? 0) > 0,
+  );
+
+  if (!hasAssistantTools) {
+    if (prompt.includes("edit")) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_coding_edit",
+            name: "edit",
+            arguments: JSON.stringify({
+              path: "/workspace/demo.ino",
+              old_string: "hello world",
+              new_string: "hello agent",
+            }),
+          },
+        ],
+        finishReason: "tool_calls",
+        usage: { inputTokens: 1, cachedTokens: 0, outputTokens: 1 },
+      };
+    }
+    return {
+      text: "",
+      toolCalls: [
+        {
+          id: "call_coding_write",
+          name: "write",
+          arguments: JSON.stringify({
+            path: "/workspace/demo.ino",
+            content: "void setup() {}\nvoid loop() { Serial.println(\"hello world\"); }\n",
+          }),
+        },
+      ],
+      finishReason: "tool_calls",
+      usage: { inputTokens: 1, cachedTokens: 0, outputTokens: 1 },
+    };
+  }
+
+  if (hasToolResults) {
+    const text = prompt.includes("edit")
+      ? "Updated demo.ino to hello agent."
+      : "Created demo.ino with hello world sketch.";
     await onDelta(text);
     return {
       text,
