@@ -8,6 +8,7 @@ import { config } from "./config.ts";
 import { subscribe, type SessionEvent } from "./events.ts";
 import { serveStaticRequest } from "./static.ts";
 import { submitMessage, sweepInflight } from "./turn.ts";
+import { handleWorkspaceRoutes } from "./workspace/routes.ts";
 import {
   agentResponseSsePayload,
   chatJidToSessionId,
@@ -250,6 +251,9 @@ export function startServer(): ReturnType<typeof Bun.serve> {
             });
           }
         }
+
+        const workspaceResponse = await handleWorkspaceRoutes(req, url.pathname);
+        if (workspaceResponse) return workspaceResponse;
 
         const staticResponse = serveStaticRequest(req);
         if (staticResponse) return staticResponse;

@@ -19,13 +19,13 @@
     {
       "package_path": null,
       "output_file": "web/static/common/js/marked.min.js",
-      "sha256": "fa374a3b6dc49d84d8ce53640608799af562a2726ec63ce07b0578895e121068",
-      "size_bytes": 41727
+      "sha256": "4d8995c7a82edd74cae36d064720280f62969ea807f1adb9ce43f0cb1f30fec6",
+      "size_bytes": 41726
     }
   ],
   "metadata_file": "web/static/common/js/marked.meta.json",
-  "sha256": "fa374a3b6dc49d84d8ce53640608799af562a2726ec63ce07b0578895e121068",
-  "size_bytes": 41727,
+  "sha256": "4d8995c7a82edd74cae36d064720280f62969ea807f1adb9ce43f0cb1f30fec6",
+  "size_bytes": 41726,
   "build_command": [
     "bun",
     "build",

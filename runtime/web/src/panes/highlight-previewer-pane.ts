@@ -7,6 +7,7 @@
  */
 
 import type { PaneCapability, PaneContext, PaneInstance, WebPaneExtension } from './pane-types.js';
+import { getWorkspaceRawUrl } from '../api.js';
 import { highlightCodeLinesAsHtml, parserForCodeFenceLanguage, normalizeCodeLanguageLabel, extensionToLanguage } from '../utils/code-highlighting.js';
 
 const MARKDOWN_EXTENSIONS = /\.(md|mdx|markdown)$/i;
@@ -37,10 +38,14 @@ class HighlightPreviewInstance implements PaneInstance {
         const filePath = context?.path || '';
         this.lang = extensionToLanguage(filePath);
 
-        // Get content from preview data or fetch
+        // Prefer inline preview payload; /workspace/file returns `text`, not `content`.
         const preview = (context as any)?.preview;
-        if (preview?.content) {
-            this.content = preview.content;
+        const inline =
+            (typeof preview?.text === 'string' ? preview.text : undefined)
+            ?? (typeof preview?.content === 'string' ? preview.content : undefined)
+            ?? (typeof (context as any)?.content === 'string' ? (context as any).content : undefined);
+        if (inline !== undefined) {
+            this.content = inline;
             this.render();
         } else {
             this.loadContent(filePath);
@@ -50,7 +55,7 @@ class HighlightPreviewInstance implements PaneInstance {
     private async loadContent(filePath: string) {
         if (this.disposed) return;
         try {
-            const res = await fetch(`/workspace/raw?path=${encodeURIComponent(filePath)}`);
+            const res = await fetch(getWorkspaceRawUrl(filePath));
             if (!res.ok) {
                 this.container.textContent = `Failed to load: ${res.status}`;
                 return;
