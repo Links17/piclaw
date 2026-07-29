@@ -87,6 +87,80 @@ export async function listSessions() {
   return store.listSessions();
 }
 
+function sessionToBranchChat(session: { id: string; title: string }) {
+  const title = session.title?.trim() || session.id;
+  return {
+    chat_jid: session.id,
+    root_chat_jid: session.id,
+    agent_name: title,
+    title,
+    is_root: true,
+  };
+}
+
+export async function getChatBranches() {
+  const sessions = await listSessions();
+  return { chats: sessions.map(sessionToBranchChat) };
+}
+
+export async function getActiveChatAgents() {
+  const sessions = await listSessions();
+  return { chats: sessions.map(sessionToBranchChat) };
+}
+
+export function getAgentsRoster() {
+  return {
+    agents: [
+      {
+        id: "default",
+        name: "PiClaw",
+        description: "PiClaw agent",
+        status: "running",
+        actions: [],
+        avatar_url: null,
+        model: config.openaiModel,
+        chat_jid: config.defaultChatJid,
+      },
+    ],
+    user: {
+      name: "User",
+      avatar_url: null,
+      avatar_background: null,
+    },
+  };
+}
+
+export async function createRootChatSession(agentName: string) {
+  const chatJid = `web:${crypto.randomUUID()}`;
+  const name = agentName.trim() || "Chat";
+  await store.createSession(chatJid, name);
+  return {
+    branch: {
+      chat_jid: chatJid,
+      root_chat_jid: chatJid,
+      agent_name: name,
+      title: name,
+    },
+  };
+}
+
+export function getTerminalSessionInfo(chatJid: string) {
+  const jid = chatJidToSessionId(chatJid);
+  return {
+    enabled: config.sandboxEnabled,
+    transport: "websocket",
+    ws_path: `/terminal/ws?chat_jid=${encodeURIComponent(jid)}`,
+    cwd: "/workspace",
+    shell: "/bin/bash",
+    active: false,
+    connected_clients: 0,
+  };
+}
+
+export function createTerminalHandoff() {
+  return { handoff: { token: "cloud-noop" } };
+}
+
 export function agentResponseSsePayload(chatJid: string, messageId: number, content: string, recovery?: boolean) {
   return {
     id: messageId,

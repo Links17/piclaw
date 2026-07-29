@@ -8,6 +8,23 @@ import { resolveScreenSizeHint } from './ui/screen-size-hint.js';
 declare const __PICLAW_API_BASE__: string | undefined;
 const API_BASE = typeof __PICLAW_API_BASE__ !== 'undefined' ? __PICLAW_API_BASE__ : '';
 
+function readActiveChatJidFromUrl() {
+    if (typeof window === 'undefined') return null;
+    try {
+        const jid = new URLSearchParams(window.location.search).get('chat_jid');
+        return typeof jid === 'string' && jid.trim() ? jid.trim() : null;
+    } catch {
+        return null;
+    }
+}
+
+function appendChatJid(url) {
+    const chatJid = readActiveChatJidFromUrl();
+    if (!chatJid) return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}chat_jid=${encodeURIComponent(chatJid)}`;
+}
+
 type ApiOptions = Record<string, any>;
 type ApiError = Error & { status?: number; code?: string; payload?: unknown };
 
@@ -775,7 +792,7 @@ export async function getMediaBlob(mediaId) {
  * Get workspace tree
  */
 export async function getWorkspaceTree(path = '', depth = 2, showHidden = false) {
-    const url = `/workspace/tree?path=${encodeURIComponent(path)}&depth=${depth}&show_hidden=${showHidden ? '1' : '0'}`;
+    const url = appendChatJid(`/workspace/tree?path=${encodeURIComponent(path)}&depth=${depth}&show_hidden=${showHidden ? '1' : '0'}`);
     return request(url);
 }
 
@@ -804,7 +821,7 @@ export async function reindexWorkspace(scope = 'all') {
  */
 export async function getWorkspaceFile(path, maxBytes = 20000, mode = null) {
     const modeParam = mode ? `&mode=${encodeURIComponent(mode)}` : '';
-    const url = `/workspace/file?path=${encodeURIComponent(path)}&max=${maxBytes}${modeParam}`;
+    const url = appendChatJid(`/workspace/file?path=${encodeURIComponent(path)}&max=${maxBytes}${modeParam}`);
     return request(url);
 }
 
@@ -1029,7 +1046,7 @@ export async function setWorkspaceVisibility(visible, showHidden = false) {
 export function getWorkspaceRawUrl(path, options: ApiOptions = {}) {
     const query = new URLSearchParams({ path: String(path || '') });
     if (options.download) query.set('download', '1');
-    return `${API_BASE}/workspace/raw?${query.toString()}`;
+    return appendChatJid(`${API_BASE}/workspace/raw?${query.toString()}`);
 }
 
 /**

@@ -16,6 +16,7 @@
     "verify:1a": "bun run migrate && bun run --filter @piclaw-cloud/shared typecheck && bun run --filter @piclaw-cloud/store typecheck",
     "verify:1b": "bun run --filter @piclaw-cloud/brain scenario",
     "verify:1e": "bun run --filter @piclaw-cloud/brain e2e",
-    "verify:llm-e2e": "bun run --filter @piclaw-cloud/brain llm-e2e"
+    "verify:llm-e2e": "bun run --filter @piclaw-cloud/brain llm-e2e",
+    "verify:web-e2e": "bun run --cwd .. cloud/brain/scripts/web-e2e-scenario.ts"
   }
 }

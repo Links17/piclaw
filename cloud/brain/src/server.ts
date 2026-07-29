@@ -6,15 +6,22 @@ import * as store from "@piclaw-cloud/store";
 import { applyMigrations } from "@piclaw-cloud/store/db";
 import { config } from "./config.ts";
 import { subscribe, type SessionEvent } from "./events.ts";
+import { serveStaticRequest } from "./static.ts";
 import { submitMessage, sweepInflight } from "./turn.ts";
+import { handleWorkspaceRoutes } from "./workspace/routes.ts";
 import {
   agentResponseSsePayload,
   chatJidToSessionId,
+  createRootChatSession,
+  createTerminalHandoff,
   ensureChatSession,
+  getActiveChatAgents,
   getAgentStatus,
+  getAgentsRoster,
+  getChatBranches,
   getQueueState,
+  getTerminalSessionInfo,
   getTimeline,
-  listSessions,
   sendAgentMessage,
 } from "./web-adapter.ts";
 
@@ -117,7 +124,37 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname === "/agent/roster") {
-          return json({ agents: [{ id: "default", name: "PiClaw", chat_jid: config.defaultChatJid }] });
+          return json(getAgentsRoster());
+        }
+
+        if (req.method === "GET" && url.pathname === "/agent/active-chats") {
+          return json(await getActiveChatAgents());
+        }
+
+        if (req.method === "GET" && url.pathname === "/agent/branches") {
+          return json(await getChatBranches());
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/root-session") {
+          const body = await readJson(req);
+          const agentName = typeof body.agent_name === "string" ? body.agent_name : "Chat";
+          return json(await createRootChatSession(agentName));
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/ui-state") {
+          return json({ ok: true });
+        }
+
+        if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
+          return json({});
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/queue-steer") {
+          return json({ removed: false, queued: "steer" });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/queue-remove") {
+          return json({ removed: false });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/commands") {
@@ -132,16 +169,13 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return json({ tokens: null, context_window: null, percent: null });
         }
 
-        if (req.method === "GET" && url.pathname === "/chat/branches") {
-          const sessions = await listSessions();
-          return json({
-            branches: sessions.map((s) => ({
-              chat_jid: s.id,
-              title: s.title,
-              root_chat_jid: s.id,
-              is_root: true,
-            })),
-          });
+        if (req.method === "GET" && url.pathname === "/terminal/session") {
+          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          return json(getTerminalSessionInfo(chatJid));
+        }
+
+        if (req.method === "POST" && url.pathname === "/terminal/handoff") {
+          return json(createTerminalHandoff());
         }
 
         if (req.method === "POST" && parts[0] === "agent" && parts[1] && parts[2] === "message") {
@@ -217,6 +251,12 @@ export function startServer(): ReturnType<typeof Bun.serve> {
             });
           }
         }
+
+        const workspaceResponse = await handleWorkspaceRoutes(req, url.pathname);
+        if (workspaceResponse) return workspaceResponse;
+
+        const staticResponse = serveStaticRequest(req);
+        if (staticResponse) return staticResponse;
 
         return json({ error: "not found" }, 404);
       } catch (error) {
