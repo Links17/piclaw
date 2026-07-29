@@ -1,0 +1,21 @@
+{
+  "name": "@piclaw-cloud/store",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./db": "./src/db.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "migrate": "bun run src/migrate.ts",
+    "test": "bun test src/store.test.ts"
+  },
+  "dependencies": {
+    "@piclaw-cloud/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.3"
+  }
+}

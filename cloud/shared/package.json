@@ -1,0 +1,14 @@
+{
+  "name": "@piclaw-cloud/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./sse-events": "./src/sse-events.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

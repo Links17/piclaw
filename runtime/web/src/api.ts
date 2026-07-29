@@ -5,7 +5,8 @@
 import { recordAppPerfRequest } from './ui/app-perf-tracing.js';
 import { resolveScreenSizeHint } from './ui/screen-size-hint.js';
 
-const API_BASE = '';
+declare const __PICLAW_API_BASE__: string | undefined;
+const API_BASE = typeof __PICLAW_API_BASE__ !== 'undefined' ? __PICLAW_API_BASE__ : '';
 
 type ApiOptions = Record<string, any>;
 type ApiError = Error & { status?: number; code?: string; payload?: unknown };
