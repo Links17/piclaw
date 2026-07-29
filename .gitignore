@@ -19,6 +19,7 @@ docker-compose.override.yml
 *.pid
 home/
 workspaces/
+.worktrees/
 node_modules/
 coverage/
 .bun/

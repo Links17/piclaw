@@ -60,6 +60,23 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "coding_agent",
+      description:
+        "Delegate a coding task to an isolated sandbox worker. Returns summary and artifacts only — not the full coding transcript.",
+      parameters: {
+        type: "object",
+        properties: {
+          task: { type: "string", description: "Coding task description for the subagent" },
+          constraints: { type: "string", description: "Optional constraints or acceptance criteria" },
+          timeout_ms: { type: "number", description: "Optional timeout in milliseconds" },
+        },
+        required: ["task"],
+      },
+    },
+  },
 ];
 
 export const TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((t) => t.function.name));

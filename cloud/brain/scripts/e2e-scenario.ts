@@ -99,6 +99,22 @@ if (!health.ok) {
 await getAccessToken();
 console.log("  sandbox:  ok\n");
 
+async function reclaimSandboxQuota(): Promise<void> {
+  try {
+    const proc = Bun.spawn({
+      cmd: ["bun", "run", "scripts/cleanup-sandbox-quota.ts"],
+      cwd: new URL("..", import.meta.url).pathname,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    await proc.exited;
+  } catch {
+    // optional
+  }
+}
+
+await reclaimSandboxQuota();
+
 try {
   const brainHealth = await fetch(`${BASE}/health`);
   if (!brainHealth.ok) throw new Error("brain not running — start with: cd cloud/brain && bun run start");
@@ -200,7 +216,7 @@ console.log("\n[6] follow-up queue while busy");
   const events2: SseEvent[] = [];
   const sse2 = collectWebSse(`${CHAT}-fq`, events2);
   await Bun.sleep(300);
-  void postAgent(`${CHAT}-fq`, "medium busy turn");
+  void postAgent(`${CHAT}-fq`, "mock-tools: medium busy turn");
   await waitFor(() => events2.some((e) => e.event === "agent_status" && e.data.status === "streaming"), "streaming");
   const queued = await postAgent(`${CHAT}-fq`, "follow up message");
   check(queued.outcome === "queued" || queued.queued === true, "second message queued");

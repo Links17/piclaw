@@ -29,7 +29,12 @@ export type InternalSessionEvent =
   | { type: "followup_consumed"; content: string }
   | { type: "recovery"; messageId: number; action: "retried" | "cleared"; replica: string }
   | { type: "tool_start"; name: string; toolCallId: string; replica: string }
-  | { type: "tool_result"; name: string; toolCallId: string; isError: boolean; replica: string };
+  | { type: "tool_result"; name: string; toolCallId: string; isError: boolean; replica: string }
+  | { type: "subagent_started"; runId: string; agentType: string; task: string; replica: string }
+  | { type: "subagent_delta"; runId: string; text: string; replica: string }
+  | { type: "subagent_tool_start"; runId: string; name: string; toolCallId: string; replica: string }
+  | { type: "subagent_tool_result"; runId: string; name: string; toolCallId: string; isError: boolean; replica: string }
+  | { type: "subagent_done"; runId: string; status: string; summary: string; artifacts: string[]; replica: string };
 
 export function mapInternalToWeb(
   sessionId: string,
@@ -59,6 +64,10 @@ export function mapInternalToWeb(
     case "tool_start":
       return { type: "agent_status", status: "tool", detail: event.name };
     case "tool_result":
+      return { type: "agent_status", status: "streaming" };
+    case "subagent_started":
+      return { type: "agent_status", status: "tool", detail: `coding:${event.runId}` };
+    case "subagent_done":
       return { type: "agent_status", status: "streaming" };
     default:
       return null;

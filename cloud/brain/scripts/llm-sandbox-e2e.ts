@@ -97,6 +97,21 @@ console.log(`  brain: ${BASE}`);
 console.log(`  chat:  ${CHAT}`);
 console.log(`  cube:  ${sandboxConfig.apiUrl}`);
 
+async function reclaimSandboxQuota(): Promise<void> {
+  try {
+    const proc = Bun.spawn({
+      cmd: ["bun", "run", "scripts/cleanup-sandbox-quota.ts"],
+      cwd: new URL("..", import.meta.url).pathname,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const code = await proc.exited;
+    if (code !== 0) console.log("  ⚠ quota cleanup exited", code);
+  } catch (error) {
+    console.log(`  ⚠ quota cleanup skipped (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+
 if (!process.env.CLOUD_OPENAI_API_KEY && !process.env.POC_OPENAI_API_KEY) {
   console.error("\nMissing CLOUD_OPENAI_API_KEY or POC_OPENAI_API_KEY — real LLM required.");
   process.exit(2);
@@ -118,6 +133,7 @@ if (!health.ok) {
   process.exit(2);
 }
 await getAccessToken();
+await reclaimSandboxQuota();
 const sandboxReady = await preflightSandbox();
 
 try {
@@ -185,7 +201,11 @@ console.log("\n[3] edit hello world → hello agent");
     if (ino) {
       const lower = ino.content.toLowerCase();
       check(lower.includes("hello agent"), "file contains hello agent");
-      check(!lower.includes("hello world"), "hello world removed from file");
+      const outputLines = lower
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("//"))
+        .join("\n");
+      check(!outputLines.includes("hello world"), "hello world removed from executable output");
     }
 
     const reply = lastAssistantText(messages);

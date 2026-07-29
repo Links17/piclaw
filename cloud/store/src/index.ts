@@ -2,6 +2,12 @@ import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { counted, sql, type RoundtripCounter } from "./db.ts";
 import { LOCK_NAMESPACE } from "./config.ts";
 
+export * from "./auth.ts";
+export * from "./quota.ts";
+export * from "./rls.ts";
+export * from "./scheduler.ts";
+export * from "./subagent-runs.ts";
+
 export interface MessageRow {
   id: number;
   session_id: string;
@@ -47,6 +53,13 @@ export async function listSessions(userId = DEFAULT_USER_ID): Promise<SessionRow
 
 export async function getSession(id: string): Promise<SessionRow | null> {
   const rows = await sql`SELECT id, user_id, title, sandbox_id FROM sessions WHERE id = ${id}`;
+  return (rows[0] as SessionRow) ?? null;
+}
+
+export async function getSessionForUser(id: string, userId: string): Promise<SessionRow | null> {
+  const rows = await sql`
+    SELECT id, user_id, title, sandbox_id FROM sessions
+    WHERE id = ${id} AND user_id = ${userId}`;
   return (rows[0] as SessionRow) ?? null;
 }
 

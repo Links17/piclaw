@@ -19,4 +19,13 @@ export const config = {
   /** When false, bash:/PTY routes return a stub (turn-loop scenarios only). */
   sandboxEnabled: process.env.CLOUD_SANDBOX_ENABLED !== "0",
   maxToolRounds: Number(process.env.CLOUD_MAX_TOOL_ROUNDS || 12),
+  /** Subagent / platform */
+  authRequired: process.env.CLOUD_AUTH_REQUIRED === "1",
+  devApiKey: process.env.CLOUD_DEV_API_KEY || "",
+  subagentTimeoutMs: Number(process.env.CLOUD_SUBAGENT_TIMEOUT_MS || 5 * 60 * 1000),
+  codingWorkerMode: (process.env.CLOUD_CODING_WORKER_MODE || "auto") as "auto" | "sandbox" | "brain" | "mock",
+  maxActiveSandboxesPerUser: Number(process.env.CLOUD_MAX_ACTIVE_SANDBOXES || 3),
+  maxDailyTokensPerUser: Number(process.env.CLOUD_MAX_DAILY_TOKENS || 500_000),
+  sandboxIdleMs: Number(process.env.CLOUD_SANDBOX_IDLE_MS || 30 * 60 * 1000),
+  workspacePollIntervalMs: Number(process.env.CLOUD_WORKSPACE_POLL_MS || 60_000),
 };
