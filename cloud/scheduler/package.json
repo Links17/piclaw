@@ -1,0 +1,8 @@
+{
+  "name": "@piclaw-cloud/scheduler",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo 'scheduler: phase 2'"
+  }
+}

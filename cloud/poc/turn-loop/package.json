@@ -1,0 +1,13 @@
+{
+  "name": "@piclaw-cloud/poc-turn-loop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "schema": "bun run src/apply-schema.ts",
+    "replica": "bun run src/main.ts",
+    "scenario": "bun run scripts/scenario.ts"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1"
+  }
+}

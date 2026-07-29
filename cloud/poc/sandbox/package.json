@@ -1,0 +1,11 @@
+{
+  "name": "@piclaw-cloud/poc-sandbox",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scenario": "bun run scripts/scenario.ts"
+  },
+  "dependencies": {
+    "e2b": "^2.36.1"
+  }
+}

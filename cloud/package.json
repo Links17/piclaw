@@ -1,0 +1,20 @@
+{
+  "name": "piclaw-cloud",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "store",
+    "brain",
+    "scheduler",
+    "poc/*"
+  ],
+  "scripts": {
+    "typecheck": "bun run --filter '@piclaw-cloud/*' typecheck",
+    "migrate": "bun run --filter @piclaw-cloud/store migrate",
+    "scenario": "bun run --filter @piclaw-cloud/brain scenario",
+    "e2e": "bun run --filter @piclaw-cloud/brain e2e",
+    "verify:1a": "bun run migrate && bun run --filter @piclaw-cloud/shared typecheck && bun run --filter @piclaw-cloud/store typecheck",
+    "verify:1b": "bun run --filter @piclaw-cloud/brain scenario",
+    "verify:1e": "bun run --filter @piclaw-cloud/brain e2e"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@piclaw-cloud/brain",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "bun run src/main.ts",
+    "scenario": "bun run scripts/scenario.ts",
+    "e2e": "bun run scripts/e2e-scenario.ts"
+  },
+  "dependencies": {
+    "@piclaw-cloud/shared": "workspace:*",
+    "@piclaw-cloud/store": "workspace:*",
+    "e2b": "^2.36.1",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.3"
+  }
+}
