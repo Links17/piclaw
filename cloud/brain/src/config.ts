@@ -18,4 +18,5 @@ export const config = {
   defaultChatJid: process.env.CLOUD_DEFAULT_CHAT_JID || "web:default",
   /** When false, bash:/PTY routes return a stub (turn-loop scenarios only). */
   sandboxEnabled: process.env.CLOUD_SANDBOX_ENABLED !== "0",
+  maxToolRounds: Number(process.env.CLOUD_MAX_TOOL_ROUNDS || 12),
 };

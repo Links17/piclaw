@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS messages_session_idx ON messages (session_id, id);
 
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS content_blocks JSONB;
+
+-- Upgrade PoC schema: allow tool role in messages
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_role_check;
+ALTER TABLE messages ADD CONSTRAINT messages_role_check
+  CHECK (role IN ('user', 'assistant', 'system', 'tool'));
+
 -- ── session turn state machine (from runtime chat_cursors) ────────────
 
 CREATE TABLE IF NOT EXISTS session_cursors (

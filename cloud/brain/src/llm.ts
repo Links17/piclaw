@@ -1,8 +1,15 @@
 /**
- * LLM adapter — mock streamer for infra tests; optional OpenAI-compatible provider.
+ * LLM adapter — streaming completion with optional function-calling tool loop support.
  */
 import { config } from "./config.ts";
-import type { MessageRow } from "@piclaw-cloud/store";
+import {
+  applyStreamChunk,
+  createStreamAccumulator,
+  finalizeStreamAccumulator,
+  type ParsedToolCall,
+} from "./llm/stream-parser.ts";
+import type { OpenAiMessage } from "./llm/messages.ts";
+import { TOOL_DEFINITIONS } from "./tools/schemas.ts";
 
 export interface LlmUsage {
   inputTokens: number | null;
@@ -10,29 +17,50 @@ export interface LlmUsage {
   outputTokens: number | null;
 }
 
-export interface LlmResult {
+export interface CompletionRound {
   text: string;
+  toolCalls: ParsedToolCall[];
+  finishReason: string | null;
   usage: LlmUsage;
 }
 
-export async function streamCompletion(
-  history: MessageRow[],
+export async function streamCompletionRound(
+  messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
-  options: { prefix?: string } = {},
-): Promise<LlmResult> {
-  if (config.openaiBaseUrl && config.openaiApiKey) {
-    return streamOpenAi(history, onDelta);
+): Promise<CompletionRound> {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const prompt = lastUser && "content" in lastUser ? String(lastUser.content ?? "") : "";
+  if (prompt.startsWith("mock-tools:")) {
+    return streamMockRound(messages, onDelta, prompt);
   }
-  return streamMock(history, onDelta, options.prefix ?? "");
+  if (config.openaiBaseUrl && config.openaiApiKey) {
+    return streamOpenAiRound(messages, onDelta);
+  }
+  return streamMockRound(messages, onDelta, prompt);
 }
 
-async function streamMock(
-  history: MessageRow[],
+/** Legacy single-shot completion for infra scenarios without tools. */
+export async function streamCompletion(
+  messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
-  prefix: string,
-): Promise<LlmResult> {
-  const last = [...history].reverse().find((m) => m.role === "user");
-  const prompt = last?.content ?? "";
+): Promise<{ text: string; usage: LlmUsage }> {
+  const round = await streamCompletionRound(messages, onDelta);
+  return { text: round.text, usage: round.usage };
+}
+
+async function streamMockRound(
+  messages: OpenAiMessage[],
+  onDelta: (text: string) => Promise<void>,
+  promptOverride?: string,
+): Promise<CompletionRound> {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const prompt = promptOverride ?? (lastUser && "content" in lastUser ? String(lastUser.content ?? "") : "");
+
+  // Deterministic tool-loop mock for integration tests.
+  if (prompt.startsWith("mock-tools:")) {
+    return mockToolsRound(messages, onDelta, prompt);
+  }
+
   let tokens = 8;
   let delayMs = 30;
   if (prompt.startsWith("slow")) {
@@ -44,33 +72,84 @@ async function streamMock(
   }
 
   const parts: string[] = [];
-  if (prefix) {
-    parts.push(prefix);
-    await onDelta(prefix);
-  }
   for (let i = 0; i < tokens; i += 1) {
-    const piece = i === 0 && !prefix ? `mock-reply(to: ${prompt.slice(0, 24)})` : ` t${i}`;
+    const piece = i === 0 ? `mock-reply(to: ${prompt.slice(0, 24)})` : ` t${i}`;
     parts.push(piece);
     await onDelta(piece);
     await Bun.sleep(delayMs);
   }
   return {
     text: parts.join(""),
+    toolCalls: [],
+    finishReason: "stop",
     usage: { inputTokens: null, cachedTokens: null, outputTokens: tokens },
   };
 }
 
-async function streamOpenAi(
-  history: MessageRow[],
+async function mockToolsRound(
+  messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
-): Promise<LlmResult> {
-  const messages = [
-    {
-      role: "system",
-      content: "You are a terse assistant for a streaming infrastructure test. Answer briefly.",
-    },
-    ...history.map((m) => ({ role: m.role, content: m.content })),
-  ];
+  prompt: string,
+): Promise<CompletionRound> {
+  const hasToolResults = messages.some((m) => m.role === "tool");
+  const hasAssistantTools = messages.some(
+    (m) => m.role === "assistant" && "tool_calls" in m && (m.tool_calls?.length ?? 0) > 0,
+  );
+
+  if (!hasAssistantTools) {
+    if (prompt.includes("edit")) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_mock_edit",
+            name: "edit",
+            arguments: JSON.stringify({
+              path: "/workspace/demo.ino",
+              old_string: "hello world",
+              new_string: "hello agent",
+            }),
+          },
+        ],
+        finishReason: "tool_calls",
+        usage: { inputTokens: 1, cachedTokens: 0, outputTokens: 1 },
+      };
+    }
+    return {
+      text: "",
+      toolCalls: [
+        {
+          id: "call_mock_write",
+          name: "write",
+          arguments: JSON.stringify({
+            path: "/workspace/demo.ino",
+            content: "void setup() {}\nvoid loop() { Serial.println(\"hello world\"); }\n",
+          }),
+        },
+      ],
+      finishReason: "tool_calls",
+      usage: { inputTokens: 1, cachedTokens: 0, outputTokens: 1 },
+    };
+  }
+
+  if (hasToolResults) {
+    const text = prompt.includes("edit") ? "Updated the demo to hello agent." : "Created the hello world demo.";
+    await onDelta(text);
+    return {
+      text,
+      toolCalls: [],
+      finishReason: "stop",
+      usage: { inputTokens: 1, cachedTokens: 0, outputTokens: text.length },
+    };
+  }
+
+  return { text: "", toolCalls: [], finishReason: "stop", usage: { inputTokens: 0, cachedTokens: 0, outputTokens: 0 } };
+}
+
+async function streamOpenAiRound(
+  messages: OpenAiMessage[],
+  onDelta: (text: string) => Promise<void>,
+): Promise<CompletionRound> {
   const response = await fetch(`${config.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -80,6 +159,8 @@ async function streamOpenAi(
     body: JSON.stringify({
       model: config.openaiModel,
       messages,
+      tools: TOOL_DEFINITIONS,
+      tool_choice: "auto",
       stream: true,
       stream_options: { include_usage: true },
     }),
@@ -91,7 +172,7 @@ async function streamOpenAi(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let text = "";
+  const acc = createStreamAccumulator();
   const usage: LlmUsage = { inputTokens: null, cachedTokens: null, outputTokens: null };
 
   while (true) {
@@ -103,17 +184,28 @@ async function streamOpenAi(
     for (const line of lines) {
       const data = line.startsWith("data:") ? line.slice(5).trim() : "";
       if (!data || data === "[DONE]") continue;
-      let payload: { choices?: Array<{ delta?: { content?: string } }>; usage?: Record<string, unknown> };
+      let payload: {
+        choices?: Array<{
+          delta?: {
+            content?: string | null;
+            tool_calls?: Array<{
+              index?: number;
+              id?: string;
+              type?: string;
+              function?: { name?: string; arguments?: string };
+            }>;
+          };
+          finish_reason?: string | null;
+        }>;
+        usage?: Record<string, unknown>;
+      };
       try {
         payload = JSON.parse(data);
       } catch {
         continue;
       }
-      const delta = payload?.choices?.[0]?.delta?.content;
-      if (typeof delta === "string" && delta) {
-        text += delta;
-        await onDelta(delta);
-      }
+      const { textDelta } = applyStreamChunk(acc, payload);
+      if (textDelta) await onDelta(textDelta);
       if (payload?.usage) {
         usage.inputTokens = (payload.usage.prompt_tokens as number) ?? null;
         usage.outputTokens = (payload.usage.completion_tokens as number) ?? null;
@@ -122,5 +214,7 @@ async function streamOpenAi(
       }
     }
   }
-  return { text, usage };
+
+  const finalized = finalizeStreamAccumulator(acc);
+  return { text: finalized.text, toolCalls: finalized.toolCalls, finishReason: finalized.finishReason, usage };
 }

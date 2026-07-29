@@ -11,4 +11,9 @@ describe("@piclaw-cloud/shared sse-events", () => {
     const mapped = mapInternalToWeb("s1", { type: "followup_queued", content: "next" });
     expect(mapped).toEqual({ type: "agent_followup_queued", content: "next" });
   });
+
+  test("maps tool_start to agent_status tool", () => {
+    const mapped = mapInternalToWeb("s1", { type: "tool_start", name: "write", toolCallId: "c1", replica: "A" });
+    expect(mapped).toEqual({ type: "agent_status", status: "tool", detail: "write" });
+  });
 });
