@@ -41,16 +41,27 @@ flowchart LR
 | **1a** 基础 | ✅ | `cd cloud && bun run verify:1a` |
 | **1b** Brain | ✅ | `cd cloud && bun run verify:1b` |
 | **1c** Sandbox | ✅ | 含于 `verify:1e`（`bash:` + PTY WS） |
-| **1d** Web | ✅ | `bun run build:web:cloud`（`__PICLAW_API_BASE__` → brain） |
-| **1e** 联调 | ✅ | 先 `cd cloud/brain && bun run start`，再 `cd cloud && bun run verify:1e` |
+| **1d** Web | ✅ | `bun run build:web:cloud` + brain 同源托管 `/`（`cloud/brain/src/static.ts`） |
+| **1e** 联调 | ✅ | API：`verify:1e` / `verify:llm-e2e`；Web UI：`verify:web-e2e` |
 
 **1e 清单**（implementation-plan §1.8）：
 
-- [x] 创建 session（timeline bootstrap）
+- [x] 创建 session（timeline bootstrap / Web `?chat_jid=`）
 - [x] 对话 + 流式（Web SSE `agent_*` 词表）
-- [x] 跑代码（`bash:` → CubeSandbox）
-- [x] 开 terminal + 断线重连（`/terminal/ws` + timeline catch-up）
-- [x] follow-up 排队
+- [x] 跑代码（LLM tool loop → CubeSandbox）
+- [x] 开 terminal + 断线重连（`/terminal/session` + `/terminal/ws` + 页面刷新）
+- [x] follow-up 排队（API `verify:1e`）
+
+**Web UI 浏览器验收**（`cloud/brain/scripts/web-e2e-scenario.ts`）：
+
+```bash
+# 仓库根目录
+bun run build:web:cloud
+cd cloud/brain && bun run start   # 终端 1
+cd cloud && CLOUD_WEB_E2E_MODE=mock-tools bun run verify:web-e2e   # 快路径
+# 或真实 LLM + Wio 三步：
+cd cloud && bun run verify:web-e2e
+```
 
 ---
 
@@ -104,9 +115,10 @@ psql $POC_PG_URL -f migrations/001_core.sql
 
 **目标**：现有 Preact UI 连 brain，单用户免登录。
 
-1. `runtime/web`：`VITE_API_BASE` / cloud 构建脚本
+1. `runtime/web`：`build:web:cloud` + `__PICLAW_API_BASE__`
 2. `chat_jid` → `session_id` 映射层（API adapter）
-3. Terminal：PTY WebSocket 代理（或直连 sandbox，视网络）
+3. Brain 同源托管 `runtime/web/static`（`/`、`/static/*`、`/editor-vendor/*`）
+4. Terminal：`/terminal/session` + `/terminal/ws?chat_jid=`（`terminal-pane` 传 URL `chat_jid`）
 
 依赖：1b API 契约稳定
 
@@ -114,13 +126,9 @@ psql $POC_PG_URL -f migrations/001_core.sql
 
 ## 阶段 1e — MVP 联调
 
-**清单**（implementation-plan §1.8）— 已由 `cloud/brain/scripts/e2e-scenario.ts` 自动化：
+**API 清单** — `cloud/brain/scripts/e2e-scenario.ts` + `llm-sandbox-e2e.ts`
 
-- [x] 创建 session
-- [x] 对话 + 流式
-- [x] 跑代码（sandbox）
-- [x] 开 terminal + 断线重连
-- [x] follow-up 排队 / steering
+**Web UI 清单** — `cloud/brain/scripts/web-e2e-scenario.ts`（Playwright）
 
 ---
 

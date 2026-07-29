@@ -26,9 +26,14 @@ cd brain && bun run start
 | `GET /sse/stream?chat_jid=` | Web UI SSE |
 | `POST /agent/default/message?chat_jid=` | Web UI 发消息 |
 | `GET /timeline?chat_jid=` | Web UI 历史 |
+| `GET /` | Web UI（同源静态，`build:web:cloud` 后可用） |
+| `GET /agent/branches` | Web UI 分支列表 |
+| `POST /agent/root-session` | Web UI 新建 session |
+| `GET /terminal/session?chat_jid=` | Terminal 会话信息 |
+| `POST /terminal/handoff` | Terminal handoff（cloud no-op） |
 | `GET /terminal/ws?chat_jid=` | Terminal WebSocket |
 
-Sandbox 命令：消息以 `bash:` 前缀触发 CubeSandbox exec，例如 `bash:echo hello`。
+工具调用：LLM 流式 `tool_calls` → bash/read/write/edit（`/workspace` 限制）。`mock-tools:` 前缀用于确定性验收。
 
 ## 验收
 
@@ -37,11 +42,15 @@ cd cloud
 bun run verify:1a   # migrations + typecheck
 bun run verify:1b   # 双副本 scenario（无需 sandbox）
 # 先 bun run start，再：
-bun run verify:1e   # MVP 联调（需 CubeSandbox）
+bun run verify:1e       # MVP API 联调（需 CubeSandbox）
+bun run verify:llm-e2e  # 真实 LLM + Wio 三步
+bun run verify:web-e2e  # Web UI 浏览器验收（需 build:web:cloud + Playwright）
 ```
 
-Web cloud 构建（仓库根目录）：
+Web cloud 构建与访问（仓库根目录）：
 
 ```bash
 bun run build:web:cloud   # 注入 __PICLAW_API_BASE__ → http://localhost:7801
+cd cloud/brain && bun run start
+open http://localhost:7801/?chat_jid=web:default
 ```

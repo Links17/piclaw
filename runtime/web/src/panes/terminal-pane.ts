@@ -493,8 +493,21 @@ export function getOrCreateAnonymousTerminalClientToken(runtimeWindow = window) 
   }
 }
 
+function readActiveChatJidFromUrl(runtimeWindow = window) {
+  try {
+    const jid = runtimeWindow?.location?.search
+      ? new URLSearchParams(runtimeWindow.location.search).get("chat_jid")
+      : null;
+    return typeof jid === "string" && jid.trim() ? jid.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchTerminalSession(clientToken = getOrCreateAnonymousTerminalClientToken()) {
-  const response = await fetch("/terminal/session", {
+  const chatJid = readActiveChatJidFromUrl();
+  const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : "";
+  const response = await fetch(`/terminal/session${query}`, {
     method: "GET",
     credentials: "same-origin",
     headers: clientToken ? { [TERMINAL_ANON_CLIENT_HEADER]: clientToken } : undefined,
