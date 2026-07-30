@@ -13,17 +13,24 @@ import {
 import { spawnAgent, getSubagentResult, stopSubagent, steerSubagent } from "./subagents/manager.ts";
 import { config } from "./config.ts";
 import { abortSessionTurn, submitMessage } from "./turn.ts";
+import { UNTITLED_SESSION_TITLE } from "@piclaw-cloud/store";
+import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
+import { requireSessionAccess } from "./auth.ts";
+
+export { UNTITLED_SESSION_TITLE };
 
 export function chatJidToSessionId(chatJid: string | null | undefined): string {
-  const normalized = typeof chatJid === "string" && chatJid.trim() ? chatJid.trim() : config.defaultChatJid;
-  return normalized;
+  return typeof chatJid === "string" ? chatJid.trim() : "";
 }
 
 export async function ensureChatSession(chatJid: string): Promise<string> {
   const sessionId = chatJidToSessionId(chatJid);
+  if (!sessionId) {
+    throw new Error("chat_jid is required");
+  }
   const existing = await store.getSession(sessionId);
   if (!existing) {
-    await store.createSession(sessionId, chatJid === config.defaultChatJid ? "Default" : chatJid);
+    throw new Error(`Unknown chat session: ${sessionId}`);
   }
   return sessionId;
 }
@@ -353,9 +360,6 @@ async function assertSessionCanMutate(
 ): Promise<store.SessionRow> {
   const session = await store.getSessionForUser(sessionId, userId);
   if (!session) throw new Error(`Unknown chat branch: ${sessionId}`);
-  if (sessionId === config.defaultChatJid) {
-    throw new Error("Cannot archive the default chat session.");
-  }
   const locked = await store.isSessionLocked(sessionId);
   const inflight = getInflightTurn(sessionId);
   if (locked || inflight) {
@@ -424,7 +428,7 @@ export function getAgentsRoster() {
         actions: [],
         avatar_url: null,
         model: config.openaiModel,
-        chat_jid: config.defaultChatJid,
+        chat_jid: null,
       },
     ],
     user: {
@@ -435,17 +439,56 @@ export function getAgentsRoster() {
   };
 }
 
-export async function createRootChatSession(agentName: string) {
+export async function createUntitledSession(userId: string = DEFAULT_USER_ID) {
   const chatJid = `web:${crypto.randomUUID()}`;
-  const name = agentName.trim() || "Chat";
-  await store.createSession(chatJid, name);
+  await store.createSession(chatJid, UNTITLED_SESSION_TITLE, userId);
+  const session = await store.getSessionForUser(chatJid, userId);
+  if (!session) throw new Error("Failed to create chat session");
+  return { chatJid, branch: sessionToBranchChat(session) };
+}
+
+export async function createRootChatSession(userId: string = DEFAULT_USER_ID) {
+  const { chatJid, branch } = await createUntitledSession(userId);
   return {
     branch: {
       chat_jid: chatJid,
       root_chat_jid: chatJid,
-      agent_name: name,
-      title: name,
+      agent_name: branch.agent_name,
+      title: branch.title,
     },
+  };
+}
+
+export async function sendAgentMessageWithOptionalCreate(
+  chatJid: string | null | undefined,
+  content: string,
+  mode: string | null | undefined,
+  userId: string,
+) {
+  let resolvedChatJid = typeof chatJid === "string" ? chatJid.trim() : "";
+  let created = false;
+  let branch: ReturnType<typeof sessionToBranchChat> | undefined;
+
+  if (resolvedChatJid) {
+    await requireSessionAccess(resolvedChatJid, userId);
+  } else {
+    const createdSession = await createUntitledSession(userId);
+    resolvedChatJid = createdSession.chatJid;
+    branch = createdSession.branch;
+    created = true;
+  }
+
+  const result = await sendAgentMessage(resolvedChatJid, content, mode);
+  if (!branch) {
+    const session = await store.getSessionForUser(resolvedChatJid, userId);
+    if (session) branch = sessionToBranchChat(session);
+  }
+
+  return {
+    ...result,
+    chat_jid: resolvedChatJid,
+    created,
+    branch,
   };
 }
 

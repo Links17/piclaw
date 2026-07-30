@@ -1338,7 +1338,6 @@ export function ComposeBox({
         currentSessionAgent
         && currentSessionAgent.chat_jid === (currentSessionAgent.root_chat_jid || currentSessionAgent.chat_jid)
     );
-    const isCurrentDefaultRootSession = Boolean(isCurrentRootSession && (currentSessionAgent?.chat_jid || currentChatJid) === 'web:default');
     const currentRollupParent = (() => {
         const parentBranchId = typeof currentSessionAgent?.parent_branch_id === 'string' ? currentSessionAgent.parent_branch_id.trim() : '';
         const branchId = typeof currentSessionAgent?.branch_id === 'string' ? currentSessionAgent.branch_id.trim() : '';
@@ -1364,7 +1363,7 @@ export function ComposeBox({
     const canCreateSession = !searchMode && typeof onCreateSession === 'function';
     const canCreateRootSession = !searchMode && typeof onCreateRootSession === 'function';
     const canRollupSession = !searchMode && !isAgentActive && !rollingUpSession && Boolean(currentRollupParent?.chat_jid);
-    const canDeleteSession = !searchMode && typeof onDeleteSession === 'function' && !isCurrentDefaultRootSession;
+    const canDeleteSession = !searchMode && typeof onDeleteSession === 'function';
     const canPurgeArchivedSession = !searchMode && typeof onPurgeArchivedSession === 'function';
     const showSessionSwitcherButton = !searchMode && (canSwitchSession || canRestoreSession || canRenameSession || canCreateSession || canCreateRootSession || canRollupSession || canDeleteSession || canPurgeArchivedSession);
     const modelPickerState = resolveComposeModelPickerState(activeModel, agentModelsPayload);
@@ -1740,16 +1739,8 @@ export function ComposeBox({
     const handleCreateRootSession = async () => {
         if (typeof onCreateRootSession !== 'function') return;
         setShowSessionPopup(false);
-        const rawName = typeof window !== 'undefined'
-            ? window.prompt('New root session handle (for example: ops)')
-            : '';
-        const rootName = String(rawName || '').trim();
-        if (!rootName) {
-            requestAnimationFrame(() => textareaRef.current?.focus());
-            return;
-        }
         try {
-            await onCreateRootSession(rootName);
+            await onCreateRootSession();
         } catch (error) {
             console.warn('Failed to create root session:', error);
         }
@@ -2346,6 +2337,9 @@ export function ComposeBox({
                 }
                 const response = await sendAgentMessage('default', message, null, mediaIds, resolveSubmitMode(submitMode), currentChatJid);
                 onMessageResponse?.(response);
+                if (response?.created && typeof response.chat_jid === 'string' && response.chat_jid.trim()) {
+                    onSwitchChat?.(response.chat_jid.trim());
+                }
 
                 if (response?.command) {
                     emitModelState({

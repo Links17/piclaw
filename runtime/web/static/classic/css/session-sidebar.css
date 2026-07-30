@@ -86,33 +86,43 @@
     font-size: 12px;
 }
 
-.session-sidebar-item {
+.session-sidebar-item-row {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    align-items: center;
+    gap: 2px;
     width: 100%;
-    text-align: left;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
     background: transparent;
-    color: var(--text-primary);
-    padding: 8px 10px;
-    cursor: pointer;
-    font-size: 12px;
 }
 
-.session-sidebar-item:hover {
+.session-sidebar-item-row:hover {
     background: color-mix(in srgb, var(--bg-secondary) 88%, var(--accent-color) 12%);
 }
 
-.session-sidebar-item.current {
+.session-sidebar-item-row.current {
     border-color: color-mix(in srgb, var(--accent-color) 55%, var(--border-color) 45%);
     background: color-mix(in srgb, var(--bg-secondary) 80%, var(--accent-color) 20%);
 }
 
-.session-sidebar-item.archived {
+.session-sidebar-item-row.archived {
     opacity: 0.72;
+}
+
+.session-sidebar-item-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    padding: 8px 6px 8px 10px;
+    cursor: pointer;
+    font-size: 12px;
 }
 
 .session-sidebar-item-label {
@@ -135,26 +145,34 @@
     color: var(--text-secondary);
 }
 
-.session-sidebar-footer {
-    display: flex;
-    gap: 8px;
-    padding: 8px 12px;
-    border-top: 1px solid var(--border-color);
+.session-sidebar-item-menu {
+    flex: 0 0 auto;
+    align-self: center;
+    width: 24px;
+    height: 24px;
+    margin-right: 4px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    line-height: 1;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.session-sidebar-footer-btn {
-    flex: 1 1 auto;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
+.session-sidebar-item-menu:hover,
+.session-sidebar-item-menu[aria-expanded="true"] {
+    border-color: var(--border-color);
     background: var(--bg-secondary);
     color: var(--text-primary);
-    font-size: 11px;
-    padding: 6px 8px;
-    cursor: pointer;
 }
 
-.session-sidebar-footer-btn.danger {
-    color: var(--danger-color, #dc2626);
+.session-sidebar-item-dropdown {
+    min-width: 140px;
 }
 
 @media (min-width: 1024px) and (orientation: landscape) {

@@ -300,6 +300,8 @@ export function useMainAppOrchestrationComposition(options: UseMainAppOrchestrat
     getFormLock: helpers.getFormLock,
     setRenameBranchNameDraft: setters.setRenameBranchNameDraft,
     setIsRenameBranchFormOpen: setters.setIsRenameBranchFormOpen,
+    renameBranchFormTarget: shellState.renameBranchFormTarget,
+    setRenameBranchFormTarget: setters.setRenameBranchFormTarget,
     setIsRenamingBranch: setters.setIsRenamingBranch,
     renameChatBranch: services.renameChatBranch,
     pruneChatBranch: services.pruneChatBranch,

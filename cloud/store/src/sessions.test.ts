@@ -7,7 +7,9 @@ import {
   listSessions,
   purgeSession,
   renameSessionTitle,
+  renameSessionTitleIfTemporary,
   restoreSession,
+  UNTITLED_SESSION_TITLE,
 } from "./index.ts";
 
 const TEST_USER = "default-user";
@@ -57,6 +59,17 @@ describe("session archive lifecycle", () => {
 
     const renamed = await renameSessionTitle(TEST_SESSION, "Renamed Chat", TEST_USER);
     expect(renamed.title).toBe("Renamed Chat");
+
+    await createSession(`${TEST_SESSION}-temp`, UNTITLED_SESSION_TITLE, TEST_USER);
+    const autoRenamed = await renameSessionTitleIfTemporary(`${TEST_SESSION}-temp`, "Generated title", TEST_USER);
+    expect(autoRenamed?.title).toBe("Generated title");
+    const manualKeep = await renameSessionTitle(`${TEST_SESSION}-temp`, "Manual title", TEST_USER);
+    expect(manualKeep.title).toBe("Manual title");
+    const blocked = await renameSessionTitleIfTemporary(`${TEST_SESSION}-temp`, "Should not apply", TEST_USER);
+    expect(blocked).toBeNull();
+
+    await archiveSession(`${TEST_SESSION}-temp`, TEST_USER);
+    await purgeSession(`${TEST_SESSION}-temp`, TEST_USER);
 
     await archiveSession(TEST_SESSION, TEST_USER);
     const purged = await purgeSession(TEST_SESSION, TEST_USER);

@@ -1,4 +1,5 @@
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
+import { legacyDefaultChatJid, normalizeActiveChatJid } from './chat-jid.js';
 
 /** Shared localStorage key for the BTW side-conversation session cache. */
 export const BTW_SESSION_KEY = 'piclaw_btw_session';
@@ -117,7 +118,7 @@ function readTextParam(locationParams: LocationParamsLike, key: string, fallback
 }
 
 function normalizeChatJid(value: unknown): string | null {
-  const normalized = typeof value === 'string' ? value.trim() : '';
+  const normalized = normalizeActiveChatJid(value);
   return normalized || null;
 }
 
@@ -218,8 +219,8 @@ export function readAppLocationModes(
   locationParams: LocationParamsLike,
   options: ReadAppLocationModesOptions = {},
 ): AppLocationModes {
-  const defaultChatJid = options.defaultChatJid || 'web:default';
-  const currentChatJid = readTextParam(locationParams, 'chat_jid', defaultChatJid);
+  const defaultChatJid = options.defaultChatJid ?? legacyDefaultChatJid();
+  const currentChatJid = normalizeActiveChatJid(readTextParam(locationParams, 'chat_jid', defaultChatJid));
   const chatOnlyMode = readModeParam(locationParams?.get?.('chat_only') || locationParams?.get?.('chat-only'));
   const panePopoutMode = readModeParam(locationParams?.get?.('pane_popout'));
   const panePopoutPath = readTextParam(locationParams, 'pane_path');

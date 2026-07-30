@@ -34,6 +34,14 @@ export interface ListSessionsOptions {
   includeArchived?: boolean;
 }
 
+/** Default title for newly created sessions before async title generation. */
+export const UNTITLED_SESSION_TITLE = "New chat";
+
+export function isTemporarySessionTitle(title: string): boolean {
+  const trimmed = title.trim();
+  return trimmed === UNTITLED_SESSION_TITLE || trimmed === "Chat";
+}
+
 // ── sessions ──────────────────────────────────────────────────────────
 
 export async function createSession(
@@ -131,6 +139,36 @@ export async function renameSessionTitle(
     WHERE id = ${id} AND user_id = ${userId}
     RETURNING id, user_id, title, sandbox_id, archived_at`;
   return rows[0] as SessionRow;
+}
+
+/** Update title only while it is still the placeholder value (manual renames are preserved). */
+export async function renameSessionTitleIfTemporary(
+  id: string,
+  title: string,
+  userId = DEFAULT_USER_ID,
+): Promise<SessionRow | null> {
+  const existing = await getSessionForUser(id, userId);
+  if (!existing || !isTemporarySessionTitle(existing.title)) return null;
+
+  const nextTitle = title.trim();
+  if (!nextTitle || isTemporarySessionTitle(nextTitle)) return null;
+
+  const rows = await sql`
+    UPDATE sessions
+    SET title = ${nextTitle}, updated_at = now()
+    WHERE id = ${id}
+      AND user_id = ${userId}
+      AND title IN (${UNTITLED_SESSION_TITLE}, 'Chat')
+    RETURNING id, user_id, title, sandbox_id, archived_at`;
+  return (rows[0] as SessionRow) ?? null;
+}
+
+export async function countUserMessages(sessionId: string): Promise<number> {
+  const rows = await sql`
+    SELECT count(*)::int AS count
+    FROM messages
+    WHERE session_id = ${sessionId} AND role = 'user'`;
+  return Number(rows[0]?.count ?? 0);
 }
 
 export async function purgeSession(

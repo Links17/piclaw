@@ -1682,8 +1682,9 @@ export function Post({ post, onClick, onHashtagClick, onMessageRef, onScrollToMe
         }
     }, [cardBlocksKey, post.id]);
 
+    const isAgentSide = isAgent || isPeerAgentMessage;
     return html`
-        <div id=${`post-${post.id}`} class="post ${isAgent ? 'agent-post' : ''} ${isThreadReply ? 'thread-reply' : ''} ${isThreadPrev ? 'thread-prev' : ''} ${isThreadNext ? 'thread-next' : ''} ${isRemoving ? 'removing' : ''}" onClick=${onClick}>
+        <div id=${`post-${post.id}`} class="post ${isAgentSide ? 'agent-post' : 'user-post'} ${isThreadReply ? 'thread-reply' : ''} ${isThreadPrev ? 'thread-prev' : ''} ${isThreadNext ? 'thread-next' : ''} ${isRemoving ? 'removing' : ''}" onClick=${onClick}>
             <div class="post-avatar ${(isAgent || isPeerAgentMessage) ? 'agent-avatar' : ''} ${avatarInfo.image ? 'has-image' : ''}" style=${avatarStyle}>
                 ${avatarInfo.image ? html`<img src=${avatarInfo.image} alt=${displayName} />` : avatarInfo.letter}
             </div>

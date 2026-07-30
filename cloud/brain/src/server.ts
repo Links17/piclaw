@@ -37,6 +37,7 @@ import {
   renameChatBranch,
   restoreChatBranch,
   sendAgentMessage,
+  sendAgentMessageWithOptionalCreate,
   setAgentMode,
   spawnSubagentViaApi,
   steerSubagentForChat,
@@ -51,6 +52,53 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+
+function readRequestChatJid(url: URL): string | null {
+  const raw = url.searchParams.get("chat_jid");
+  return raw && raw.trim() ? raw.trim() : null;
+}
+
+function idleAgentStatusPayload(chatJid: string | null = null) {
+  return {
+    status: "idle",
+    chat_jid: chatJid,
+    data: { type: "done", title: "Idle", chat_jid: chatJid },
+  };
+}
+
+function emptyQueueState() {
+  return { count: 0, items: [] };
+}
+
+function noopSseResponse(): Response {
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+      send("connected", { chat_jid: null, chatJid: null, replica: config.replicaId });
+      heartbeat = setInterval(() => {
+        try {
+          send("heartbeat", { at: Date.now() });
+        } catch {
+          // closed
+        }
+      }, 15000);
+    },
+    cancel() {
+      if (heartbeat) clearInterval(heartbeat);
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
 function sseResponse(sessionId: string, chatJid?: string): Response {
   let cleanup: (() => void) | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
@@ -155,26 +203,30 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         // ── Web UI compatibility ──────────────────────────────────────
 
         if (req.method === "GET" && url.pathname === "/sse/stream") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(noopSseResponse());
           const sessionId = await ensureChatSession(chatJid);
           return respond(sseResponse(sessionId, chatJid));
         }
 
         if (req.method === "GET" && url.pathname === "/timeline") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
           const limit = Number(url.searchParams.get("limit") || 10);
+          if (!chatJid) return respond(json({ posts: [], limit, has_more: false }));
           const beforeRaw = url.searchParams.get("before_id");
           const before = beforeRaw ? Number(beforeRaw) : null;
           return respond(json(await getTimeline(chatJid, limit, before));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/status") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json(idleAgentStatusPayload()));
           return respond(json(await getAgentStatus(chatJid));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/queue-state") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json(emptyQueueState()));
           return respond(json(await getQueueState(chatJid));
         }
 
@@ -261,9 +313,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "POST" && url.pathname === "/agent/root-session") {
-          const body = await readJson(req);
-          const agentName = typeof body.agent_name === "string" ? body.agent_name : "Chat";
-          return respond(json(await createRootChatSession(agentName));
+          return withAuth(req, async ({ userId }) => respond(json(await createRootChatSession(userId))));
         }
 
         if (req.method === "POST" && url.pathname === "/agent/ui-state") {
@@ -271,7 +321,8 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "POST" && url.pathname === "/agent/question/answer") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
           const body = await readJson(req);
           const questionId = String(body.question_id ?? body.questionId ?? "");
           const answer = String(body.answer ?? body.content ?? "");
@@ -280,14 +331,16 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "POST" && url.pathname === "/agent/mode") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
           const body = await readJson(req);
           const mode = body.mode === "plan" ? "plan" : "execute";
           return respond(json(await setAgentMode(chatJid, mode));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/subagents") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ runs: [] }));
           return respond(json(await listSessionSubagents(chatJid));
         }
 
@@ -340,7 +393,18 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname === "/terminal/session") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) {
+            return respond(json({
+              enabled: config.sandboxEnabled,
+              transport: "websocket",
+              ws_path: "/terminal/ws",
+              cwd: "/workspace",
+              shell: "/bin/bash",
+              active: false,
+              connected_clients: 0,
+            }));
+          }
           return respond(json(getTerminalSessionInfo(chatJid));
         }
 
@@ -349,24 +413,27 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "POST" && parts[0] === "agent" && parts[1] && parts[2] === "message") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
-          const body = await readJson(req);
-          const content = String(body.content || "");
-          if (!content) return respond(json({ error: "content required" }, 400);
-          const mode = typeof body.mode === "string" ? body.mode : null;
-          try {
-            const result = await sendAgentMessage(chatJid, content, mode);
-            return respond(json(result);
-          } catch (error) {
-            if (error instanceof QuotaExceededError) {
-              return respond(json({ ok: false, ...error.toJson() }, 429);
+          return withAuth(req, async ({ userId }) => {
+            const chatJid = readRequestChatJid(url);
+            const body = await readJson(req);
+            const content = String(body.content || "");
+            if (!content) return respond(json({ error: "content required" }, 400));
+            const mode = typeof body.mode === "string" ? body.mode : null;
+            try {
+              const result = await sendAgentMessageWithOptionalCreate(chatJid, content, mode, userId);
+              return respond(json(result));
+            } catch (error) {
+              if (error instanceof QuotaExceededError) {
+                return respond(json({ ok: false, ...error.toJson() }, 429));
+              }
+              throw error;
             }
-            throw error;
-          }
+          });
         }
 
         if (req.method === "GET" && url.pathname === "/terminal/ws") {
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
           const sessionId = chatJidToSessionId(chatJid);
           const upgraded = server.upgrade(req, { data: { sessionId, chatJid } });
           if (upgraded) return undefined as unknown as Response;
@@ -501,7 +568,8 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
         if (parts[0] === "subagents" && parts[1]) {
           const runId = parts[1];
-          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
 
           if (req.method === "GET" && parts.length === 2) {
             return respond(json(await getSubagentStatus(chatJid, runId));

@@ -417,10 +417,10 @@ export async function forkChatBranch(sourceChatJid, options: ApiOptions = {}) {
 /**
  * Create a clean root chat session family.
  */
-export async function createRootChatSession(agentName) {
+export async function createRootChatSession(_agentName?: string) {
     return request('/agent/root-session', {
         method: 'POST',
-        body: JSON.stringify({ agent_name: agentName }),
+        body: JSON.stringify({}),
     });
 }
 

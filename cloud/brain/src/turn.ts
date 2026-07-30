@@ -20,6 +20,7 @@ import { trackTurnDelta, trackTurnFinished, trackTurnStarted, setPlanPreview } f
 import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuestionCleared } from "./tools/question.ts";
 import { getPendingQuestion } from "./question/state.ts";
 import { buildSkillsPromptSection } from "./skills/registry.ts";
+import { scheduleSessionTitleGeneration } from "./session-title.ts";
 import {
   TurnAbortedError,
   assertTurnNotAborted,
@@ -103,6 +104,10 @@ export async function submitMessage(sessionId: string, content: string): Promise
   if (!lock) {
     const counter = newCounter();
     const messageId = await store.insertMessage(sessionId, "user", messageContent, { counter });
+    const userMessageCount = await store.countUserMessages(sessionId);
+    if (userMessageCount === 1 && session?.user_id) {
+      scheduleSessionTitleGeneration(sessionId, session.user_id, messageContent);
+    }
     await store.enqueueFollowup(sessionId, { content: messageContent, messageId }, counter);
     await publish(sessionId, { type: "followup_queued", content: messageContent });
     await publish(sessionId, { type: "message", id: messageId, role: "user", content: messageContent });
@@ -121,6 +126,10 @@ export async function submitMessage(sessionId: string, content: string): Promise
   try {
     const counter = newCounter();
     userMessageId = await store.insertMessage(sessionId, "user", messageContent, { counter });
+    const userMessageCount = await store.countUserMessages(sessionId);
+    if (userMessageCount === 1 && session?.user_id) {
+      scheduleSessionTitleGeneration(sessionId, session.user_id, messageContent);
+    }
     await publish(sessionId, { type: "message", id: userMessageId, role: "user", content: messageContent });
     await runTurnLocked(sessionId, userMessageId, counter);
     await drainFollowups(sessionId);
