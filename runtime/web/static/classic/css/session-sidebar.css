@@ -58,19 +58,6 @@
     line-height: 1;
 }
 
-.session-sidebar-toolbar {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-color);
-    font-size: 11px;
-    color: var(--text-secondary);
-}
-
-.session-sidebar-toggle-archived {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .session-sidebar-list {
     flex: 1 1 auto;
     overflow: auto;

@@ -347,7 +347,6 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           onCreateRootSession=${handleCreateRootSessionFromCompose}
           onRenameSession=${openRenameBranchFormFor}
           onDeleteSession=${handlePruneCurrentBranch}
-          onRestoreSession=${handleRestoreBranch}
           onPurgeArchivedSession=${handlePurgeArchivedBranch}
           collapsed=${!sessionSidebarOpen}
           onToggleCollapsed=${toggleSessionSidebar}

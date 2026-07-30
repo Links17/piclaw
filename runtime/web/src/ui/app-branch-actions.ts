@@ -248,7 +248,7 @@ export async function pruneCurrentBranch(options: PruneCurrentBranchOptions): Pr
     return false;
   }
 
-  const label = `@${branch?.agent_name || chatJid}${branch?.chat_jid ? ` — ${branch.chat_jid}` : ''}`;
+  const label = branch?.agent_name?.trim() || chatJid;
   const confirmed = confirm(
     isRootBranch
       ? `Archive ${label}?\n\nThis removes the session from the session picker. Chat history is preserved.`

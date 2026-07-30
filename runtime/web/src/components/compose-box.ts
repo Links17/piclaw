@@ -8,7 +8,7 @@ import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { buildMentionValue, filterMentionAgents, parseMentionAutocompleteQuery } from '../ui/agent-mentions.js';
 import { shouldOpenSessionSwitcherFromBlankCompose, shouldRouteComposeValueToSessionSwitcher } from '../ui/compose-session-switcher.js';
 import { SESSION_SIDEBAR_OPEN_EVENT } from './session-sidebar.js';
-import { formatBranchPickerBaseLabel, formatBranchPickerLabel, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
+import { formatBranchPickerBaseLabel, formatSessionDisplayTitle, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
 import { buildComposeStatusDotClass } from '../ui/status-dot.js';
 import { getStatusElapsedLabel, isCompactionStatus, resolveStatusPanelTitle } from '../ui/status-duration.js';
 import { useConnectionStatusPresentation } from '../ui/connection-status.js';
@@ -1679,7 +1679,7 @@ export function ComposeBox({
             entries.push({
                 type: 'session',
                 key: `session:${chatJid}`,
-                label: `@${agentName} — ${chatJid}${chat?.is_active ? ' active' : ''}${archived ? ' archived' : ''}`,
+                label: formatSessionDisplayTitle(chat),
                 chat,
                 disabled: archived ? !canRestoreSession : !canSwitchSession,
             });
@@ -3322,7 +3322,6 @@ export function ComposeBox({
                                     const purgeConfirming = canPurgeArchived && pendingPurgeChatJid === chat.chat_jid;
                                     const pruneConfirming = canPrune && pendingPruneChatJid === chat.chat_jid;
                                     const deleteConfirming = purgeConfirming || pruneConfirming;
-                                    const label = formatBranchPickerLabel(chat, { currentChatJid });
                                     const baseLabel = formatBranchPickerBaseLabel(chat);
                                     const lifecycleBadges = getBranchLifecycleBadges(chat, { currentChatJid });
                                     return html`
@@ -3340,7 +3339,7 @@ export function ComposeBox({
                                                     handleSessionSwitch(chat.chat_jid);
                                                 }}
                                                 disabled=${archived ? !canRestoreSession : !canSwitchSession}
-                                                title=${archived ? `Restore archived ${label}` : `Switch to ${label}`}
+                                                title=${archived ? `Restore archived ${baseLabel}` : `Switch to ${baseLabel}`}
                                             >
                                                 <span class="compose-session-row-content" style=${isSessionPopupChatEmphasized(chat) ? 'font-weight:700' : ''}>
                                                     <span class="compose-session-row-label">${baseLabel}</span>

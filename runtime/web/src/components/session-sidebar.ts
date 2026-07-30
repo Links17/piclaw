@@ -1,7 +1,6 @@
 import { html, useCallback, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
-import { useTranslation } from '../utils/i18n.js';
 import { resolveSessionPopupChats } from './compose-box.js';
-import { formatBranchPickerBaseLabel, formatBranchPickerLabel, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
+import { formatBranchPickerBaseLabel, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
 import { getSessionRowCapabilities } from '../ui/session-row-capabilities.js';
 import { chatJidsMatch } from '../ui/chat-jid.js';
 import { BodyPortal } from './body-portal.js';
@@ -115,7 +114,6 @@ export function SessionSidebar({
   onCreateRootSession,
   onRenameSession,
   onDeleteSession,
-  onRestoreSession,
   onPurgeArchivedSession,
   collapsed = false,
   onToggleCollapsed,
@@ -127,19 +125,15 @@ export function SessionSidebar({
   onCreateRootSession?: () => void;
   onRenameSession?: (chatJid: string) => void;
   onDeleteSession?: (chatJid: string, options?: { confirmed?: boolean }) => Promise<boolean | void>;
-  onRestoreSession?: (chatJid: string) => void;
   onPurgeArchivedSession?: (chatJid: string, options?: { confirmed?: boolean }) => Promise<boolean | void>;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
-  const { t } = useTranslation();
-  const [showArchived, setShowArchived] = useState(false);
   const [openMenu, setOpenMenu] = useState<MenuAnchor | null>(null);
   const sessions = useMemo(() => {
     const all = resolveSessionPopupChats(activeChatAgents, currentChatJid, null);
-    if (showArchived) return all;
     return all.filter((chat) => !chat?.archived_at);
-  }, [activeChatAgents, currentChatJid, showArchived]);
+  }, [activeChatAgents, currentChatJid]);
   const openMenuChat = useMemo(
     () => (openMenu ? sessions.find((chat) => chat?.chat_jid === openMenu.chatJid) || null : null),
     [openMenu, sessions],
@@ -199,21 +193,14 @@ export function SessionSidebar({
           <button type="button" class="session-sidebar-icon-btn" onClick=${onToggleCollapsed} title="Hide sessions" aria-label="Hide sessions">×</button>
         </div>
       </div>
-      <div class="session-sidebar-toolbar">
-        <label class="session-sidebar-toggle-archived">
-          <input type="checkbox" checked=${showArchived} onChange=${(e: any) => setShowArchived(Boolean(e?.target?.checked))} />
-          ${t('settings.sessions.showArchived') || 'Show archived'}
-        </label>
-      </div>
       <div class="session-sidebar-list" role="listbox" aria-label="Sessions">
         ${sessions.length === 0 && html`<div class="session-sidebar-empty">No sessions</div>`}
         ${sessions.map((chat) => {
           const chatJid = String(chat?.chat_jid || '').trim();
           const isCurrent = chatJid && chatJidsMatch(chatJid, currentChatJid);
-          const label = formatBranchPickerLabel(chat, { currentChatJid });
           const baseLabel = formatBranchPickerBaseLabel(chat);
-          const badges = getBranchLifecycleBadges(chat, { currentChatJid });
-          const archived = Boolean(chat?.archived_at);
+          const badges = getBranchLifecycleBadges(chat, { currentChatJid })
+            .filter((badge) => badge !== 'current');
   const caps = getSessionRowCapabilities(chat, {
     currentChatJid,
     canDelete: typeof onDeleteSession === 'function',
@@ -223,7 +210,7 @@ export function SessionSidebar({
           return html`
             <div
               key=${chatJid || baseLabel}
-              class=${`session-sidebar-item-row${isCurrent ? ' current' : ''}${archived ? ' archived' : ''}`}
+              class=${`session-sidebar-item-row${isCurrent ? ' current' : ''}`}
               role="option"
               aria-selected=${isCurrent}
             >
@@ -232,11 +219,10 @@ export function SessionSidebar({
                 class="session-sidebar-item-main"
                 onClick=${() => {
                   closeMenu();
-                  if (archived && onRestoreSession) onRestoreSession(chatJid);
-                  else if (!isCurrent && onSwitchChat) onSwitchChat(chatJid);
+                  if (!isCurrent && onSwitchChat) onSwitchChat(chatJid);
                 }}
               >
-                <span class="session-sidebar-item-label">${label}</span>
+                <span class="session-sidebar-item-label" title=${chatJid}>${baseLabel}</span>
                 ${badges.length > 0 && html`
                   <span class="session-sidebar-item-badges">
                     ${badges.map((badge) => html`<span key=${badge} class="session-sidebar-badge">${badge}</span>`)}
