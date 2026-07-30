@@ -53,7 +53,7 @@ describe("@piclaw-cloud/shared sse-events", () => {
 });
 
 describe("subagent sse mapping", () => {
-  test("maps subagent_started to tool status", () => {
+  test("maps subagent_started to subagent_updated", () => {
     const mapped = mapInternalToSse(scope, {
       type: "subagent_started",
       runId: "run-1",
@@ -61,9 +61,29 @@ describe("subagent sse mapping", () => {
       task: "write demo",
       replica: "A",
     });
-    expect(mapped?.event).toBe("agent_status");
-    expect(mapped?.data.type).toBe("tool");
-    expect(mapped?.data.detail).toBe("coding:run-1");
+    expect(mapped?.event).toBe("subagent_updated");
+    expect(mapped?.data.status).toBe("running");
+    expect(mapped?.data.run_id).toBe("run-1");
     expect(mapped?.data.chat_jid).toBe("web:test");
+  });
+
+  test("maps question_asked to agent_question", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "question_asked",
+      questionId: "q-1",
+      question: "Pick one",
+      options: [{ label: "A" }],
+      replica: "A",
+    });
+    expect(mapped?.event).toBe("agent_question");
+    expect(mapped?.data.question_id).toBe("q-1");
+  });
+
+  test("maps question_cleared to agent_question_cleared", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "question_cleared",
+      replica: "A",
+    });
+    expect(mapped?.event).toBe("agent_question_cleared");
   });
 });

@@ -88,6 +88,10 @@ const INTERACTIVE_SELECTOR = [
   '.attachment-preview-modal',
   '.rename-branch-overlay',
   '.agent-request-modal',
+  '.agent-thinking-question',
+  '.agent-question-option',
+  '.agent-question-custom-input',
+  '.agent-question-submit',
   '.adaptive-card-container',
   '.adaptive-card-container input',
   '.adaptive-card-container textarea',
@@ -105,8 +109,13 @@ const SWIPE_PASSTHROUGH_ANCESTOR = [
   '.agent-thinking-intent',
 ].join(', ');
 
+const CHAT_SWIPE_BLOCKED_ANCESTOR = [
+  '.agent-thinking-question',
+].join(', ');
+
 export function isEligibleChatSwipeTarget(target: unknown): boolean {
   if (!target || !hasClosest(target)) return false;
+  if (target.closest(CHAT_SWIPE_BLOCKED_ANCESTOR)) return false;
   const interactiveMatch = target.closest(INTERACTIVE_SELECTOR);
   if (!interactiveMatch) return true;
   // Allow swipe if the interactive element is inside a passthrough container

@@ -2,9 +2,10 @@
  * Isolated coding tool loop — runs in Brain but executes only via sandbox tools.
  * Used as fallback when sandbox pi worker is unavailable, and for mock-coding tests.
  */
+import * as store from "@piclaw-cloud/store";
 import { config } from "../config.ts";
 import { publish } from "../events.ts";
-import { streamCompletionRound, type LlmUsage } from "../llm.ts";
+import { streamCompletionRound, LlmNotConfiguredError, type LlmUsage } from "../llm.ts";
 import { type OpenAiMessage, type OpenAiToolCall } from "../llm/messages.ts";
 import { dispatchTool } from "../tools/dispatcher.ts";
 import { CODING_TOOL_DEFINITIONS } from "../tools/coding-schemas.ts";
@@ -39,7 +40,7 @@ async function streamCodingRound(
   if (config.openaiBaseUrl && config.openaiApiKey) {
     return streamOpenAiCodingRound(messages, onDelta);
   }
-  return streamCompletionRound(messages, onDelta);
+  throw new LlmNotConfiguredError();
 }
 
 async function streamOpenAiCodingRound(
@@ -113,6 +114,7 @@ export async function runBrainCodingLoop(
     .join("\n");
 
   const userPrompt = task;
+  await store.insertSubagentMessage(runId, "user", userPrompt);
   let messages: OpenAiMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
@@ -133,11 +135,18 @@ export async function runBrainCodingLoop(
 
     if (result.toolCalls.length === 0) {
       finalText = result.text || "Coding subagent finished.";
+      if (finalText) {
+        await store.insertSubagentMessage(runId, "assistant", finalText);
+      }
       break;
     }
 
     const toolCalls = toOpenAiToolCalls(result.toolCalls);
-    messages.push({ role: "assistant", content: result.text || null, tool_calls: toolCalls });
+    const assistantContent = result.text || null;
+    messages.push({ role: "assistant", content: assistantContent, tool_calls: toolCalls });
+    if (assistantContent) {
+      await store.insertSubagentMessage(runId, "assistant", assistantContent);
+    }
 
     for (const call of result.toolCalls) {
       await publish(sessionId, {
@@ -166,11 +175,22 @@ export async function runBrainCodingLoop(
       });
 
       messages.push({ role: "tool", tool_call_id: call.id, content: toolResult.output });
+      await store.insertSubagentMessage(runId, "tool", toolResult.output, {
+        toolCallId: call.id,
+        toolName: call.name,
+      });
     }
 
     if (round === MAX_CODING_ROUNDS - 1) {
       finalText = result.text || "Coding subagent stopped at max tool rounds.";
+      if (finalText) {
+        await store.insertSubagentMessage(runId, "assistant", finalText);
+      }
     }
+  }
+
+  if (!finalText) {
+    finalText = "Coding subagent finished.";
   }
 
   const artifacts = extractArtifacts(finalText, task);

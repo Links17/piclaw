@@ -1,8 +1,12 @@
 /**
  * In-memory agent run preview state for /agent/status polling (classic Web UI).
  */
+import type { PendingQuestion } from "./question/state.ts";
+
 const inflightTurns = new Map<string, string>();
 const draftText = new Map<string, string>();
+const planText = new Map<string, string>();
+const pendingQuestions = new Map<string, PendingQuestion>();
 
 export function setInflightTurn(sessionId: string, turnId: string): void {
   inflightTurns.set(sessionId, turnId);
@@ -24,6 +28,26 @@ export function appendDraft(sessionId: string, delta: string): void {
 
 export function getDraft(sessionId: string): string {
   return draftText.get(sessionId) ?? "";
+}
+
+export function setPlanPreview(sessionId: string, text: string): void {
+  planText.set(sessionId, text);
+}
+
+export function getPlanPreview(sessionId: string): string {
+  return planText.get(sessionId) ?? "";
+}
+
+export function setPendingQuestionState(sessionId: string, pending: PendingQuestion): void {
+  pendingQuestions.set(sessionId, pending);
+}
+
+export function getPendingQuestionState(sessionId: string): PendingQuestion | null {
+  return pendingQuestions.get(sessionId) ?? null;
+}
+
+export function clearPendingQuestionState(sessionId: string): void {
+  pendingQuestions.delete(sessionId);
 }
 
 export function trackTurnStarted(sessionId: string, messageId: number): void {

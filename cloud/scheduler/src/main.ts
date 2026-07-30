@@ -63,11 +63,41 @@ async function sweepIdleSandboxes(): Promise<void> {
   }
 }
 
+async function sweepScheduledTasks(): Promise<void> {
+  const due = await store.listDueScheduledTasks(20);
+  const brainBase = process.env.CLOUD_BRAIN_URL || `http://127.0.0.1:${cloud.server.port}`;
+  for (const task of due) {
+    try {
+      const res = await fetch(`${brainBase.replace(/\/$/, "")}/sessions/${encodeURIComponent(task.session_id)}/subagents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: task.prompt,
+          description: `scheduled:${task.id}`,
+          subagent_type: "general-purpose",
+          run_in_background: true,
+        }),
+      });
+      if (res.ok) {
+        console.log(`[scheduler] spawned scheduled subagent for ${task.session_id} (${task.id})`);
+      } else {
+        console.warn(`[scheduler] failed to spawn ${task.id}: HTTP ${res.status}`);
+      }
+    } catch (error) {
+      console.warn(`[scheduler] scheduled task ${task.id} failed:`, error);
+    }
+  }
+}
+
 await applyMigrations();
 console.log(`[scheduler] idle=${idleMs}ms poll=${pollMs}ms`);
 await sweepIdleSandboxes();
+await sweepScheduledTasks();
 setInterval(() => {
   sweepIdleSandboxes().catch((error) => {
     console.error("[scheduler] sweep failed:", error);
+  });
+  sweepScheduledTasks().catch((error) => {
+    console.error("[scheduler] scheduled task sweep failed:", error);
   });
 }, pollMs);

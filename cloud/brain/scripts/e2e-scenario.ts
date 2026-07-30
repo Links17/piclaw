@@ -2,6 +2,8 @@
  * Phase 1e acceptance — Web adapter + sandbox bash + terminal WS + follow-up.
  *
  * Requires CubeSandbox cluster (CUBE_TEMPLATE_ID). Set CLOUD_SANDBOX_ENABLED=1 (default).
+ * Brain must be started with CLOUD_LLM_MOCK=1 for mock-tools steps ([3], [6], [7], [8]).
+ * Step [2] uses real LLM when openai is configured in brain.config.json.
  */
 import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
 import { healthCheck } from "../src/sandbox/client.ts";
@@ -11,6 +13,12 @@ applyE2bEnv();
 
 const BASE = process.env.CLOUD_E2E_BASE || "http://localhost:7801";
 const CHAT = `e2e-${Date.now()}`;
+
+if (process.env.CLOUD_LLM_MOCK !== "1") {
+  console.warn(
+    "\n⚠ mock-tools steps require brain started with CLOUD_LLM_MOCK=1, e.g.:\n  CLOUD_LLM_MOCK=1 cd cloud/brain && bun run start\n",
+  );
+}
 
 interface SseEvent {
   event: string;
@@ -236,6 +244,56 @@ console.log("\n[6] follow-up queue while busy");
   );
   check(events2.some((e) => e.event === "agent_followup_consumed"), "followup consumed event");
   sse2.abort();
+}
+
+console.log("\n[7] question tool (mock-tools:question)");
+{
+  const qChat = `${CHAT}-question`;
+  const eventsQ: SseEvent[] = [];
+  const sseQ = collectWebSse(qChat, eventsQ);
+  await Bun.sleep(300);
+  void postAgent(qChat, "mock-tools:question", true);
+  await waitFor(
+    () => eventsQ.some((e) => e.event === "agent_question"),
+    "agent_question SSE",
+    60_000,
+  );
+  const questionEvent = eventsQ.find((e) => e.event === "agent_question");
+  const questionId = String(questionEvent?.data.question_id ?? "");
+  check(Boolean(questionId), "question id present");
+  const answerRes = await fetch(`${BASE}/agent/question/answer?chat_jid=${encodeURIComponent(qChat)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_id: questionId, answer: "Wio Terminal" }),
+  });
+  check(answerRes.ok, "question answer accepted");
+  await waitFor(
+    () => eventsQ.some((e) => e.event === "agent_question_cleared") || eventsQ.some((e) => e.event === "agent_response"),
+    "question cleared or response after answer",
+    60_000,
+  );
+  await waitFor(
+    () => eventsQ.some((e) => e.event === "agent_response"),
+    "response after question answer",
+    60_000,
+  );
+  sseQ.abort();
+}
+
+console.log("\n[8] abort during mock turn");
+{
+  const abortChat = `${CHAT}-abort`;
+  void postAgent(abortChat, "mock-tools: medium busy turn");
+  await Bun.sleep(500);
+  const abortRes = await fetch(`${BASE}/agent/default/message?chat_jid=${encodeURIComponent(abortChat)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: "/abort", mode: "steer" }),
+  });
+  check(abortRes.ok, "abort accepted");
+  const abortBody = (await abortRes.json()) as { ui_only?: boolean; command?: { status?: string } };
+  check(Boolean(abortBody.ui_only), "abort ui_only response");
+  check(abortBody.command?.status === "success", "abort command success");
 }
 
 console.log(failures === 0 ? "\nPHASE 1e ACCEPTANCE PASSED" : `\n${failures} CHECK(S) FAILED`);

@@ -1,5 +1,6 @@
 /** OpenAI-compatible function tool definitions for the brain tool loop. */
-export const TOOL_DEFINITIONS = [
+
+export const CORE_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
@@ -63,9 +64,96 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
-      name: "coding_agent",
+      name: "question",
       description:
-        "Delegate a coding task to an isolated sandbox worker. Returns summary and artifacts only — not the full coding transcript.",
+        "Ask the user a clarifying question with options. Blocks until the user answers. Use when requirements are ambiguous.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The question to ask the user" },
+          options: {
+            type: "array",
+            description: "Options for the user to choose from",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Display label for the option" },
+                description: { type: "string", description: "Optional description shown below label" },
+              },
+              required: ["label"],
+            },
+          },
+        },
+        required: ["question", "options"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "skill",
+      description:
+        "Load the full instructions for a skill by name. Use after checking the skills catalog in the system prompt.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Skill name from the catalog" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "todo",
+      description: "Manage a session todo list for multi-step tasks.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["list", "add", "toggle", "clear"],
+            description: "Todo action",
+          },
+          text: { type: "string", description: "Todo text (for add)" },
+          id: { type: "number", description: "Todo ID (for toggle)" },
+        },
+        required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "Agent",
+      description:
+        "Launch a specialized subagent to perform a task. Supports background execution and resume.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Task prompt for the subagent" },
+          description: { type: "string", description: "Short human-readable description of the task" },
+          subagent_type: {
+            type: "string",
+            enum: ["general-purpose", "explore", "plan"],
+            description: "Subagent type",
+          },
+          model: { type: "string", description: "Optional model override" },
+          max_turns: { type: "number", description: "Maximum tool rounds for the subagent" },
+          run_in_background: { type: "boolean", description: "Return immediately while subagent runs in background" },
+          resume: { type: "string", description: "Resume a previous subagent run by run id" },
+          schedule: { type: "string", description: "Optional schedule e.g. cron, interval, +10m" },
+        },
+        required: ["prompt", "description", "subagent_type"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "coding_agent",
+      description: "Deprecated alias for Agent(subagent_type=general-purpose).",
       parameters: {
         type: "object",
         properties: {
@@ -77,6 +165,64 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_subagent_result",
+      description: "Fetch the result of a background subagent run, optionally waiting until completion.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: { type: "string", description: "Subagent run id" },
+          wait: { type: "boolean", description: "Block until the subagent finishes" },
+          verbose: { type: "boolean", description: "Include extra run metadata" },
+        },
+        required: ["agent_id"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "steer_subagent",
+      description: "Send a steering message to a running subagent.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: { type: "string", description: "Subagent run id" },
+          message: { type: "string", description: "Steering instruction for the subagent" },
+        },
+        required: ["agent_id", "message"],
+      },
+    },
+  },
 ];
 
-export const TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((t) => t.function.name));
+const PLAN_MODE_ALLOWED = new Set(["read", "bash", "question", "todo", "skill"]);
+
+export type ToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
+export function getToolDefinitionsForMode(
+  mode: "plan" | "execute",
+  extra: ToolDefinition[] = [],
+): ToolDefinition[] {
+  const merged = [...CORE_TOOL_DEFINITIONS, ...extra];
+  if (mode === "plan") {
+    return merged.filter((tool) => PLAN_MODE_ALLOWED.has(tool.function.name));
+  }
+  return merged;
+}
+
+export function toolNamesForMode(mode: "plan" | "execute", extra: ToolDefinition[] = []): Set<string> {
+  return new Set(getToolDefinitionsForMode(mode, extra).map((tool) => tool.function.name));
+}
+
+export const TOOL_DEFINITIONS = getToolDefinitionsForMode("execute");
+export const TOOL_NAMES = toolNamesForMode("execute");

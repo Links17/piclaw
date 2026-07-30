@@ -1,9 +1,22 @@
 import { readFile, writeFile } from "../sandbox/fs.ts";
 import { ensureSandbox } from "../sandbox/session.ts";
 import { formatCodingSubagentToolResult, runCodingSubagent } from "../subagents/gateway.ts";
+import {
+  formatAgentToolResult,
+  getSubagentResult,
+  spawnAgent,
+  steerSubagent,
+} from "../subagents/manager.ts";
+import { normalizeSubagentRunId } from "../subagents/run-id.ts";
+import type { AgentToolOptions } from "../subagents/types.ts";
 import { applyUniqueEdit } from "./edit.ts";
 import { resolveWorkspacePath, WORKSPACE_ROOT } from "./path.ts";
-import { TOOL_NAMES } from "./schemas.ts";
+import { runQuestionTool } from "./question.ts";
+import { runSkillTool } from "./skill.ts";
+import { runTodoTool } from "./todo.ts";
+import { toolNamesForMode, type ToolDefinition } from "./schemas.ts";
+import { getMcpToolDefinitions, invokeMcpTool } from "../mcp/client.ts";
+import { TurnAbortedError } from "../turn-abort.ts";
 
 const MAX_OUTPUT_CHARS = 32_000;
 
@@ -17,13 +30,25 @@ export interface ToolDispatchResult {
   isError: boolean;
 }
 
+export interface ToolDispatchContext {
+  sessionMode?: "plan" | "execute";
+  mcpTools?: ToolDefinition[];
+}
+
 export async function dispatchTool(
   sessionId: string,
   name: string,
   args: Record<string, unknown>,
+  sessionMode: "plan" | "execute" = "execute",
+  mcpTools: ToolDefinition[] = [],
 ): Promise<ToolDispatchResult> {
-  if (!TOOL_NAMES.has(name)) {
-    return { output: `Unknown tool: ${name}`, isError: true };
+  const allowed = toolNamesForMode(sessionMode, mcpTools);
+  if (!allowed.has(name)) {
+    return { output: `Tool not available in ${sessionMode} mode: ${name}`, isError: true };
+  }
+
+  if (name.startsWith("mcp__")) {
+    return invokeMcpTool(name, args);
   }
 
   try {
@@ -36,12 +61,28 @@ export async function dispatchTool(
         return await runWriteTool(sessionId, args);
       case "edit":
         return await runEditTool(sessionId, args);
+      case "question":
+        return await runQuestionTool(sessionId, args as never);
+      case "todo":
+        return await runTodoTool(sessionId, args as never);
+      case "skill":
+        return await runSkillTool(sessionId, args as never);
+      case "Agent":
+        return await runAgentTool(sessionId, args);
       case "coding_agent":
         return await runCodingAgentTool(sessionId, args);
+      case "get_subagent_result":
+        return await getSubagentResult(sessionId, String(args.agent_id ?? ""), {
+          wait: Boolean(args.wait),
+          verbose: Boolean(args.verbose),
+        });
+      case "steer_subagent":
+        return await steerSubagent(sessionId, String(args.agent_id ?? ""), String(args.message ?? ""));
       default:
         return { output: `Unknown tool: ${name}`, isError: true };
     }
   } catch (error) {
+    if (error instanceof TurnAbortedError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     return { output: message, isError: true };
   }
@@ -86,6 +127,32 @@ async function runEditTool(sessionId: string, args: Record<string, unknown>): Pr
   return { output: `Edited ${path}`, isError: false };
 }
 
+async function runAgentTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const prompt = String(args.prompt ?? "").trim();
+  const description = String(args.description ?? "").trim();
+  const subagentType = String(args.subagent_type ?? "general-purpose") as AgentToolOptions["subagentType"];
+  if (!prompt) return { output: "prompt is required", isError: true };
+  if (!description) return { output: "description is required", isError: true };
+
+  const options: AgentToolOptions = {
+    prompt,
+    description,
+    subagentType,
+    model: typeof args.model === "string" ? args.model : undefined,
+    maxTurns: typeof args.max_turns === "number" ? args.max_turns : undefined,
+    runInBackground: Boolean(args.run_in_background),
+    resume: normalizeSubagentRunId(typeof args.resume === "string" ? args.resume : undefined) ?? undefined,
+    timeoutMs: typeof args.timeout_ms === "number" ? args.timeout_ms : undefined,
+    schedule: typeof args.schedule === "string" ? args.schedule : undefined,
+  };
+  const outcome = await spawnAgent(sessionId, options);
+  const isError = outcome.status === "failed" || outcome.status === "timed_out";
+  return {
+    output: formatAgentToolResult(outcome),
+    isError,
+  };
+}
+
 async function runCodingAgentTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
   const task = String(args.task ?? "").trim();
   if (!task) return { output: "task is required", isError: true };
@@ -97,4 +164,8 @@ async function runCodingAgentTool(sessionId: string, args: Record<string, unknow
     output: formatCodingSubagentToolResult(result),
     isError,
   };
+}
+
+export async function getDispatchMcpTools(): Promise<ToolDefinition[]> {
+  return getMcpToolDefinitions();
 }

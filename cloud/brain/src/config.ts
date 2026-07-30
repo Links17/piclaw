@@ -27,4 +27,7 @@ export const config = {
   maxDailyTokensPerUser: cloud.limits.maxDailyTokensPerUser,
   sandboxIdleMs: cloud.sandbox.idleMs,
   workspacePollIntervalMs: cloud.server.workspacePollIntervalMs,
+  questionTimeoutMs: cloud.question.timeoutMs,
+  subagentMaxConcurrent: cloud.subagentMaxConcurrent,
+  subagentMaxTurns: cloud.subagentMaxTurns,
 };

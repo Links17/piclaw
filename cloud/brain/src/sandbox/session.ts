@@ -2,7 +2,7 @@ import * as store from "@piclaw-cloud/store";
 import { config } from "../config.ts";
 import { QuotaExceededError } from "../quota.ts";
 import { cubeFetch } from "./auth.ts";
-import { connectSandbox, createSandbox, type Sandbox } from "./client.ts";
+import { connectSandbox, createSandbox, SandboxUnavailableError, type Sandbox } from "./client.ts";
 
 const live = new Map<string, Sandbox>();
 
@@ -29,6 +29,30 @@ async function assertSandboxQuota(sessionId: string): Promise<void> {
   }
 }
 
+async function clearStaleSandboxBinding(sessionId: string, staleSandboxId: string): Promise<void> {
+  console.warn(`[sandbox] stale sandbox_id cleared for ${sessionId}: ${staleSandboxId.slice(0, 12)}…`);
+  dropLiveSandbox(sessionId);
+  await store.clearSandboxId(sessionId);
+}
+
+async function connectOrRecreate(sessionId: string, sandboxId: string): Promise<Sandbox> {
+  try {
+    return await connectSandbox(sandboxId);
+  } catch (error) {
+    if (
+      error instanceof SandboxUnavailableError
+      && (error.code === "not_found" || error.code === "resume_failed")
+    ) {
+      await clearStaleSandboxBinding(sessionId, sandboxId);
+      const sbx = await createSandbox();
+      await store.setSandboxId(sessionId, sbx.sandboxId);
+      live.set(sessionId, sbx);
+      return sbx;
+    }
+    throw error;
+  }
+}
+
 /** Lazy-create or resume the sandbox bound to a session. */
 export async function ensureSandbox(sessionId: string): Promise<Sandbox> {
   if (!config.sandboxEnabled) {
@@ -42,12 +66,12 @@ export async function ensureSandbox(sessionId: string): Promise<Sandbox> {
   if (!session) throw new Error(`unknown session ${sessionId}`);
 
   const sbx = session.sandbox_id
-    ? await connectSandbox(session.sandbox_id)
+    ? await connectOrRecreate(sessionId, session.sandbox_id)
     : await createSandbox();
 
   if (!session.sandbox_id) {
     await store.setSandboxId(sessionId, sbx.sandboxId);
-  } else {
+  } else if (!live.has(sessionId)) {
     await store.clearSandboxPaused(sessionId);
   }
   live.set(sessionId, sbx);

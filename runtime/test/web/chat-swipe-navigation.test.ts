@@ -107,6 +107,16 @@ test('isEligibleChatSwipeTarget allows swipe on agent-thinking buttons', () => {
   expect(isEligibleChatSwipeTarget(thinkingButton)).toBe(true);
 });
 
+test('isEligibleChatSwipeTarget blocks swipe on agent question controls', () => {
+  const questionOption = {
+    closest: (selector: string) => {
+      if (selector.includes('.agent-thinking-question')) return {} as Element;
+      return null;
+    },
+  };
+  expect(isEligibleChatSwipeTarget(questionOption)).toBe(false);
+});
+
 test('hasActiveTextSelection only returns true for non-collapsed non-empty selections', () => {
   expect(hasActiveTextSelection({
     getSelection: () => ({ isCollapsed: false, toString: () => 'selected text' }),

@@ -205,6 +205,9 @@ export function renderMainShell(options: MainShellRenderOptions): any {
     agentThought,
     pendingRequest,
     intentToast,
+    cloudAgentQuestion,
+    cloudAgentFleet,
+    onCloudAgentQuestionAnswered,
     currentTurnId,
     steerQueued,
     handlePanelToggle,
@@ -514,6 +517,10 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           thought=${agentThought}
           pendingRequest=${pendingRequest}
           intent=${intentToast}
+          question=${cloudAgentQuestion}
+          fleetRuns=${cloudAgentFleet}
+          chatJid=${currentChatJid}
+          onQuestionAnswered=${onCloudAgentQuestionAnswered}
           turnId=${currentTurnId}
           steerQueued=${steerQueued}
           onPanelToggle=${handlePanelToggle}

@@ -8,6 +8,9 @@ import { getStatusElapsedLabel, getStatusRetryCountdownLabel, isCompactionStatus
 import { extractToolContextPath } from '../ui/tool-git-context.js';
 import { useConnectionStatusPresentation } from '../ui/connection-status.js';
 import { renderDisclosureTriangle } from '../ui/disclosure-triangle.js';
+import { AgentQuestionPanel } from './agent-question-panel.js';
+import { AgentSubagentPanel } from './agent-subagent-panel.js';
+import type { CloudFleetRun } from '../ui/app-cloud-agent-extensions.js';
 
 const COPY_ICON_SVG = html`
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -339,7 +342,7 @@ function formatElapsed(isoString, nowMs = Date.now()) {
     return `${s}s`;
 }
 
-export function AgentStatus({ status, draft, plan, thought, pendingRequest, intent, extensionPanels = [], pendingPanelActions = new Set(), onExtensionPanelAction, turnId, steerQueued, onPanelToggle, showCorePanels = true, showExtensionPanels = true }) {
+export function AgentStatus({ status, draft, plan, thought, pendingRequest, intent, question, fleetRuns = [], chatJid, onQuestionAnswered, extensionPanels = [], pendingPanelActions = new Set(), onExtensionPanelAction, turnId, steerQueued, onPanelToggle, showCorePanels = true, showExtensionPanels = true }) {
     const { t } = useTranslation();
     const THOUGHT_MAX_LINES = 9;
     const DRAFT_MAX_LINES = 9;
@@ -402,7 +405,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
     const hasDraft = Boolean(draftInfo.fullText?.trim() || draftInfo.text?.trim());
     const hasToolOutput = Boolean(toolOutputInfo.fullText?.trim() || toolOutputInfo.text?.trim());
 
-    const hasCorePanels = Boolean(status || hasDraft || hasPlan || hasThought || hasToolOutput || pendingRequest || intent);
+    const hasCorePanels = Boolean(status || hasDraft || hasPlan || hasThought || hasToolOutput || pendingRequest || intent || question);
     const hasExtensionPanels = Array.isArray(extensionPanels) && extensionPanels.length > 0;
 
     const [expandedPanels, setExpandedPanels] = useState(new Set());
@@ -1040,7 +1043,20 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
                 titleClass: 'tool-output',
                 panelKey: 'tool-output',
             })}
-            ${showCorePanels && status && status?.type !== 'intent' && html`
+            ${showCorePanels && question && chatJid && html`
+                <${AgentQuestionPanel}
+                    question=${question}
+                    chatJid=${chatJid}
+                    onAnswered=${onQuestionAnswered}
+                />
+            `}
+            ${showCorePanels && fleetRuns.length > 0 && chatJid && html`
+                <${AgentSubagentPanel}
+                    runs=${fleetRuns}
+                    chatJid=${chatJid}
+                />
+            `}
+            ${showCorePanels && status && status?.type !== 'intent' && status?.type !== 'question' && html`
                 <div class=${`agent-status${isLastActivity ? ' agent-status-last-activity' : ''}${status?.type === 'error' ? ' agent-status-error' : ''}${toolRepoLabel || statusHints.length > 0 || statusActivityAgeLabel ? ' agent-status-multiline' : ''}`} aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
                     ${turnColor && showRunningStatusDot && html`<span class=${dotClass} aria-hidden="true"></span>`}
                     ${status?.type === 'error'

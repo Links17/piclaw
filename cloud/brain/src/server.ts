@@ -13,6 +13,7 @@ import { submitMessage, sweepInflight } from "./turn.ts";
 import { handleWorkspaceRoutes } from "./workspace/routes.ts";
 import {
   agentResponseSsePayload,
+  answerAgentQuestion,
   chatJidToSessionId,
   createRootChatSession,
   createTerminalHandoff,
@@ -22,9 +23,23 @@ import {
   getAgentsRoster,
   getChatBranches,
   getQueueState,
+  getSubagentStatus,
+  getSubagentTranscript,
   getTerminalSessionInfo,
   getTimeline,
+  listSessionSubagents,
+  installSkillForUser,
+  listUserSkills,
+  pruneChatBranch,
+  purgeChatBranch,
+  removeUserSkill,
+  renameChatBranch,
+  restoreChatBranch,
   sendAgentMessage,
+  setAgentMode,
+  spawnSubagentViaApi,
+  steerSubagentForChat,
+  stopSubagentForChat,
   userPostPayload,
 } from "./web-adapter.ts";
 
@@ -168,17 +183,76 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
         if (req.method === "GET" && url.pathname === "/agent/branches") {
           return withAuth(req, async ({ userId }) => {
-            const sessions = await store.listSessions(userId);
-            return json({
-              chats: sessions.map((session) => ({
-                chat_jid: session.id,
-                root_chat_jid: session.id,
-                agent_name: session.title?.trim() || session.id,
-                title: session.title?.trim() || session.id,
-                is_root: true,
-              })),
-            });
+            const includeArchived = url.searchParams.get("include_archived") === "1";
+            return json(await getChatBranches({ includeArchived, userId }));
           });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/branch-prune") {
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
+            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
+            try {
+              return json(await pruneChatBranch(chatJid, userId));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error || "Failed to prune branch.");
+              return json({ error: message || "Failed to prune branch." }, 400);
+            }
+          });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/branch-purge") {
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
+            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
+            try {
+              return json(await purgeChatBranch(chatJid, userId));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error || "Failed to permanently delete archived branch.");
+              return json({ error: message || "Failed to permanently delete archived branch." }, 400);
+            }
+          });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/branch-restore") {
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
+            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
+            const agentName = typeof body.agent_name === "string" ? body.agent_name : undefined;
+            try {
+              return json(await restoreChatBranch(chatJid, userId, agentName));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error || "Failed to restore branch.");
+              return json({ error: message || "Failed to restore branch." }, 400);
+            }
+          });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/branch-rename") {
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
+            const agentName = typeof body.agent_name === "string" ? body.agent_name.trim() : "";
+            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
+            if (!agentName) return json({ error: "Missing agent_name" }, 400);
+            try {
+              return json(await renameChatBranch(chatJid, userId, agentName));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error || "Failed to rename branch.");
+              return json({ error: message || "Failed to rename branch." }, 400);
+            }
+          });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/branch-fork") {
+          return json({ error: "Branch fork is not available in cloud mode." }, 501);
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/branch-merge-parent") {
+          return json({ error: "Branch merge is not available in cloud mode." }, 501);
         }
 
         if (req.method === "POST" && url.pathname === "/agent/root-session") {
@@ -189,6 +263,27 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
         if (req.method === "POST" && url.pathname === "/agent/ui-state") {
           return json({ ok: true });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/question/answer") {
+          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const body = await readJson(req);
+          const questionId = String(body.question_id ?? body.questionId ?? "");
+          const answer = String(body.answer ?? body.content ?? "");
+          if (!questionId || !answer) return json({ error: "question_id and answer required" }, 400);
+          return json(await answerAgentQuestion(chatJid, questionId, answer));
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/mode") {
+          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          const body = await readJson(req);
+          const mode = body.mode === "plan" ? "plan" : "execute";
+          return json(await setAgentMode(chatJid, mode));
+        }
+
+        if (req.method === "GET" && url.pathname === "/agent/subagents") {
+          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+          return json(await listSessionSubagents(chatJid));
         }
 
         if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
@@ -213,6 +308,30 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
         if (req.method === "GET" && url.pathname === "/agent/context") {
           return json({ tokens: null, context_window: null, percent: null });
+        }
+
+        if (req.method === "GET" && url.pathname === "/agent/autoresearch/status") {
+          return json({ content: [] });
+        }
+
+        if (req.method === "POST" && url.pathname.startsWith("/agent/autoresearch/")) {
+          return json({ ok: true });
+        }
+
+        if (req.method === "GET" && url.pathname === "/agent/addons/web-entries") {
+          return json({ entries: [] });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/push/presence") {
+          return json({ ok: true });
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/push/subscription") {
+          return json({ ok: true });
+        }
+
+        if (req.method === "DELETE" && url.pathname === "/agent/push/subscription") {
+          return json({ ok: true });
         }
 
         if (req.method === "GET" && url.pathname === "/terminal/session") {
@@ -247,6 +366,37 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const upgraded = server.upgrade(req, { data: { sessionId, chatJid } });
           if (upgraded) return undefined as unknown as Response;
           return json({ error: "websocket upgrade failed" }, 400);
+        }
+
+        if (req.method === "GET" && url.pathname === "/skills") {
+          return withAuth(req, async ({ userId }) => json(await listUserSkills(userId)));
+        }
+
+        if (req.method === "POST" && url.pathname === "/skills") {
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            try {
+              return json(await installSkillForUser(userId, {
+                name: String(body.name ?? ""),
+                description: typeof body.description === "string" ? body.description : "",
+                content: String(body.content ?? ""),
+              }));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              return json({ error: message }, 400);
+            }
+          });
+        }
+
+        if (req.method === "DELETE" && parts[0] === "skills" && parts[1]) {
+          return withAuth(req, async ({ userId }) => {
+            try {
+              return json(await removeUserSkill(userId, decodeURIComponent(parts[1]!)));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              return json({ error: message }, 404);
+            }
+          });
         }
 
         // ── Native session API ────────────────────────────────────────
@@ -318,6 +468,17 @@ export function startServer(): ReturnType<typeof Bun.serve> {
             });
           }
 
+          if (req.method === "POST" && parts[2] === "subagents") {
+            return withAuth(req, async ({ userId }) => {
+              await requireSessionAccess(sessionId, userId);
+              const body = await readJson(req);
+              const result = await spawnSubagentViaApi(sessionId, body);
+              if (!result.success) return json({ success: false, error: result.error }, 400);
+              return json({ success: true, data: result.data });
+            });
+          }
+
+
           if (req.method === "GET" && parts[2] === "cursor") {
             return withAuth(req, async ({ userId }) => {
               await requireSessionAccess(sessionId, userId);
@@ -332,6 +493,30 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
         const workspaceResponse = await handleWorkspaceRoutes(req, url.pathname);
         if (workspaceResponse) return workspaceResponse;
+
+        if (parts[0] === "subagents" && parts[1]) {
+          const runId = parts[1];
+          const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
+
+          if (req.method === "GET" && parts.length === 2) {
+            return json(await getSubagentStatus(chatJid, runId));
+          }
+
+          if (req.method === "GET" && parts[2] === "messages") {
+            return json(await getSubagentTranscript(chatJid, runId));
+          }
+
+          if (req.method === "POST" && parts[2] === "steer") {
+            const body = await readJson(req);
+            const message = String(body.message ?? body.content ?? "");
+            if (!message) return json({ success: false, error: "message required" }, 400);
+            return json(await steerSubagentForChat(chatJid, runId, message));
+          }
+
+          if (req.method === "POST" && parts[2] === "stop") {
+            return json(await stopSubagentForChat(chatJid, runId));
+          }
+        }
 
         const staticResponse = serveStaticRequest(req);
         if (staticResponse) return staticResponse;

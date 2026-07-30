@@ -8,6 +8,9 @@ export function useAgentState() {
   const [pendingRequest, setPendingRequest] = useState(null);
   const [currentTurnId, setCurrentTurnId] = useState(null);
   const [steerQueuedTurnId, setSteerQueuedTurnId] = useState(null);
+  const [agentQuestion, setAgentQuestion] = useState(null);
+  const [fleetRuns, setFleetRuns] = useState([]);
+  const [selectedSubagentRunId, setSelectedSubagentRunId] = useState(null);
 
   const lastAgentEventRef = useRef(null);
   const lastSilenceNoticeRef = useRef(0);
@@ -38,6 +41,12 @@ export function useAgentState() {
     setCurrentTurnId,
     steerQueuedTurnId,
     setSteerQueuedTurnId,
+    agentQuestion,
+    setAgentQuestion,
+    fleetRuns,
+    setFleetRuns,
+    selectedSubagentRunId,
+    setSelectedSubagentRunId,
     lastAgentEventRef,
     lastSilenceNoticeRef,
     isAgentRunningRef,
