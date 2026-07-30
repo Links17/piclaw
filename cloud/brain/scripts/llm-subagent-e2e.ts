@@ -3,10 +3,11 @@
  *
  * Requires:
  *   - brain running (CLOUD_E2E_BASE, default http://localhost:7801)
- *   - CLOUD_OPENAI_* or POC_OPENAI_*
+ *   - openai config in cloud/brain.config.json (or POC_OPENAI_* env)
  *   - CubeSandbox cluster
- *   - CLOUD_CODING_WORKER_MODE=sandbox (recommended)
+ *   - subagent.codingWorkerMode=sandbox in config (recommended)
  */
+import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
 import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
 import { getAccessToken } from "../src/sandbox/auth.ts";
@@ -104,6 +105,10 @@ async function reclaimSandboxQuota(): Promise<void> {
       cwd: new URL("..", import.meta.url).pathname,
       stdout: "inherit",
       stderr: "inherit",
+      env: {
+        ...process.env,
+        CLOUD_MAX_ACTIVE_SANDBOXES: process.env.CLOUD_MAX_ACTIVE_SANDBOXES || "10",
+      },
     });
     await proc.exited;
   } catch {
@@ -164,16 +169,14 @@ console.log("LLM + Subagent E2E");
 console.log(`  brain:  ${BASE}`);
 console.log(`  chat:   ${CHAT}`);
 console.log(`  cube:   ${sandboxConfig.apiUrl}`);
-console.log(`  worker: ${process.env.CLOUD_CODING_WORKER_MODE || "auto"}`);
+console.log(`  worker: ${getCloudConfig().subagent.codingWorkerMode}`);
 
-process.env.CLOUD_MAX_ACTIVE_SANDBOXES = process.env.CLOUD_MAX_ACTIVE_SANDBOXES || "10";
-
-if (!process.env.CLOUD_OPENAI_API_KEY && !process.env.POC_OPENAI_API_KEY) {
-  console.error("\nMissing CLOUD_OPENAI_API_KEY or POC_OPENAI_API_KEY.");
+if (!getCloudConfig().openai.apiKey) {
+  console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or POC_OPENAI_API_KEY.");
   process.exit(2);
 }
-if (!process.env.CLOUD_OPENAI_BASE_URL && !process.env.POC_OPENAI_BASE_URL) {
-  console.error("\nMissing CLOUD_OPENAI_BASE_URL or POC_OPENAI_BASE_URL.");
+if (!getCloudConfig().openai.baseUrl) {
+  console.error("\nMissing openai.baseUrl — set in cloud/brain.config.json or POC_OPENAI_BASE_URL.");
   process.exit(2);
 }
 
@@ -194,7 +197,7 @@ const sandboxReady = await preflightSandbox();
 
 try {
   const brainHealth = await fetch(`${BASE}/health`);
-  if (!brainHealth.ok) throw new Error("brain not running — start brain with LLM + sandbox env");
+  if (!brainHealth.ok) throw new Error("brain not running — start brain with cloud/brain.config.json");
 } catch (error) {
   console.error(String(error));
   process.exit(2);

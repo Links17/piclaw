@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./sse-events": "./src/sse-events.ts"
+    "./sse-events": "./src/sse-events.ts",
+    "./cloud-config": "./src/cloud-config.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

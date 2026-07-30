@@ -1,7 +1,7 @@
 /**
  * HTTP surface — native session API + runtime/web compatibility shim.
  */
-import { mapInternalToWeb } from "@piclaw-cloud/shared/sse-events";
+import { mapInternalToSse, type SseScope } from "@piclaw-cloud/shared/sse-events";
 import * as store from "@piclaw-cloud/store";
 import { applyMigrations } from "@piclaw-cloud/store/db";
 import { AuthError, requireSessionAccess, resolveRequestUser } from "./auth.ts";
@@ -25,6 +25,7 @@ import {
   getTerminalSessionInfo,
   getTimeline,
   sendAgentMessage,
+  userPostPayload,
 } from "./web-adapter.ts";
 
 function json(body: unknown, status = 200): Response {
@@ -45,14 +46,31 @@ function sseResponse(sessionId: string, chatJid?: string): Response {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
       const jid = chatJid ?? sessionId;
-      send("connected", { chatJid: jid, replica: config.replicaId });
+      send("connected", { chat_jid: jid, chatJid: jid, replica: config.replicaId });
+      let activeTurnId: string | null = null;
       cleanup = subscribe(sessionId, (event: SessionEvent) => {
+        if (event.type === "turn_started") {
+          activeTurnId = String(event.messageId);
+        }
+
+        if (event.type === "message" && event.role === "user") {
+          send("new_post", userPostPayload(jid, event.id, event.content));
+          return;
+        }
+
         if (event.type === "message" && event.role === "assistant") {
           send("agent_response", agentResponseSsePayload(jid, event.id, event.content, event.recovery));
+          return;
         }
-        const mapped = mapInternalToWeb(sessionId, event);
-        if (mapped && mapped.type !== "heartbeat") {
-          send(mapped.type, mapped);
+
+        const scope: SseScope = { chatJid: jid, turnId: activeTurnId };
+        const envelope = mapInternalToSse(scope, event);
+        if (envelope) {
+          send(envelope.event, envelope.data);
+        }
+
+        if (event.type === "turn_done" || event.type === "turn_failed") {
+          activeTurnId = null;
         }
       });
       heartbeat = setInterval(() => {
@@ -272,16 +290,17 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
               const outcomePromise = submitMessage(sessionId, content);
               if (url.searchParams.get("wait") === "1") {
-                return json({ outcome: await outcomePromise, replica: config.replicaId });
+                const result = await outcomePromise;
+                return json({ outcome: result.outcome, user_message_id: result.userMessageId, replica: config.replicaId });
               }
-              const outcome = await Promise.race([
-                outcomePromise.catch(() => "ran" as const),
-                Bun.sleep(120).then(() => "ran" as const),
+              const result = await Promise.race([
+                outcomePromise.catch(() => ({ outcome: "ran" as const, userMessageId: 0 })),
+                Bun.sleep(120).then(() => ({ outcome: "ran" as const, userMessageId: 0 })),
               ]);
               outcomePromise.catch((error) => {
                 console.error(`[${config.replicaId}] turn failed:`, error);
               });
-              return json({ outcome, replica: config.replicaId });
+              return json({ outcome: result.outcome, user_message_id: result.userMessageId, replica: config.replicaId });
             });
           }
 

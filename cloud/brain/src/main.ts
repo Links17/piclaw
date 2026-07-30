@@ -1,3 +1,4 @@
+import "./bootstrap-config.ts";
 import { config } from "./config.ts";
 import { bootstrapSchema, startRecoverySweep, startServer } from "./server.ts";
 

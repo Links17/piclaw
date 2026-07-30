@@ -4,6 +4,16 @@
  */
 export type AgentStatus = "idle" | "thinking" | "streaming" | "tool" | "error";
 
+export interface SseScope {
+  chatJid: string;
+  turnId?: string | null;
+}
+
+export interface SseEnvelope {
+  event: string;
+  data: Record<string, unknown>;
+}
+
 /** Events the Web UI SSEClient already handles (runtime/web/src/ui/app-sse-events.ts). */
 export type WebSseEvent =
   | { type: "connected"; chatJid: string }
@@ -36,42 +46,97 @@ export type InternalSessionEvent =
   | { type: "subagent_tool_result"; runId: string; name: string; toolCallId: string; isError: boolean; replica: string }
   | { type: "subagent_done"; runId: string; status: string; summary: string; artifacts: string[]; replica: string };
 
-export function mapInternalToWeb(
-  sessionId: string,
-  event: InternalSessionEvent,
-): WebSseEvent | { type: "heartbeat" } | null {
+function scoped(scope: SseScope, data: Record<string, unknown>): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...data, chat_jid: scope.chatJid };
+  if (scope.turnId) payload.turn_id = scope.turnId;
+  return payload;
+}
+
+function agentStatusEnvelope(
+  scope: SseScope,
+  statusType: string,
+  title: string,
+  extra: Record<string, unknown> = {},
+): SseEnvelope {
+  return {
+    event: "agent_status",
+    data: scoped(scope, { type: statusType, title, ...extra }),
+  };
+}
+
+/** Map internal bus events to classic Web UI SSE envelopes. */
+export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): SseEnvelope | null {
   switch (event.type) {
     case "delta":
-      return { type: "agent_draft_delta", delta: event.text };
-    case "message":
-      if (event.role !== "assistant") return null;
       return {
-        type: "agent_response",
-        messageId: String(event.id),
-        content: event.content,
-        recovery: event.recovery,
+        event: "agent_draft_delta",
+        data: scoped(scope, { delta: event.text }),
       };
+    case "message":
+      return null;
     case "turn_started":
-      return { type: "agent_status", status: "streaming" };
+      return agentStatusEnvelope(
+        { ...scope, turnId: String(event.messageId) },
+        "thinking",
+        "Thinking...",
+      );
     case "turn_done":
-      return { type: "agent_status", status: "idle" };
+      return agentStatusEnvelope(scope, "done", "Idle");
     case "turn_failed":
-      return { type: "agent_status", status: "error", detail: event.error };
+      return agentStatusEnvelope(scope, "error", event.error, { detail: event.error });
     case "followup_queued":
-      return { type: "agent_followup_queued", content: event.content };
+      return {
+        event: "agent_followup_queued",
+        data: scoped(scope, { content: event.content }),
+      };
     case "followup_consumed":
-      return { type: "agent_followup_consumed", content: event.content };
+      return {
+        event: "agent_followup_consumed",
+        data: scoped(scope, { content: event.content }),
+      };
     case "tool_start":
-      return { type: "agent_status", status: "tool", detail: event.name };
+      return agentStatusEnvelope(scope, "tool", event.name, { detail: event.name });
     case "tool_result":
-      return { type: "agent_status", status: "streaming" };
+      return agentStatusEnvelope(scope, "streaming", "Working...");
     case "subagent_started":
-      return { type: "agent_status", status: "tool", detail: `coding:${event.runId}` };
+      return agentStatusEnvelope(scope, "tool", `coding:${event.runId}`, {
+        detail: `coding:${event.runId}`,
+      });
     case "subagent_done":
-      return { type: "agent_status", status: "streaming" };
+      return agentStatusEnvelope(scope, "streaming", "Working...");
     default:
       return null;
   }
+}
+
+/** @deprecated Use mapInternalToSse — kept for tests migrating gradually. */
+export function mapInternalToWeb(
+  _sessionId: string,
+  event: InternalSessionEvent,
+  scope?: SseScope,
+): WebSseEvent | { type: "heartbeat" } | null {
+  const resolvedScope = scope ?? { chatJid: _sessionId, turnId: null };
+  const envelope = mapInternalToSse(resolvedScope, event);
+  if (!envelope) return null;
+  if (envelope.event === "agent_draft_delta") {
+    return { type: "agent_draft_delta", delta: String(envelope.data.delta ?? "") };
+  }
+  if (envelope.event === "agent_status") {
+    const statusType = String(envelope.data.type ?? "streaming");
+    const detail = typeof envelope.data.detail === "string" ? envelope.data.detail : undefined;
+    if (statusType === "thinking") return { type: "agent_status", status: "thinking", detail };
+    if (statusType === "tool") return { type: "agent_status", status: "tool", detail };
+    if (statusType === "error") return { type: "agent_status", status: "error", detail };
+    if (statusType === "done") return { type: "agent_status", status: "idle" };
+    return { type: "agent_status", status: "streaming", detail };
+  }
+  if (envelope.event === "agent_followup_queued") {
+    return { type: "agent_followup_queued", content: String(envelope.data.content ?? "") };
+  }
+  if (envelope.event === "agent_followup_consumed") {
+    return { type: "agent_followup_consumed", content: String(envelope.data.content ?? "") };
+  }
+  return null;
 }
 
 export const DEFAULT_USER_ID = "default-user";
