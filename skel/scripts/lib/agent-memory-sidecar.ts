@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { resolve } from "path";
 
 const WORKSPACE_DIR = resolve(process.env.PICLAW_WORKSPACE || "/workspace");
-const STORE_DIR = resolve(process.env.PICLAW_STORE || `${WORKSPACE_DIR}/.piclaw/store`);
+const STORE_DIR = resolve(process.env.PICLAW_STORE || `${WORKSPACE_DIR}/.seeed/store`);
 
 export const DAILY_NOTES_DIR = resolve(WORKSPACE_DIR, "notes/daily");
 export const AGENT_MEMORY_DIR = resolve(WORKSPACE_DIR, "notes/memory");

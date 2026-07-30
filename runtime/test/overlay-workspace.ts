@@ -134,8 +134,8 @@ export async function withOverlayWorkspace<T>(
   const prevData = process.env.PICLAW_DATA;
 
   process.env.PICLAW_WORKSPACE = overlay.merged;
-  process.env.PICLAW_STORE = join(overlay.merged, ".piclaw", "store");
-  process.env.PICLAW_DATA = join(overlay.merged, ".piclaw", "data");
+  process.env.PICLAW_STORE = join(overlay.merged, ".seeed", "store");
+  process.env.PICLAW_DATA = join(overlay.merged, ".seeed", "data");
 
   try {
     return await run(overlay);

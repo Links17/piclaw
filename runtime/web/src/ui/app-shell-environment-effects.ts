@@ -230,7 +230,7 @@ export function useAppShellEnvironmentEffects(options: UseAppShellEnvironmentEff
   const applyBranding = useCallback((name: string, avatarUrl: string | null, avatarVersion: string | null = null) => {
     if (typeof document === 'undefined') return;
 
-    const title = (name || '').trim() || 'PiClaw';
+    const title = (name || '').trim() || 'Seeed';
     if (brandingRef.current.title !== title) {
       if (shouldApplyBrandingDocumentTitle({
         panePopoutMode,

@@ -3,7 +3,7 @@
  *
  * Handles avatar upload, retrieval, and storage on disk. Supports both
  * URL-based avatars and file-upload avatars stored under the workspace's
- * .piclaw/data/avatars directory.
+ * .seeed/data/avatars directory.
  *
  * Consumers: web/handlers/agent.ts serves and updates avatar images.
  */
@@ -30,7 +30,7 @@ interface AvatarMeta {
   updatedAt: string;
 }
 
-const AVATAR_DIR = resolve(WORKSPACE_DIR, ".piclaw", "avatars");
+const AVATAR_DIR = resolve(WORKSPACE_DIR, ".seeed", "avatars");
 const MAX_REMOTE_AVATAR_BYTES = 5 * 1024 * 1024;
 const REMOTE_AVATAR_TIMEOUT_MS = 8000;
 const REMOTE_AVATAR_MAX_REDIRECTS = 3;

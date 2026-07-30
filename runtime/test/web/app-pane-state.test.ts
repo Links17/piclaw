@@ -35,7 +35,7 @@ test('pane popout helpers compute title, menu actions, and VNC control visibilit
   const diffTabs = new Set(['pane-2']);
 
   expect(getPanePopoutTitle('', activePaneTab, '/tmp/file.md')).toBe('Editor');
-  expect(getPanePopoutDocumentTitle('', activePaneTab, '/tmp/file.md')).toBe('Editor · PiClaw');
+  expect(getPanePopoutDocumentTitle('', activePaneTab, '/tmp/file.md')).toBe('Editor · Seeed');
   expect(hasPanePopoutMenuActions([{ id: 'pane-1' }], previewTabs, diffTabs, 'pane-1')).toBe(true);
   expect(hasPanePopoutMenuActions([{ id: 'pane-2' }], new Set(), diffTabs, 'pane-2')).toBe(true);
   expect(isVncPanePopoutPath('/tabs/vnc/session', '/tabs/vnc')).toBe(true);

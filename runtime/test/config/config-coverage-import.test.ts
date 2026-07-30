@@ -39,7 +39,7 @@ function loadConfigInSubprocess(
 }
 
 function writeWorkspaceConfig(workspace: string, config: Record<string, unknown>): void {
-  const configDir = join(workspace, ".piclaw");
+  const configDir = join(workspace, ".seeed");
   mkdirSync(configDir, { recursive: true });
   writeFileSync(join(configDir, "config.json"), JSON.stringify(config, null, 2), "utf8");
 }

@@ -8,7 +8,7 @@ import { createTempWorkspace, importFresh, withTempWorkspaceEnv } from "../helpe
 type ConfigModule = typeof import("../../src/core/config.js");
 
 function writeWorkspaceConfig(workspace: string, config: Record<string, unknown>): string {
-  const configDir = join(workspace, ".piclaw");
+  const configDir = join(workspace, ".seeed");
   mkdirSync(configDir, { recursive: true });
   const configPath = join(configDir, "config.json");
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
@@ -36,8 +36,8 @@ async function withFreshConfig(
 ): Promise<void> {
   await withTempWorkspaceEnv("piclaw-config-", options.env ?? {}, async (workspace) => {
     if (options.config) {
-      const configPath = join(workspace.workspace, ".piclaw", "config.json");
-      mkdirSync(join(workspace.workspace, ".piclaw"), { recursive: true });
+      const configPath = join(workspace.workspace, ".seeed", "config.json");
+      mkdirSync(join(workspace.workspace, ".seeed"), { recursive: true });
       writeFileSync(configPath, `${JSON.stringify(options.config, null, 2)}\n`, "utf8");
     }
     if (options.dotEnv !== undefined) {
@@ -543,7 +543,7 @@ describe("core config", () => {
       expect(config.setSessionIsolationLevel("summary")).toBe("full");
       expect(config.getSessionIsolationLevel()).toBe("full");
       expect(process.env.PICLAW_SESSION_ISOLATION).toBe("full");
-      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".piclaw", "config.json"), "utf8"));
+      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".seeed", "config.json"), "utf8"));
       expect(persisted).toMatchObject({ domains: { session: { isolation: "summary" } } });
     });
   });
@@ -1071,7 +1071,7 @@ describe("core config", () => {
     await withFreshConfig({ env: { PICLAW_TOOL_OUTPUT_STORE_BYTES: undefined } }, async ({ workspace, config }) => {
       expect(config.setToolOutputStoreThreshold(12_345)).toBe(12_345);
       expect(process.env.PICLAW_TOOL_OUTPUT_STORE_BYTES).toBeUndefined();
-      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".piclaw", "config.json"), "utf8"));
+      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".seeed", "config.json"), "utf8"));
       expect(persisted.domains?.tools?.toolOutputStoreBytes).toBe(12_345);
     });
   });
@@ -1135,7 +1135,7 @@ describe("core config", () => {
       config.setToolResultCompactionTools(["bash", "proxmox"]);
       config.setToolResultSemanticSummaryConfig({ enabled: true, maxInputChars: 500, maxTokens: 4096, timeoutMs: 300000 });
       for (const envKey of envKeys) expect(process.env[envKey]).toBeUndefined();
-      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".piclaw", "config.json"), "utf8"));
+      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".seeed", "config.json"), "utf8"));
       expect(persisted.domains?.tools).toMatchObject({
         toolResultCompactionEnabled: false,
         toolResultCompactionTools: ["bash", "proxmox"],
@@ -1199,7 +1199,7 @@ describe("core config", () => {
             userAvatarBackground: "#123456",
           },
           web: {
-            uiMode: "visual",
+            uiMode: "classic",
             idleTimeout: 123,
             persistThinking: true,
             persistThinkingMaxChars: 4321,
@@ -1264,7 +1264,7 @@ describe("core config", () => {
       });
       expect(snapshot["call:getWebServerConfig"]).toMatchObject({ idleTimeout: 123 });
       expect(snapshot["call:getWebRuntimeConfig"]).toMatchObject({
-        uiMode: "visual",
+        uiMode: "classic",
         totpWindow: 7,
         sessionTtl: 86400,
         passkeyMode: "passkey-only",
@@ -1314,7 +1314,7 @@ describe("core config", () => {
       ], {
         env: {
           PICLAW_ASSISTANT_NAME: "Compatibility Assistant",
-          PICLAW_WEB_UI_MODE: "visual",
+          PICLAW_WEB_UI_MODE: "classic",
           PICLAW_WEB_IDLE_TIMEOUT: "61",
           PICLAW_WEB_TOTP_WINDOW: "2",
           PICLAW_WEB_SESSION_TTL: "600",
@@ -1329,7 +1329,7 @@ describe("core config", () => {
       expect(snapshot["call:getIdentityConfig"]).toMatchObject({ assistantName: "Compatibility Assistant" });
       expect(snapshot["call:getWebServerConfig"]).toMatchObject({ idleTimeout: 61 });
       expect(snapshot["call:getWebRuntimeConfig"]).toMatchObject({
-        uiMode: "visual",
+        uiMode: "classic",
         totpWindow: 2,
         sessionTtl: 600,
         passkeyMode: "totp-only",
@@ -1559,7 +1559,7 @@ describe("core config", () => {
       expect(process.env.PICLAW_SESSION_MAX_COMPACTIONS).toBeUndefined();
       expect(process.env.PICLAW_TURN_MAX_TOOL_USE_MESSAGES).toBeUndefined();
 
-      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".piclaw", "config.json"), "utf8"));
+      const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".seeed", "config.json"), "utf8"));
       expect(persisted).toMatchObject({
         domains: {
           agent: { toolUseMessageBudget: 21 },
@@ -1594,7 +1594,7 @@ describe("core config", () => {
         expect(process.env.PICLAW_WEB_VNC_ALLOW_DIRECT).toBe("0");
         expect(process.env.PICLAW_VNC_ALLOW_DIRECT).toBe("1");
 
-        const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".piclaw", "config.json"), "utf8"));
+        const persisted = JSON.parse(readFileSync(join(workspace.workspace, ".seeed", "config.json"), "utf8"));
         expect(persisted).toMatchObject({
           domains: {
             web: {
@@ -1626,7 +1626,7 @@ describe("core config", () => {
         expect(config.getScopedModelsOnly()).toBe(false);
         expect(process.env.PICLAW_SCOPED_MODELS_ONLY).toBeUndefined();
 
-        const parsed = JSON.parse(readFileSync(join(workspace.workspace, ".piclaw", "config.json"), "utf8"));
+        const parsed = JSON.parse(readFileSync(join(workspace.workspace, ".seeed", "config.json"), "utf8"));
         expect(parsed.domains?.tools?.scopedModelsOnly).toBe(false);
       },
     );
@@ -1644,7 +1644,7 @@ describe("core config", () => {
         },
       },
       async ({ workspace, config }) => {
-        const configPath = join(workspace.workspace, ".piclaw", "config.json");
+        const configPath = join(workspace.workspace, ".seeed", "config.json");
 
         expect(config.setWebTotpSecret("  new-secret  ")).toBe("new-secret");
         expect(config.getWebRuntimeConfig().totpSecret).toBe("new-secret");

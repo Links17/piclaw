@@ -178,7 +178,7 @@ main() {
 
   echo
   echo "[MANUAL SQL CHECKS (optional)]"
-  echo "sqlite3 '$ROOT_DIR/.piclaw/store/messages.db' <<'SQL'"
+  echo "sqlite3 '$ROOT_DIR/.seeed/store/messages.db' <<'SQL'"
   echo "SELECT rowid, chat_jid, role, thread_id, json_extract(data, '$.content') AS content"
   echo "FROM messages"
   echo "WHERE chat_jid = 'web:default'"

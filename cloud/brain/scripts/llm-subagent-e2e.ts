@@ -157,8 +157,8 @@ async function readTargetIno(sandboxId: string): Promise<{ path: string; content
 async function hasWorkerArtifacts(sandboxId: string): Promise<boolean> {
   try {
     const sbx = await connectSandbox(sandboxId);
-    const worker = await sbx.commands.run("test -f /workspace/.piclaw/coding-worker.py && echo yes");
-    const runs = await sbx.commands.run("ls /workspace/.piclaw/runs 2>/dev/null | head -1");
+    const worker = await sbx.commands.run("test -f /workspace/.seeed/coding-worker.py && echo yes");
+    const runs = await sbx.commands.run("ls /workspace/.seeed/runs 2>/dev/null | head -1");
     return worker.stdout.includes("yes") || runs.stdout.trim().length > 0;
   } catch {
     return false;

@@ -188,7 +188,7 @@ function loadAllCss(runtimeDir: string): string {
 
 function loadConfig(): any {
   try {
-    return JSON.parse(readFileSync("/workspace/.piclaw/config.json", "utf8"));
+    return JSON.parse(readFileSync("/workspace/.seeed/config.json", "utf8"));
   } catch {
     return {};
   }

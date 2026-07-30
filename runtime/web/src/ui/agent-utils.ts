@@ -1,6 +1,6 @@
 
 /** Default display name when no agent name is configured. */
-export const DEFAULT_AGENT_NAME = 'PiClaw';
+export const DEFAULT_AGENT_NAME = 'Seeed';
 const AGENT_AVATAR_URL = '/static/icon-192.png';
 
 /**
@@ -47,7 +47,7 @@ export function getAvatarInfo(name, avatarUrl, isAgent = false) {
     const normalized = resolvedName.trim().toLowerCase();
     const normalizedAvatar = typeof avatarUrl === 'string' ? avatarUrl.trim() : '';
     const customImage = normalizedAvatar ? normalizedAvatar : null;
-    const shouldUseDefaultImage = isAgent || normalized === DEFAULT_AGENT_NAME.toLowerCase() || normalized === 'pi';
+    const shouldUseDefaultImage = isAgent || normalized === DEFAULT_AGENT_NAME.toLowerCase() || normalized === 'pi' || normalized === 'seeed';
     const image = customImage || (shouldUseDefaultImage ? AGENT_AVATAR_URL : null);
 
     return { letter, color, image };

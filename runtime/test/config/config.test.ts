@@ -10,7 +10,7 @@ const COMPACTION_PERSISTENCE_SUBPROCESS = join(RUNTIME_DIR, "test", "config", "c
 type ConfigSnapshot = Record<string, any>;
 
 function writeWorkspaceConfig(workspace: string, config: Record<string, unknown>): string {
-  const configDir = join(workspace, ".piclaw");
+  const configDir = join(workspace, ".seeed");
   mkdirSync(configDir, { recursive: true });
   const configPath = join(configDir, "config.json");
   writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
@@ -391,9 +391,9 @@ test("CLI workspace flag overrides env workspace and relocates derived state pat
     );
 
     expect(snapshot.WORKSPACE_DIR).toBe(resolve(cliWs.workspace));
-    expect(snapshot.STORE_DIR).toBe(resolve(cliWs.workspace, ".piclaw", "store"));
-    expect(snapshot.DATA_DIR).toBe(resolve(cliWs.workspace, ".piclaw", "data"));
-    expect(snapshot.PICLAW_CONFIG_PATH).toBe(resolve(cliWs.workspace, ".piclaw", "config.json"));
+    expect(snapshot.STORE_DIR).toBe(resolve(cliWs.workspace, ".seeed", "store"));
+    expect(snapshot.DATA_DIR).toBe(resolve(cliWs.workspace, ".seeed", "data"));
+    expect(snapshot.PICLAW_CONFIG_PATH).toBe(resolve(cliWs.workspace, ".seeed", "config.json"));
   } finally {
     envWs.cleanup();
     cliWs.cleanup();

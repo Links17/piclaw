@@ -28,7 +28,7 @@ describe("config-store helpers", () => {
   test("writeJsonConfig creates parent directories and pretty-prints with a trailing newline", () => {
     const workspace = createTempWorkspace("piclaw-config-store-write-");
     try {
-      const targetPath = join(workspace.workspace, ".piclaw", "nested", "config.json");
+      const targetPath = join(workspace.workspace, ".seeed", "nested", "config.json");
       writeJsonConfig(targetPath, {
         web: { trustProxy: true },
         assistant: { assistantName: "PiClaw" },

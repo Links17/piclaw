@@ -61,7 +61,7 @@ let dbMode: "memory" | "file" | null = null;
 let dbPathCache: string | null = null;
 
 const CANONICAL_WORKSPACE_DIR = path.resolve("/workspace");
-const CANONICAL_LIVE_DB_PATH = path.join(CANONICAL_WORKSPACE_DIR, ".piclaw", "store", "messages.db");
+const CANONICAL_LIVE_DB_PATH = path.join(CANONICAL_WORKSPACE_DIR, ".seeed", "store", "messages.db");
 let allowLiveDbInTestsOverride = false;
 
 /** Explicit test-only safety bypass; returns a restore callback. */

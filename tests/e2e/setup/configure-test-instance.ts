@@ -25,7 +25,7 @@ const OPENCODE_PROVIDER_ID = "opencode-zen";
 
 const PI_AGENT_DIR = process.env.PICLAW_PI_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
 const WORKSPACE_DIR = process.env.PICLAW_WORKSPACE || "/workspace";
-const PICLAW_CONFIG_PATH = join(WORKSPACE_DIR, ".piclaw", "config.json");
+const PICLAW_CONFIG_PATH = join(WORKSPACE_DIR, ".seeed", "config.json");
 
 // --- Validation ---
 

@@ -171,7 +171,7 @@ describe("tool-activation extension", () => {
 
   test("default active tools include config-defined additions", async () => {
     await withTempWorkspaceEnv("piclaw-tool-activation-config-", {}, async (ws) => {
-      const configDir = join(ws.workspace, ".piclaw");
+      const configDir = join(ws.workspace, ".seeed");
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, "config.json"), JSON.stringify({
         tools: {

@@ -88,7 +88,7 @@ describe("feature: web UI", () => {
   featureTest("index page returns 200 with expected HTML shell", async () => {
     const res = await fetchText(`${base()}/`);
     expect(res.status).toBe(200);
-    expect(res.text).toContain("<title>PiClaw</title>");
+    expect(res.text).toContain("<title>Seeed</title>");
     expect(res.text).toContain("app.bundle.js");
     expect(res.text).toContain("app.bundle.css");
   });

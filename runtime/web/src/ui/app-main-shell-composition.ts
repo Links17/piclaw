@@ -55,6 +55,8 @@ export function composeMainAppShellOptions(input: ComposeMainAppShellOptionsInpu
   const mainShellOptions = {
     appShellRef: shellState.appShellRef,
     workspaceOpen: shellState.workspaceOpen,
+    sessionSidebarOpen: shellState.sessionSidebarOpen,
+    toggleSessionSidebar: shellState.toggleSessionSidebar,
     editorOpen: shellState.editorOpen,
     chatOnlyMode: shellState.chatOnlyMode,
     zenMode: paneRuntime.zenMode,

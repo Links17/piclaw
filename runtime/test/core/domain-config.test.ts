@@ -21,7 +21,7 @@ interface DemoConfig { enabled: boolean; limit: number; mode: string; apiToken: 
 
 function tempConfigPath(): { root: string; path: string; cleanup: () => void } {
   const root = mkdtempSync(join(tmpdir(), "piclaw-domain-config-"));
-  return { root, path: join(root, ".piclaw", "config.json"), cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  return { root, path: join(root, ".seeed", "config.json"), cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 function writeRawConfig(path: string, value: unknown): void {

@@ -88,7 +88,7 @@ test('saveCompactionSettings persists and applies compaction settings immediatel
     expect(process.env.PICLAW_PROGRESS_WATCHDOG_ENABLED).toBeUndefined();
     expect(process.env.PICLAW_PROGRESS_WATCHDOG_TIMEOUT_MS).toBeUndefined();
 
-    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.piclaw', 'config.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.seeed', 'config.json'), 'utf8'));
     expect(persisted).toMatchObject({
       domains: {
         tools: {
@@ -170,7 +170,7 @@ test('saveCompactionSettings normalizes per-tool compaction allowlist', async ()
 
     expect(saved.toolResultCompactionTools).toEqual(['bash', 'proxmox']);
 
-    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.piclaw', 'config.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.seeed', 'config.json'), 'utf8'));
     expect(persisted).toMatchObject({
       domains: { tools: { toolResultCompactionTools: ['bash', 'proxmox'] } },
     });
@@ -205,7 +205,7 @@ test('saveCompactionSettings normalizes semantic summary settings', async () => 
       toolResultSemanticSummaryTimeoutSec: 300,
     });
 
-    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.piclaw', 'config.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.seeed', 'config.json'), 'utf8'));
     expect(persisted).toMatchObject({
       domains: { tools: {
         toolResultSemanticSummaryEnabled: true,
@@ -251,7 +251,7 @@ test('saveCompactionSettings can disable watchdog without clearing its timeout',
       progressWatchdogTimeoutSec: 120,
     });
 
-    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.piclaw', 'config.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.seeed', 'config.json'), 'utf8'));
     expect(persisted).toMatchObject({
       domains: {
         watchdog: {

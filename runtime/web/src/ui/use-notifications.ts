@@ -19,7 +19,7 @@ export function shouldShowNotificationSourceLabels(runtimeWindow = typeof window
 }
 
 export function formatNotificationTitle(title, sourceLabel = '', runtimeWindow = typeof window !== 'undefined' ? window : null) {
-  const normalizedTitle = typeof title === 'string' && title.trim() ? title.trim() : 'PiClaw';
+  const normalizedTitle = typeof title === 'string' && title.trim() ? title.trim() : 'Seeed';
   const normalizedSource = shouldShowNotificationSourceLabels(runtimeWindow) && typeof sourceLabel === 'string'
     ? sourceLabel.trim()
     : '';
@@ -265,7 +265,7 @@ export function useNotifications(options = {}) {
       } catch (error) {
         console.warn('Failed to sync web push notifications:', error);
         if (next) {
-          alert('Notifications were enabled, but web push setup failed. If you are on iPhone or iPad, reopen PiClaw from the Home Screen and try again.');
+          alert('Notifications were enabled, but web push setup failed. If you are on iPhone or iPad, reopen Seeed from the Home Screen and try again.');
         }
       }
     }

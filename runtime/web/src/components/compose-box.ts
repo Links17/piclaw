@@ -7,6 +7,7 @@ import { clearCloudAgentQuestion } from '../ui/use-cloud-agent-question.js';
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { buildMentionValue, filterMentionAgents, parseMentionAutocompleteQuery } from '../ui/agent-mentions.js';
 import { shouldOpenSessionSwitcherFromBlankCompose, shouldRouteComposeValueToSessionSwitcher } from '../ui/compose-session-switcher.js';
+import { SESSION_SIDEBAR_OPEN_EVENT } from './session-sidebar.js';
 import { formatBranchPickerBaseLabel, formatBranchPickerLabel, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
 import { buildComposeStatusDotClass } from '../ui/status-dot.js';
 import { getStatusElapsedLabel, isCompactionStatus, resolveStatusPanelTitle } from '../ui/status-duration.js';
@@ -1538,15 +1539,8 @@ export function ComposeBox({
     };
 
     const openSessionPopup = () => {
-        if (searchMode || (!canSwitchSession && !canRestoreSession && !canRenameSession && !canCreateSession && !canDeleteSession)) return false;
-
-        popupTypeaheadRef.current = { value: '', updatedAt: 0 };
-        setShowModelPopup(false);
-        setShowSlash(false);
-        setSlashMatches([]);
-        setShowMention(false);
-        setMentionMatches([]);
-        setShowSessionPopup(true);
+        if (searchMode) return false;
+        window.dispatchEvent(new CustomEvent(SESSION_SIDEBAR_OPEN_EVENT));
         return true;
     };
 
@@ -3164,26 +3158,6 @@ export function ComposeBox({
                 onDragLeave=${handleDragLeave}
                 onDrop=${handleDrop}
             >
-                ${showSessionSwitcherButton && html`
-                    <div
-                        ref=${sessionTriggerRef}
-                        class="compose-session-trigger-group compose-session-trigger-top"
-                    >
-                        <button
-                            type="button"
-                            class=${`compose-session-trigger compose-session-trigger-pill${showSessionPopup ? ' active' : ''}`}
-                            data-testid="session-switcher"
-                            onClick=${toggleSessionPopup}
-                            title=${currentSessionAgent?.chat_jid || currentChatJid}
-                            aria-label=${currentSessionAgent?.agent_name
-                                ? `Manage sessions for @${currentSessionAgent.agent_name}`
-                                : 'Manage Sessions/Agents'}
-                            aria-expanded=${showSessionPopup ? 'true' : 'false'}
-                        >
-                            <span class="compose-current-agent-label active">${currentSessionAgent?.agent_name ? `@${currentSessionAgent.agent_name}` : 'Sessions'}</span>
-                        </button>
-                    </div>
-                `}
                 <div class="compose-input-main">
                     ${hasAttachments && html`
                         <div class="compose-file-refs">

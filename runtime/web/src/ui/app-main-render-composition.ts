@@ -89,6 +89,8 @@ export function composeRenderedMainAppOptions(input: {
     shellState: {
       appShellRef: input.surface.appShellRef,
       workspaceOpen: input.surface.workspaceOpen,
+      sessionSidebarOpen: input.surface.sessionSidebarOpen,
+      toggleSessionSidebar: input.surface.toggleSessionSidebar,
       editorOpen: input.editorState.editorOpen,
       chatOnlyMode: input.routeState.chatOnlyMode,
       isRenameBranchFormOpen: input.surface.isRenameBranchFormOpen,

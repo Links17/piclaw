@@ -23,5 +23,5 @@ test('shouldShowNotificationSourceLabels reads the boot flag from the runtime wi
 
 test('formatNotificationTitle falls back cleanly when no source marker is provided', () => {
   expect(formatNotificationTitle('Pi', '')).toBe('Pi');
-  expect(formatNotificationTitle('', '')).toBe('PiClaw');
+  expect(formatNotificationTitle('', '')).toBe('Seeed');
 });
