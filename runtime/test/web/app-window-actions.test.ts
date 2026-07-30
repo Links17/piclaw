@@ -55,11 +55,9 @@ test('createRootSessionFromCompose creates and navigates to an independent root'
   const refreshes: string[] = [];
 
   const created = await createRootSessionFromCompose({
-    rootName: 'Ops Room',
     chatOnlyMode: true,
-    createRootChatSession: async (agentName: string) => {
-      expect(agentName).toBe('Ops Room');
-      return { branch: { chat_jid: 'web:ops-room', agent_name: 'ops-room' } };
+    createRootChatSession: async () => {
+      return { branch: { chat_jid: 'web:ops-room', agent_name: 'New chat' } };
     },
     refreshActiveChatAgents: async () => { refreshes.push('active'); },
     refreshCurrentChatBranches: async () => { refreshes.push('branches'); },
@@ -72,7 +70,7 @@ test('createRootSessionFromCompose creates and navigates to an independent root'
 
   expect(created).toBe(true);
   expect(refreshes.sort()).toEqual(['active', 'branches']);
-  expect(toasts).toContainEqual(['Root session created', 'Switched to @ops-room.', 'info', 2500]);
+  expect(toasts).toContainEqual(['New session created', 'Switched to @New chat.', 'info', 2500]);
   expect(navigateCalls[0]).toBe('https://example.test/?chat_jid=web%3Aops-room&chat_only=1');
 });
 
@@ -84,7 +82,7 @@ test('createRootSessionFromCompose falls back to the API helper when the injecte
     requests.push({ url, body: JSON.parse(String(init?.body || '{}')) });
     return new Response(JSON.stringify({
       status: 'ok',
-      branch: { chat_jid: 'web:api-root', agent_name: 'api-root' },
+      branch: { chat_jid: 'web:api-root', agent_name: 'New chat' },
     }), {
       status: 201,
       headers: { 'Content-Type': 'application/json' },
@@ -92,7 +90,6 @@ test('createRootSessionFromCompose falls back to the API helper when the injecte
   }) as any;
 
   const created = await createRootSessionFromCompose({
-    rootName: 'API Root',
     chatOnlyMode: false,
     refreshActiveChatAgents: async () => {},
     refreshCurrentChatBranches: async () => {},
@@ -101,7 +98,7 @@ test('createRootSessionFromCompose falls back to the API helper when the injecte
   });
 
   expect(created).toBe(true);
-  expect(requests).toEqual([{ url: '/agent/root-session', body: { agent_name: 'API Root' } }]);
+  expect(requests).toEqual([{ url: '/agent/root-session', body: {} }]);
   expect(navigateCalls[0]).toBe('https://example.test/?chat_jid=web%3Aapi-root');
 });
 

@@ -512,6 +512,7 @@ function MainApp({ locationParams, navigate }) {
             setWorkspaceOpen: surface.setWorkspaceOpen,
             setRenameBranchNameDraft: surface.setRenameBranchNameDraft,
             setIsRenameBranchFormOpen: surface.setIsRenameBranchFormOpen,
+            setRenameBranchFormTarget: surface.setRenameBranchFormTarget,
             setIsRenamingBranch: surface.setIsRenamingBranch,
         },
         services: {

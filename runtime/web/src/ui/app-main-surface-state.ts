@@ -3,6 +3,7 @@ import {
   readStoredWorkspaceOpenPreference,
 } from './workspace-visibility.js';
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
+import { legacyDefaultChatJid } from './chat-jid.js';
 import { useNotifications } from './use-notifications.js';
 import { isStandaloneWebAppMode } from './chat-window.js';
 import { getBranchHandleDraftState } from './branch-lifecycle.js';
@@ -41,7 +42,7 @@ export function resolveStableRootChatJid(currentChatJid: string, currentBranchRe
   if (recordRoot) return recordRoot;
 
   const normalizedChatJid = typeof currentChatJid === 'string' ? currentChatJid.trim() : '';
-  if (!normalizedChatJid) return 'web:default';
+  if (!normalizedChatJid) return legacyDefaultChatJid();
 
   const branchMarkerIndex = normalizedChatJid.indexOf(':branch:');
   if (branchMarkerIndex <= 0) {
@@ -120,7 +121,7 @@ export function useMainAppSurfaceState(options: {
 
   const [removingPostIds, setRemovingPostIds] = useState(() => new Set<string | number>());
   const [workspaceOpen, setWorkspaceOpen] = useState(() => readStoredWorkspaceOpenPreference({
-    allowLegacyFallback: true,
+    allowLegacyFallback: false,
     defaultValue: false,
   }));
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(() => getLocalStorageItem('sessionSidebarCollapsed') !== '1');
@@ -162,9 +163,13 @@ export function useMainAppSurfaceState(options: {
   const renameBranchLockUntilRef = useRef(0);
   const [isRenameBranchFormOpen, setIsRenameBranchFormOpen] = useState(false);
   const [renameBranchNameDraft, setRenameBranchNameDraft] = useState('');
+  const [renameBranchFormTarget, setRenameBranchFormTarget] = useState<any>(null);
   const renameBranchDraftState = useMemo(
-    () => getBranchHandleDraftState(renameBranchNameDraft, currentBranchRecord?.agent_name || ''),
-    [currentBranchRecord?.agent_name, renameBranchNameDraft],
+    () => getBranchHandleDraftState(
+      renameBranchNameDraft,
+      renameBranchFormTarget?.agent_name || currentBranchRecord?.agent_name || '',
+    ),
+    [currentBranchRecord?.agent_name, renameBranchFormTarget?.agent_name, renameBranchNameDraft],
   );
   const renameBranchNameInputRef = useRef<any>(null);
 
@@ -286,6 +291,8 @@ export function useMainAppSurfaceState(options: {
     renameBranchNameDraft,
     setRenameBranchNameDraft,
     renameBranchDraftState,
+    renameBranchFormTarget,
+    setRenameBranchFormTarget,
     renameBranchNameInputRef,
   };
 }

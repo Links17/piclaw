@@ -5,29 +5,39 @@ import {
   formatBranchPickerBaseLabel,
   formatBranchPickerLabel,
   formatCurrentBranchLabel,
+  formatSessionDisplayTitle,
   getBranchHandleDraftState,
   getBranchLifecycleBadges,
 } from '../../web/src/ui/branch-lifecycle.js';
 
-test('formats the current branch label with a handle-first contract', () => {
+test('formats the current branch label as the session title only', () => {
   expect(formatCurrentBranchLabel({ agent_name: 'research', chat_jid: 'web:default:branch:1' }, 'web:default'))
-    .toBe('@research — web:default:branch:1 • current branch');
+    .toBe('research');
 });
 
-test('formats branch picker labels with active, compacting, and archived lifecycle badges', () => {
+test('formatSessionDisplayTitle prefers agent_name and falls back to title', () => {
+  expect(formatSessionDisplayTitle({ agent_name: 'friendly-greeting', chat_jid: 'web:abc' }))
+    .toBe('friendly-greeting');
+  expect(formatSessionDisplayTitle({ title: 'Draft notes', chat_jid: 'web:abc' }))
+    .toBe('Draft notes');
+  expect(formatSessionDisplayTitle({ chat_jid: 'web:abc' }))
+    .toBe('New chat');
+});
+
+test('formats branch picker labels as title-only display text', () => {
   expect(formatBranchPickerBaseLabel({
     agent_name: 'builder',
     chat_jid: 'web:default:branch:2',
     is_active: true,
     archived_at: null,
-  })).toBe('@builder — web:default:branch:2');
+  })).toBe('builder');
 
   expect(formatBranchPickerLabel({
     agent_name: 'builder',
     chat_jid: 'web:default:branch:2',
     is_active: true,
     archived_at: null,
-  })).toBe('@builder — web:default:branch:2 • active');
+  })).toBe('builder');
 
   expect(formatBranchPickerLabel({
     agent_name: 'builder',
@@ -36,14 +46,14 @@ test('formats branch picker labels with active, compacting, and archived lifecyc
     is_compacting: true,
     activity_status: 'compacting',
     archived_at: null,
-  })).toBe('@builder — web:default:branch:2 • compacting • active');
+  }, { currentChatJid: 'web:default:branch:2' })).toBe('builder');
 
   expect(formatBranchPickerLabel({
     agent_name: 'release',
     chat_jid: 'web:default:branch:3',
     is_active: false,
     archived_at: '2026-03-24T00:00:00.000Z',
-  })).toBe('@release — web:default:branch:3 • archived');
+  })).toBe('release');
 });
 
 test('current badge stays explicit while compacting and active remain visible', () => {

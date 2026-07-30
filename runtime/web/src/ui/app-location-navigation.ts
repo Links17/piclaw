@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from '../vendor/preact-htm.js';
 import { isStandaloneWebAppMode } from './chat-window.js';
+import { legacyDefaultChatJid, normalizeActiveChatJid } from './chat-jid.js';
 import {
   loadStoredLastMainChatJid,
   readAppLocationModes,
@@ -59,7 +60,7 @@ export function resolveStandaloneLaunchHref(
   url.searchParams.delete('pane_path');
   url.searchParams.delete('pane_label');
 
-  if (normalizedStoredChatJid === 'web:default') {
+  if (!normalizedStoredChatJid || normalizedStoredChatJid === legacyDefaultChatJid()) {
     url.searchParams.delete('chat_jid');
   } else {
     url.searchParams.set('chat_jid', normalizedStoredChatJid);

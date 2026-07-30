@@ -270,8 +270,7 @@ async function streamOpenAiRound(
     body: JSON.stringify({
       model: config.openaiModel,
       messages,
-      tools,
-      tool_choice: "auto",
+      ...(tools.length > 0 ? { tools, tool_choice: "auto" as const } : {}),
       stream: true,
       stream_options: { include_usage: true },
     }),

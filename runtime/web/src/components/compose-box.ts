@@ -8,7 +8,7 @@ import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { buildMentionValue, filterMentionAgents, parseMentionAutocompleteQuery } from '../ui/agent-mentions.js';
 import { shouldOpenSessionSwitcherFromBlankCompose, shouldRouteComposeValueToSessionSwitcher } from '../ui/compose-session-switcher.js';
 import { SESSION_SIDEBAR_OPEN_EVENT } from './session-sidebar.js';
-import { formatBranchPickerBaseLabel, formatBranchPickerLabel, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
+import { formatBranchPickerBaseLabel, formatSessionDisplayTitle, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
 import { buildComposeStatusDotClass } from '../ui/status-dot.js';
 import { getStatusElapsedLabel, isCompactionStatus, resolveStatusPanelTitle } from '../ui/status-duration.js';
 import { useConnectionStatusPresentation } from '../ui/connection-status.js';
@@ -1338,7 +1338,6 @@ export function ComposeBox({
         currentSessionAgent
         && currentSessionAgent.chat_jid === (currentSessionAgent.root_chat_jid || currentSessionAgent.chat_jid)
     );
-    const isCurrentDefaultRootSession = Boolean(isCurrentRootSession && (currentSessionAgent?.chat_jid || currentChatJid) === 'web:default');
     const currentRollupParent = (() => {
         const parentBranchId = typeof currentSessionAgent?.parent_branch_id === 'string' ? currentSessionAgent.parent_branch_id.trim() : '';
         const branchId = typeof currentSessionAgent?.branch_id === 'string' ? currentSessionAgent.branch_id.trim() : '';
@@ -1364,7 +1363,7 @@ export function ComposeBox({
     const canCreateSession = !searchMode && typeof onCreateSession === 'function';
     const canCreateRootSession = !searchMode && typeof onCreateRootSession === 'function';
     const canRollupSession = !searchMode && !isAgentActive && !rollingUpSession && Boolean(currentRollupParent?.chat_jid);
-    const canDeleteSession = !searchMode && typeof onDeleteSession === 'function' && !isCurrentDefaultRootSession;
+    const canDeleteSession = !searchMode && typeof onDeleteSession === 'function';
     const canPurgeArchivedSession = !searchMode && typeof onPurgeArchivedSession === 'function';
     const showSessionSwitcherButton = !searchMode && (canSwitchSession || canRestoreSession || canRenameSession || canCreateSession || canCreateRootSession || canRollupSession || canDeleteSession || canPurgeArchivedSession);
     const modelPickerState = resolveComposeModelPickerState(activeModel, agentModelsPayload);
@@ -1680,7 +1679,7 @@ export function ComposeBox({
             entries.push({
                 type: 'session',
                 key: `session:${chatJid}`,
-                label: `@${agentName} — ${chatJid}${chat?.is_active ? ' active' : ''}${archived ? ' archived' : ''}`,
+                label: formatSessionDisplayTitle(chat),
                 chat,
                 disabled: archived ? !canRestoreSession : !canSwitchSession,
             });
@@ -1740,16 +1739,8 @@ export function ComposeBox({
     const handleCreateRootSession = async () => {
         if (typeof onCreateRootSession !== 'function') return;
         setShowSessionPopup(false);
-        const rawName = typeof window !== 'undefined'
-            ? window.prompt('New root session handle (for example: ops)')
-            : '';
-        const rootName = String(rawName || '').trim();
-        if (!rootName) {
-            requestAnimationFrame(() => textareaRef.current?.focus());
-            return;
-        }
         try {
-            await onCreateRootSession(rootName);
+            await onCreateRootSession();
         } catch (error) {
             console.warn('Failed to create root session:', error);
         }
@@ -2346,6 +2337,9 @@ export function ComposeBox({
                 }
                 const response = await sendAgentMessage('default', message, null, mediaIds, resolveSubmitMode(submitMode), currentChatJid);
                 onMessageResponse?.(response);
+                if (response?.created && typeof response.chat_jid === 'string' && response.chat_jid.trim()) {
+                    onSwitchChat?.(response.chat_jid.trim());
+                }
 
                 if (response?.command) {
                     emitModelState({
@@ -3328,7 +3322,6 @@ export function ComposeBox({
                                     const purgeConfirming = canPurgeArchived && pendingPurgeChatJid === chat.chat_jid;
                                     const pruneConfirming = canPrune && pendingPruneChatJid === chat.chat_jid;
                                     const deleteConfirming = purgeConfirming || pruneConfirming;
-                                    const label = formatBranchPickerLabel(chat, { currentChatJid });
                                     const baseLabel = formatBranchPickerBaseLabel(chat);
                                     const lifecycleBadges = getBranchLifecycleBadges(chat, { currentChatJid });
                                     return html`
@@ -3346,7 +3339,7 @@ export function ComposeBox({
                                                     handleSessionSwitch(chat.chat_jid);
                                                 }}
                                                 disabled=${archived ? !canRestoreSession : !canSwitchSession}
-                                                title=${archived ? `Restore archived ${label}` : `Switch to ${label}`}
+                                                title=${archived ? `Restore archived ${baseLabel}` : `Switch to ${baseLabel}`}
                                             >
                                                 <span class="compose-session-row-content" style=${isSessionPopupChatEmphasized(chat) ? 'font-weight:700' : ''}>
                                                     <span class="compose-session-row-label">${baseLabel}</span>

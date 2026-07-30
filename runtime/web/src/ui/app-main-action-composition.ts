@@ -137,6 +137,8 @@ interface ComposeBranchPaneActionOptionsInput {
   getFormLock: () => number;
   setRenameBranchNameDraft: (value: string) => void;
   setIsRenameBranchFormOpen: (open: boolean) => void;
+  renameBranchFormTarget?: any;
+  setRenameBranchFormTarget?: (value: any) => void;
   setIsRenamingBranch: StateSetter<boolean>;
   renameChatBranch: (chatJid: string, name: string) => Promise<any>;
   refreshActiveChatAgents: () => Promise<void>;
@@ -150,7 +152,7 @@ interface ComposeBranchPaneActionOptionsInput {
   branchLoaderMode: boolean;
   branchLoaderSourceChatJid: string;
   forkChatBranch: (chatJid: string) => Promise<any>;
-  createRootChatSession: (agentName: string) => Promise<any>;
+  createRootChatSession: () => Promise<any>;
   setBranchLoaderState: StateSetter<any>;
   currentRootChatJid: string;
   isWebAppMode: boolean;
@@ -191,6 +193,8 @@ export function composeBranchPaneActionOptions(input: ComposeBranchPaneActionOpt
     getFormLock: input.getFormLock,
     setRenameBranchNameDraft: input.setRenameBranchNameDraft,
     setIsRenameBranchFormOpen: input.setIsRenameBranchFormOpen,
+    renameBranchFormTarget: input.renameBranchFormTarget,
+    setRenameBranchFormTarget: input.setRenameBranchFormTarget,
     setIsRenamingBranch: input.setIsRenamingBranch,
     renameChatBranch: input.renameChatBranch,
     refreshActiveChatAgents: input.refreshActiveChatAgents,

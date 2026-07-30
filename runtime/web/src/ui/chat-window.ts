@@ -1,5 +1,4 @@
-
-type ChatWindowRuntime = { window?: any; navigator?: any };
+import { resolveChatNavigationJid, normalizeActiveChatJid } from './chat-jid.js';
 type ChatWindowOptions = Record<string, any>;
 
 export function isStandaloneWebAppMode(runtime: ChatWindowRuntime = {}) {
@@ -142,8 +141,12 @@ export function closeProvisionalChatWindow(handle) {
 
 export function buildChatWindowUrl(baseHref, chatJid, options: ChatWindowOptions = {}) {
     const url = new URL(String(baseHref || 'http://localhost/'));
-    const normalizedChatJid = String(chatJid || '').trim() || 'web:default';
-    url.searchParams.set('chat_jid', normalizedChatJid);
+    const normalizedChatJid = resolveChatNavigationJid(chatJid);
+    if (normalizedChatJid) {
+        url.searchParams.set('chat_jid', normalizedChatJid);
+    } else {
+        url.searchParams.delete('chat_jid');
+    }
     url.searchParams.delete('branch_loader');
     url.searchParams.delete('branch_source_chat_jid');
     url.searchParams.delete('pane_popout');
@@ -157,7 +160,7 @@ export function buildChatWindowUrl(baseHref, chatJid, options: ChatWindowOptions
 
 export function buildBranchLoaderUrl(baseHref, sourceChatJid, options: ChatWindowOptions = {}) {
     const url = new URL(String(baseHref || 'http://localhost/'));
-    const normalizedChatJid = String(sourceChatJid || '').trim() || 'web:default';
+    const normalizedChatJid = normalizeActiveChatJid(sourceChatJid) || resolveChatNavigationJid(sourceChatJid);
     url.searchParams.set('branch_loader', '1');
     url.searchParams.set('branch_source_chat_jid', normalizedChatJid);
     url.searchParams.delete('chat_jid');

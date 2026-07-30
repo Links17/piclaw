@@ -172,7 +172,7 @@ export function renderMainShell(options: MainShellRenderOptions): any {
     currentChatBranches,
     handleBranchPickerChange,
     formatBranchPickerLabel,
-    openRenameCurrentBranchForm,
+    openRenameBranchFormFor,
     handlePruneCurrentBranch,
     handlePurgeArchivedBranch,
     currentHashtag,
@@ -345,9 +345,8 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           onSwitchChat=${handleBranchPickerChange}
           onCreateSession=${handleCreateSessionFromCompose}
           onCreateRootSession=${handleCreateRootSessionFromCompose}
-          onRenameSession=${openRenameCurrentBranchForm}
+          onRenameSession=${openRenameBranchFormFor}
           onDeleteSession=${handlePruneCurrentBranch}
-          onRestoreSession=${handleRestoreBranch}
           onPurgeArchivedSession=${handlePurgeArchivedBranch}
           collapsed=${!sessionSidebarOpen}
           onToggleCollapsed=${toggleSessionSidebar}

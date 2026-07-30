@@ -13,6 +13,7 @@ import {
   restoreBranch,
   runBranchLoader,
 } from './app-branch-actions.js';
+import { resolveBranchRecordByChatJid } from './session-row-capabilities.js';
 import {
   applyStoredPaneLayout,
   closeTransferredPaneSource,
@@ -99,41 +100,53 @@ export function handleBranchPickerChangeAction(options: HandleBranchPickerChange
 
 export interface OpenRenameCurrentBranchFormActionOptions {
   currentBranchRecord: BranchRecordLike | null;
+  branchRecord?: BranchRecordLike | null;
   renameBranchInFlight: boolean;
   renameBranchLockUntil: number;
   getFormLock: () => number;
   setRenameBranchNameDraft: (value: string) => void;
   setIsRenameBranchFormOpen: (open: boolean) => void;
+  setRenameBranchFormTarget?: (value: BranchRecordLike | null) => void;
   hasWindow?: boolean;
 }
 
 export function openRenameCurrentBranchFormAction(options: OpenRenameCurrentBranchFormActionOptions): boolean {
   const {
     currentBranchRecord,
+    branchRecord,
     renameBranchInFlight,
     renameBranchLockUntil,
     getFormLock,
     setRenameBranchNameDraft,
     setIsRenameBranchFormOpen,
+    setRenameBranchFormTarget,
     hasWindow = typeof window !== 'undefined',
   } = options;
 
-  return openRenameBranchForm({
+  const targetRecord = branchRecord ?? currentBranchRecord;
+  const opened = openRenameBranchForm({
     hasWindow,
     currentBranchRecord,
+    branchRecord: targetRecord,
     renameBranchInFlight,
     renameBranchLockUntil,
     getFormLock,
     setRenameBranchNameDraft,
     setIsRenameBranchFormOpen,
   });
+  if (opened) {
+    setRenameBranchFormTarget?.(branchRecord ? targetRecord : null);
+  }
+  return opened;
 }
 
 export function closeRenameCurrentBranchFormAction(options: {
   setIsRenameBranchFormOpen: (open: boolean) => void;
   setRenameBranchNameDraft: (value: string) => void;
+  setRenameBranchFormTarget?: (value: BranchRecordLike | null) => void;
 }): void {
   closeRenameBranchForm(options);
+  options.setRenameBranchFormTarget?.(null);
 }
 
 export interface RenameCurrentBranchActionOptions {
@@ -298,9 +311,8 @@ export interface CreateSessionFromComposeActionOptions {
 }
 
 export interface CreateRootSessionFromComposeActionOptions {
-  rootName: string;
   chatOnlyMode?: boolean;
-  createRootChatSession: (agentName: string) => Promise<any>;
+  createRootChatSession: () => Promise<any>;
   refreshActiveChatAgents: () => void;
   refreshCurrentChatBranches: () => void;
   showIntentToast: (title: string, detail?: string | null, kind?: string, durationMs?: number) => void;
@@ -568,6 +580,8 @@ export interface UseBranchPaneLifecycleOptions {
   getFormLock: () => number;
   setRenameBranchNameDraft: (value: string) => void;
   setIsRenameBranchFormOpen: (open: boolean) => void;
+  renameBranchFormTarget?: any;
+  setRenameBranchFormTarget?: (value: any) => void;
   setIsRenamingBranch: StateSetter<boolean>;
   renameChatBranch: (chatJid: string, name: string) => Promise<any>;
 
@@ -584,7 +598,7 @@ export interface UseBranchPaneLifecycleOptions {
   branchLoaderMode: boolean;
   branchLoaderSourceChatJid: string;
   forkChatBranch: (chatJid: string) => Promise<any>;
-  createRootChatSession: (agentName: string) => Promise<any>;
+  createRootChatSession: () => Promise<any>;
   setBranchLoaderState: StateSetter<any>;
 
   currentRootChatJid: string;
@@ -628,6 +642,8 @@ export function useBranchPaneLifecycle(options: UseBranchPaneLifecycleOptions) {
     getFormLock,
     setRenameBranchNameDraft,
     setIsRenameBranchFormOpen,
+    renameBranchFormTarget,
+    setRenameBranchFormTarget,
     setIsRenamingBranch,
     renameChatBranch,
     refreshActiveChatAgents,
@@ -711,19 +727,39 @@ export function useBranchPaneLifecycle(options: UseBranchPaneLifecycleOptions) {
       getFormLock,
       setRenameBranchNameDraft,
       setIsRenameBranchFormOpen,
+      setRenameBranchFormTarget,
     });
-  }, [currentBranchRecord, getFormLock, renameBranchInFlightRef, renameBranchLockUntilRef, setIsRenameBranchFormOpen, setRenameBranchNameDraft]);
+  }, [currentBranchRecord, getFormLock, renameBranchInFlightRef, renameBranchLockUntilRef, setIsRenameBranchFormOpen, setRenameBranchFormTarget, setRenameBranchNameDraft]);
+
+  const openRenameBranchFormFor = useCallback((targetChatJid: string) => {
+    const chatJid = typeof targetChatJid === 'string' ? targetChatJid.trim() : '';
+    if (!chatJid) return false;
+    const branchRecord = resolveBranchRecordByChatJid(chatJid, activeChatAgents, currentChatBranches);
+    if (!branchRecord) return false;
+    return openRenameCurrentBranchFormAction({
+      currentBranchRecord,
+      branchRecord,
+      renameBranchInFlight: renameBranchInFlightRef.current,
+      renameBranchLockUntil: renameBranchLockUntilRef.current,
+      getFormLock,
+      setRenameBranchNameDraft,
+      setIsRenameBranchFormOpen,
+      setRenameBranchFormTarget,
+    });
+  }, [activeChatAgents, currentBranchRecord, currentChatBranches, getFormLock, renameBranchInFlightRef, renameBranchLockUntilRef, setIsRenameBranchFormOpen, setRenameBranchFormTarget, setRenameBranchNameDraft]);
 
   const closeRenameCurrentBranchForm = useCallback(() => {
     closeRenameCurrentBranchFormAction({
       setIsRenameBranchFormOpen,
       setRenameBranchNameDraft,
+      setRenameBranchFormTarget,
     });
-  }, [setIsRenameBranchFormOpen, setRenameBranchNameDraft]);
+  }, [setIsRenameBranchFormOpen, setRenameBranchFormTarget, setRenameBranchNameDraft]);
 
   const handleRenameCurrentBranch = useCallback(async (nextName: string) => {
+    const targetRecord = renameBranchFormTarget || currentBranchRecord;
     await renameCurrentBranchAction({
-      currentBranchRecord,
+      currentBranchRecord: targetRecord,
       nextName,
       openRenameForm: openRenameCurrentBranchForm,
       renameBranchInFlightRef,
@@ -738,7 +774,7 @@ export function useBranchPaneLifecycle(options: UseBranchPaneLifecycleOptions) {
       showIntentToast,
       closeRenameForm: closeRenameCurrentBranchForm,
     });
-  }, [closeRenameCurrentBranchForm, currentBranchRecord, chatOnlyMode, getFormLock, navigate, openRenameCurrentBranchForm, refreshActiveChatAgents, refreshCurrentChatBranches, renameBranchInFlightRef, renameBranchLockUntilRef, renameChatBranch, setIsRenamingBranch, showIntentToast]);
+  }, [closeRenameCurrentBranchForm, currentBranchRecord, renameBranchFormTarget, chatOnlyMode, getFormLock, navigate, openRenameCurrentBranchForm, refreshActiveChatAgents, refreshCurrentChatBranches, renameBranchInFlightRef, renameBranchLockUntilRef, renameChatBranch, setIsRenamingBranch, showIntentToast]);
 
   const handlePruneCurrentBranch = useCallback(async (targetChatJid: string | null = null, options?: { confirmed?: boolean }) => {
     const target = typeof targetChatJid === 'string' && targetChatJid.trim()
@@ -834,9 +870,8 @@ export function useBranchPaneLifecycle(options: UseBranchPaneLifecycleOptions) {
     });
   }, [chatOnlyMode, currentChatJid, forkChatBranch, navigate, refreshActiveChatAgents, refreshCurrentChatBranches, showIntentToast]);
 
-  const handleCreateRootSessionFromCompose = useCallback(async (rootName: string) => {
+  const handleCreateRootSessionFromCompose = useCallback(async () => {
     await createRootSessionFromComposeAction({
-      rootName,
       chatOnlyMode,
       createRootChatSession,
       refreshActiveChatAgents,
@@ -904,6 +939,7 @@ export function useBranchPaneLifecycle(options: UseBranchPaneLifecycleOptions) {
     toggleWorkspace,
     handleBranchPickerChange,
     openRenameCurrentBranchForm,
+    openRenameBranchFormFor,
     closeRenameCurrentBranchForm,
     handleRenameCurrentBranch,
     handlePruneCurrentBranch,
