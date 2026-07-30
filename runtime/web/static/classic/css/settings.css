@@ -962,9 +962,9 @@
     right: auto;
 }
 
-/* Hide the workspace explorer's own hamburger — replaced by timeline menu */
+/* Workspace explorer renders its own portaled hamburger when open. */
 .workspace-header-left > .workspace-menu-wrap {
-    display: none;
+    display: inline-flex;
 }
 
 /* ── Loading ─────────────────────────────────────────────────────────── */
