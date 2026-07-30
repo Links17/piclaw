@@ -42,7 +42,7 @@ const { values: args } = parseArgs({
   options: {
     days: { type: "string", default: "7" },
     out:  { type: "string", default: "/workspace/exports/situation.md" },
-    db:   { type: "string",  default: `${process.env.PICLAW_STORE || "/workspace/.piclaw/store"}/messages.db` },
+    db:   { type: "string",  default: `${process.env.PICLAW_STORE || "/workspace/.seeed/store"}/messages.db` },
     chat: { type: "string", default: "web:default" },
     "update-notes": { type: "boolean", default: false },
   },

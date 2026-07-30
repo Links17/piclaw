@@ -18,7 +18,7 @@ export const scanScopes = {
   tooling: ["scripts", "runtime/scripts"],
   docsDeploy: ["docs", "skel", "supervisor", ".github", "Dockerfile", "docker-compose.yml", "Makefile", "package.json"],
 } as const;
-export const configSourcePrecedence = ["CLI flags", "process.env", ".env", ".piclaw/config.json", "defaults"] as const;
+export const configSourcePrecedence = ["CLI flags", "process.env", ".env", ".seeed/config.json", "defaults"] as const;
 export const bootstrapEnvAllowlist = [
   "PICLAW_WORKSPACE", "PICLAW_STORE", "PICLAW_DATA", "PICLAW_RUNTIME_ROOT", "PICLAW_PI_AGENT_DIR",
   "PICLAW_KEYCHAIN_KEY", "PICLAW_KEYCHAIN_KEY_FILE", "PICLAW_WEB_TLS_CERT", "PICLAW_WEB_TLS_KEY",

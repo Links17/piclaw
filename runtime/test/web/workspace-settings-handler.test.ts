@@ -30,7 +30,7 @@ test('saveWorkspaceSettings persists and applies workspace settings immediately'
     });
     expect(handler.getWorkspaceSettingsData()).toMatchObject(saved);
 
-    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.piclaw', 'config.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.seeed', 'config.json'), 'utf8'));
     expect(persisted).toMatchObject({
       domains: {
         web: {

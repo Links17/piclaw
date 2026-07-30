@@ -49,7 +49,7 @@ if (!internalSecret) {
       "-o", "StrictHostKeyChecking=no",
       "-i", "/tmp/microvm_key",
       "root@192.168.1.78",
-      "cat /root/.piclaw/config.json 2>/dev/null || echo '{}'"
+      "cat /root/.seeed/config.json 2>/dev/null || echo '{}'"
     ], { timeout: 10000, encoding: "utf-8" });
     if (result.stdout) {
       const config = JSON.parse(result.stdout);
@@ -65,7 +65,7 @@ if (!internalSecret) {
       "-o", "StrictHostKeyChecking=no",
       "-i", "/tmp/microvm_key",
       "root@192.168.1.78",
-      "grep PICLAW_INTERNAL_SECRET /root/.piclaw/.env 2>/dev/null || grep PICLAW_WEB_INTERNAL_SECRET /root/.piclaw/.env 2>/dev/null || echo ''"
+      "grep PICLAW_INTERNAL_SECRET /root/.seeed/.env 2>/dev/null || grep PICLAW_WEB_INTERNAL_SECRET /root/.seeed/.env 2>/dev/null || echo ''"
     ], { timeout: 10000, encoding: "utf-8" });
     const match = result.stdout?.match(/=(.+)/);
     if (match) internalSecret = match[1].trim();

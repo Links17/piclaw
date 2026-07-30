@@ -32,7 +32,7 @@ export function TimelineMenu({
     const [showHidden, setShowHidden] = useState(() => {
         try { return localStorage.getItem('workspaceShowHidden') === 'true'; } catch { return false; }
     });
-    const [pos, setPos] = useState({ top: 8, left: 8 });
+    const [pos, setPos] = useState({ top: 8, right: 8 });
 
     const getSafeAreaTop = () => {
         if (typeof document === 'undefined') return 0;
@@ -60,15 +60,22 @@ export function TimelineMenu({
         const update = () => {
             const safeTop = getSafeAreaTop();
             const topOffset = safeTop > 0 ? safeTop + 4 : 8;
+            const viewportWidth = window.innerWidth || 0;
             if (workspaceOpen) {
                 const sidebar = document.querySelector('.workspace-sidebar');
                 if (sidebar) {
                     const r = sidebar.getBoundingClientRect();
-                    setPos({ top: r.top + topOffset, left: r.left + 8 });
+                    setPos({ top: r.top + topOffset, right: Math.max(8, viewportWidth - r.right + 8) });
+                    return;
                 }
-            } else {
-                setPos({ top: topOffset, left: 8 });
             }
+            const container = document.querySelector('.container');
+            if (container) {
+                const r = container.getBoundingClientRect();
+                setPos({ top: r.top + topOffset, right: Math.max(8, viewportWidth - r.right + 8) });
+                return;
+            }
+            setPos({ top: topOffset, right: 8 });
         };
         update();
         const observer = new ResizeObserver(update);
@@ -87,8 +94,8 @@ export function TimelineMenu({
         if (!portalRef.current) return;
         const s = portalRef.current.style;
         s.top = `${pos.top}px`;
-        s.left = `${pos.left}px`;
-        s.right = 'auto';
+        s.right = `${pos.right}px`;
+        s.left = 'auto';
     }, [pos]);
 
     useEffect(() => {

@@ -9,7 +9,7 @@ test('buildAvatarResponse keeps serving the cached avatar when a new source cann
   const ws = createTempWorkspace('piclaw-avatar-test-');
 
   try {
-    const avatarsDir = join(ws.workspace, '.piclaw', 'avatars');
+    const avatarsDir = join(ws.workspace, '.seeed', 'avatars');
     mkdirSync(avatarsDir, { recursive: true });
 
     const png = Buffer.from(
@@ -116,7 +116,7 @@ test('buildAvatarResponse crops non-square install icons to fill square surfaces
   const ws = createTempWorkspace('piclaw-avatar-cover-test-');
 
   try {
-    const avatarsDir = join(ws.workspace, '.piclaw', 'avatars');
+    const avatarsDir = join(ws.workspace, '.seeed', 'avatars');
     mkdirSync(avatarsDir, { recursive: true });
 
     const sourcePath = join(ws.workspace, 'avatars', 'wide.svg');
@@ -192,7 +192,7 @@ test('buildAvatarResponse supports rasterized PNG size variants for install surf
   const ws = createTempWorkspace('piclaw-avatar-size-test-');
 
   try {
-    const avatarsDir = join(ws.workspace, '.piclaw', 'avatars');
+    const avatarsDir = join(ws.workspace, '.seeed', 'avatars');
     mkdirSync(avatarsDir, { recursive: true });
 
     const png = Buffer.from(

@@ -249,7 +249,7 @@ const JUNK_PATH_PATTERNS: RegExp[] = [
   /^\/proc\//,                         // proc filesystem
   /^\/sys\//,                          // sys filesystem
   /(?:^|\/)tmp\//,                    // host, workspace, or nested-repo tmp/
-  /(?:^|\/)\.piclaw\/tmp\//,          // piclaw temp files
+  /(?:^|\/)\.seeed\/tmp\//,          // piclaw temp files
   /(?:^|\/)\.cache\//,                // cache dirs
   /(?:^|\/)node_modules\//,           // dependency trees
   /(?:^|\/)\.pi\/agent\/sessions\//,  // pi session files

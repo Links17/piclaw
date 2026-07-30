@@ -38,7 +38,7 @@ function buildAvatarManifestIcons(version: string): Array<{ src: string; sizes: 
 /** Build and return the web app manifest JSON (or HEAD headers only). */
 export async function handleManifestRequest(req: Request, ctx: ManifestRequestContext): Promise<Response> {
   const encoder = new TextEncoder();
-  const baseName = ctx.assistantName || "PiClaw";
+  const baseName = ctx.assistantName || "Seeed";
   let icons: Array<{ src: string; sizes: string; type: string; purpose?: string }> = buildDefaultManifestIcons();
 
   if (ctx.assistantAvatar) {

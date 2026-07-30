@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from '../vendor/preact-htm.js';
 import {
   readStoredWorkspaceOpenPreference,
 } from './workspace-visibility.js';
+import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { useNotifications } from './use-notifications.js';
 import { isStandaloneWebAppMode } from './chat-window.js';
 import { getBranchHandleDraftState } from './branch-lifecycle.js';
@@ -122,6 +123,14 @@ export function useMainAppSurfaceState(options: {
     allowLegacyFallback: true,
     defaultValue: false,
   }));
+  const [sessionSidebarOpen, setSessionSidebarOpen] = useState(() => getLocalStorageItem('sessionSidebarCollapsed') !== '1');
+  const toggleSessionSidebar = () => {
+    setSessionSidebarOpen((prev) => {
+      const next = !prev;
+      setLocalStorageItem('sessionSidebarCollapsed', next ? '0' : '1');
+      return next;
+    });
+  };
   const [userProfile, setUserProfile] = useState({ name: 'You', avatar_url: null, avatar_background: null });
   const staleUiVersionRef = useRef<string | null>(null);
   const staleUiReloadScheduledRef = useRef(false);
@@ -239,6 +248,8 @@ export function useMainAppSurfaceState(options: {
     setRemovingPostIds,
     workspaceOpen,
     setWorkspaceOpen,
+    sessionSidebarOpen,
+    toggleSessionSidebar,
     userProfile,
     setUserProfile,
     staleUiVersionRef,

@@ -5,7 +5,7 @@ import { join } from 'path';
 const runtimeRoot = join(import.meta.dir, '../../');
 const staticClassicDist = join(runtimeRoot, 'web/static/classic/dist');
 const vendorDir = join(runtimeRoot, 'extensions/viewers/editor/vendor');
-const workDir = join(runtimeRoot, '../.piclaw/tmp/markdown-table-cell-stress');
+const workDir = join(runtimeRoot, '../.seeed/tmp/markdown-table-cell-stress');
 mkdirSync(workDir, { recursive: true });
 
 function table(header: string[], rows: string[][]): string {

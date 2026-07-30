@@ -26,7 +26,7 @@ function GeneralSection() {
 
     useEffect(() => {
         fetch('/agent/branding').then(r => r.json()).then(data => {
-            setAssistantName(data?.assistant_name || 'PiClaw');
+            setAssistantName(data?.assistant_name || 'Seeed');
             setLoaded(true);
         }).catch(() => setLoaded(true));
     }, []);
@@ -129,7 +129,7 @@ function ToolsSection() {
         <div class="settings-section">
             <h3>Tools</h3>
             <p class="settings-hint">Tool activation is managed by the agent runtime. Use <code>list_tools</code> to discover available tools and <code>activate_tools</code> to enable them.</p>
-            <p class="settings-hint">Default active tools can be configured in <code>.piclaw/config.json</code> under <code>tools.additionalDefaultTools</code>.</p>
+            <p class="settings-hint">Default active tools can be configured in <code>.seeed/config.json</code> under <code>tools.additionalDefaultTools</code>.</p>
         </div>
     `;
 }

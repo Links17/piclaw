@@ -6,6 +6,7 @@ import * as store from "@piclaw-cloud/store";
 import { applyMigrations } from "@piclaw-cloud/store/db";
 import { AuthError, requireSessionAccess, resolveRequestUser } from "./auth.ts";
 import { config } from "./config.ts";
+import { applyCors, handleCorsPreflight } from "./cors.ts";
 import { QuotaExceededError } from "./quota.ts";
 import { subscribe, type SessionEvent } from "./events.ts";
 import { serveStaticRequest } from "./static.ts";
@@ -121,10 +122,10 @@ async function withAuth(req: Request, handler: (ctx: RequestContext) => Promise<
   try {
     const userId = await resolveRequestUser(req);
     await store.setUserContext(userId);
-    return await handler({ userId });
+    return applyCors(req, await handler({ userId }));
   } catch (error) {
     if (error instanceof AuthError) {
-      return json({ error: error.message }, 401);
+      return applyCors(req, json({ error: error.message }, 401));
     }
     throw error;
   }
@@ -139,12 +140,16 @@ export function startServer(): ReturnType<typeof Bun.serve> {
     port: config.port,
     idleTimeout: 0,
     async fetch(req, server) {
+      const preflight = handleCorsPreflight(req);
+      if (preflight) return preflight;
+      const respond = (response: Response) => applyCors(req, response);
+
       const url = new URL(req.url);
       const parts = url.pathname.split("/").filter(Boolean);
 
       try {
         if (req.method === "GET" && url.pathname === "/health") {
-          return json({ ok: true, replica: config.replicaId, sandbox: config.sandboxEnabled });
+          return respond(json({ ok: true, replica: config.replicaId, sandbox: config.sandboxEnabled }));
         }
 
         // ── Web UI compatibility ──────────────────────────────────────
@@ -152,7 +157,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         if (req.method === "GET" && url.pathname === "/sse/stream") {
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
           const sessionId = await ensureChatSession(chatJid);
-          return sseResponse(sessionId, chatJid);
+          return respond(sseResponse(sessionId, chatJid));
         }
 
         if (req.method === "GET" && url.pathname === "/timeline") {
@@ -160,31 +165,31 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const limit = Number(url.searchParams.get("limit") || 10);
           const beforeRaw = url.searchParams.get("before_id");
           const before = beforeRaw ? Number(beforeRaw) : null;
-          return json(await getTimeline(chatJid, limit, before));
+          return respond(json(await getTimeline(chatJid, limit, before));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/status") {
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
-          return json(await getAgentStatus(chatJid));
+          return respond(json(await getAgentStatus(chatJid));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/queue-state") {
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
-          return json(await getQueueState(chatJid));
+          return respond(json(await getQueueState(chatJid));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/roster") {
-          return json(getAgentsRoster());
+          return respond(json(getAgentsRoster());
         }
 
         if (req.method === "GET" && url.pathname === "/agent/active-chats") {
-          return json(await getActiveChatAgents());
+          return respond(json(await getActiveChatAgents());
         }
 
         if (req.method === "GET" && url.pathname === "/agent/branches") {
           return withAuth(req, async ({ userId }) => {
             const includeArchived = url.searchParams.get("include_archived") === "1";
-            return json(await getChatBranches({ includeArchived, userId }));
+            return respond(json(await getChatBranches({ includeArchived, userId }));
           });
         }
 
@@ -192,12 +197,12 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return withAuth(req, async ({ userId }) => {
             const body = await readJson(req);
             const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
-            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
+            if (!chatJid) return respond(json({ error: "Missing chat_jid" }, 400);
             try {
-              return json(await pruneChatBranch(chatJid, userId));
+              return respond(json(await pruneChatBranch(chatJid, userId));
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error || "Failed to prune branch.");
-              return json({ error: message || "Failed to prune branch." }, 400);
+              return respond(json({ error: message || "Failed to prune branch." }, 400);
             }
           });
         }
@@ -206,12 +211,12 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return withAuth(req, async ({ userId }) => {
             const body = await readJson(req);
             const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
-            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
+            if (!chatJid) return respond(json({ error: "Missing chat_jid" }, 400);
             try {
-              return json(await purgeChatBranch(chatJid, userId));
+              return respond(json(await purgeChatBranch(chatJid, userId));
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error || "Failed to permanently delete archived branch.");
-              return json({ error: message || "Failed to permanently delete archived branch." }, 400);
+              return respond(json({ error: message || "Failed to permanently delete archived branch." }, 400);
             }
           });
         }
@@ -220,13 +225,13 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return withAuth(req, async ({ userId }) => {
             const body = await readJson(req);
             const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
-            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
+            if (!chatJid) return respond(json({ error: "Missing chat_jid" }, 400);
             const agentName = typeof body.agent_name === "string" ? body.agent_name : undefined;
             try {
-              return json(await restoreChatBranch(chatJid, userId, agentName));
+              return respond(json(await restoreChatBranch(chatJid, userId, agentName));
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error || "Failed to restore branch.");
-              return json({ error: message || "Failed to restore branch." }, 400);
+              return respond(json({ error: message || "Failed to restore branch." }, 400);
             }
           });
         }
@@ -236,33 +241,33 @@ export function startServer(): ReturnType<typeof Bun.serve> {
             const body = await readJson(req);
             const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
             const agentName = typeof body.agent_name === "string" ? body.agent_name.trim() : "";
-            if (!chatJid) return json({ error: "Missing chat_jid" }, 400);
-            if (!agentName) return json({ error: "Missing agent_name" }, 400);
+            if (!chatJid) return respond(json({ error: "Missing chat_jid" }, 400);
+            if (!agentName) return respond(json({ error: "Missing agent_name" }, 400);
             try {
-              return json(await renameChatBranch(chatJid, userId, agentName));
+              return respond(json(await renameChatBranch(chatJid, userId, agentName));
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error || "Failed to rename branch.");
-              return json({ error: message || "Failed to rename branch." }, 400);
+              return respond(json({ error: message || "Failed to rename branch." }, 400);
             }
           });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/branch-fork") {
-          return json({ error: "Branch fork is not available in cloud mode." }, 501);
+          return respond(json({ error: "Branch fork is not available in cloud mode." }, 501);
         }
 
         if (req.method === "POST" && url.pathname === "/agent/branch-merge-parent") {
-          return json({ error: "Branch merge is not available in cloud mode." }, 501);
+          return respond(json({ error: "Branch merge is not available in cloud mode." }, 501);
         }
 
         if (req.method === "POST" && url.pathname === "/agent/root-session") {
           const body = await readJson(req);
           const agentName = typeof body.agent_name === "string" ? body.agent_name : "Chat";
-          return json(await createRootChatSession(agentName));
+          return respond(json(await createRootChatSession(agentName));
         }
 
         if (req.method === "POST" && url.pathname === "/agent/ui-state") {
-          return json({ ok: true });
+          return respond(json({ ok: true });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/question/answer") {
@@ -270,91 +275,91 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const body = await readJson(req);
           const questionId = String(body.question_id ?? body.questionId ?? "");
           const answer = String(body.answer ?? body.content ?? "");
-          if (!questionId || !answer) return json({ error: "question_id and answer required" }, 400);
-          return json(await answerAgentQuestion(chatJid, questionId, answer));
+          if (!questionId || !answer) return respond(json({ error: "question_id and answer required" }, 400);
+          return respond(json(await answerAgentQuestion(chatJid, questionId, answer));
         }
 
         if (req.method === "POST" && url.pathname === "/agent/mode") {
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
           const body = await readJson(req);
           const mode = body.mode === "plan" ? "plan" : "execute";
-          return json(await setAgentMode(chatJid, mode));
+          return respond(json(await setAgentMode(chatJid, mode));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/subagents") {
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
-          return json(await listSessionSubagents(chatJid));
+          return respond(json(await listSessionSubagents(chatJid));
         }
 
         if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
-          return json({});
+          return respond(json({});
         }
 
         if (req.method === "POST" && url.pathname === "/agent/queue-steer") {
-          return json({ removed: false, queued: "steer" });
+          return respond(json({ removed: false, queued: "steer" });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/queue-remove") {
-          return json({ removed: false });
+          return respond(json({ removed: false });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/commands") {
-          return json({ commands: [] });
+          return respond(json({ commands: [] });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/models") {
-          return json({ models: [{ id: config.openaiModel, label: config.openaiModel }], current: config.openaiModel });
+          return respond(json({ models: [{ id: config.openaiModel, label: config.openaiModel }], current: config.openaiModel });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/context") {
-          return json({ tokens: null, context_window: null, percent: null });
+          return respond(json({ tokens: null, context_window: null, percent: null });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/autoresearch/status") {
-          return json({ content: [] });
+          return respond(json({ content: [] });
         }
 
         if (req.method === "POST" && url.pathname.startsWith("/agent/autoresearch/")) {
-          return json({ ok: true });
+          return respond(json({ ok: true });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/addons/web-entries") {
-          return json({ entries: [] });
+          return respond(json({ entries: [] });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/push/presence") {
-          return json({ ok: true });
+          return respond(json({ ok: true });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/push/subscription") {
-          return json({ ok: true });
+          return respond(json({ ok: true });
         }
 
         if (req.method === "DELETE" && url.pathname === "/agent/push/subscription") {
-          return json({ ok: true });
+          return respond(json({ ok: true });
         }
 
         if (req.method === "GET" && url.pathname === "/terminal/session") {
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
-          return json(getTerminalSessionInfo(chatJid));
+          return respond(json(getTerminalSessionInfo(chatJid));
         }
 
         if (req.method === "POST" && url.pathname === "/terminal/handoff") {
-          return json(createTerminalHandoff());
+          return respond(json(createTerminalHandoff());
         }
 
         if (req.method === "POST" && parts[0] === "agent" && parts[1] && parts[2] === "message") {
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
           const body = await readJson(req);
           const content = String(body.content || "");
-          if (!content) return json({ error: "content required" }, 400);
+          if (!content) return respond(json({ error: "content required" }, 400);
           const mode = typeof body.mode === "string" ? body.mode : null;
           try {
             const result = await sendAgentMessage(chatJid, content, mode);
-            return json(result);
+            return respond(json(result);
           } catch (error) {
             if (error instanceof QuotaExceededError) {
-              return json({ ok: false, ...error.toJson() }, 429);
+              return respond(json({ ok: false, ...error.toJson() }, 429);
             }
             throw error;
           }
@@ -365,7 +370,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const sessionId = chatJidToSessionId(chatJid);
           const upgraded = server.upgrade(req, { data: { sessionId, chatJid } });
           if (upgraded) return undefined as unknown as Response;
-          return json({ error: "websocket upgrade failed" }, 400);
+          return respond(json({ error: "websocket upgrade failed" }, 400);
         }
 
         if (req.method === "GET" && url.pathname === "/skills") {
@@ -376,14 +381,14 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return withAuth(req, async ({ userId }) => {
             const body = await readJson(req);
             try {
-              return json(await installSkillForUser(userId, {
+              return respond(json(await installSkillForUser(userId, {
                 name: String(body.name ?? ""),
                 description: typeof body.description === "string" ? body.description : "",
                 content: String(body.content ?? ""),
               }));
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error);
-              return json({ error: message }, 400);
+              return respond(json({ error: message }, 400);
             }
           });
         }
@@ -391,10 +396,10 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         if (req.method === "DELETE" && parts[0] === "skills" && parts[1]) {
           return withAuth(req, async ({ userId }) => {
             try {
-              return json(await removeUserSkill(userId, decodeURIComponent(parts[1]!)));
+              return respond(json(await removeUserSkill(userId, decodeURIComponent(parts[1]!)));
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error);
-              return json({ error: message }, 404);
+              return respond(json({ error: message }, 404);
             }
           });
         }
@@ -407,7 +412,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
             const id = typeof body.id === "string" ? body.id : crypto.randomUUID();
             const title = typeof body.title === "string" ? body.title : "";
             await store.createSession(id, title, userId);
-            return json({ id });
+            return respond(json({ id });
           });
         }
 
@@ -418,15 +423,15 @@ export function startServer(): ReturnType<typeof Bun.serve> {
             return withAuth(req, async ({ userId }) => {
               await requireSessionAccess(sessionId, userId);
               const session = await store.getSession(sessionId);
-              if (!session) return json({ error: "unknown session" }, 404);
-              return json({ session });
+              if (!session) return respond(json({ error: "unknown session" }, 404);
+              return respond(json({ session });
             });
           }
 
           if (req.method === "GET" && parts[2] === "messages") {
             return withAuth(req, async ({ userId }) => {
               await requireSessionAccess(sessionId, userId);
-              return json({ messages: await store.listMessages(sessionId) });
+              return respond(json({ messages: await store.listMessages(sessionId) });
             });
           }
 
@@ -435,13 +440,13 @@ export function startServer(): ReturnType<typeof Bun.serve> {
               await requireSessionAccess(sessionId, userId);
               const body = await readJson(req);
               const content = String(body.content || "");
-              if (!content) return json({ error: "content required" }, 400);
-              if (!(await store.getSession(sessionId))) return json({ error: "unknown session" }, 404);
+              if (!content) return respond(json({ error: "content required" }, 400);
+              if (!(await store.getSession(sessionId))) return respond(json({ error: "unknown session" }, 404);
 
               const outcomePromise = submitMessage(sessionId, content);
               if (url.searchParams.get("wait") === "1") {
                 const result = await outcomePromise;
-                return json({ outcome: result.outcome, user_message_id: result.userMessageId, replica: config.replicaId });
+                return respond(json({ outcome: result.outcome, user_message_id: result.userMessageId, replica: config.replicaId });
               }
               const result = await Promise.race([
                 outcomePromise.catch(() => ({ outcome: "ran" as const, userMessageId: 0 })),
@@ -450,21 +455,21 @@ export function startServer(): ReturnType<typeof Bun.serve> {
               outcomePromise.catch((error) => {
                 console.error(`[${config.replicaId}] turn failed:`, error);
               });
-              return json({ outcome: result.outcome, user_message_id: result.userMessageId, replica: config.replicaId });
+              return respond(json({ outcome: result.outcome, user_message_id: result.userMessageId, replica: config.replicaId });
             });
           }
 
           if (req.method === "GET" && parts[2] === "stream") {
             return withAuth(req, async ({ userId }) => {
               await requireSessionAccess(sessionId, userId);
-              return sseResponse(sessionId);
+              return respond(sseResponse(sessionId));
             });
           }
 
           if (req.method === "GET" && parts[2] === "subagents") {
             return withAuth(req, async ({ userId }) => {
               await requireSessionAccess(sessionId, userId);
-              return json({ runs: await store.listSubagentRuns(sessionId) });
+              return respond(json({ runs: await store.listSubagentRuns(sessionId) });
             });
           }
 
@@ -473,8 +478,8 @@ export function startServer(): ReturnType<typeof Bun.serve> {
               await requireSessionAccess(sessionId, userId);
               const body = await readJson(req);
               const result = await spawnSubagentViaApi(sessionId, body);
-              if (!result.success) return json({ success: false, error: result.error }, 400);
-              return json({ success: true, data: result.data });
+              if (!result.success) return respond(json({ success: false, error: result.error }, 400);
+              return respond(json({ success: true, data: result.data });
             });
           }
 
@@ -482,7 +487,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           if (req.method === "GET" && parts[2] === "cursor") {
             return withAuth(req, async ({ userId }) => {
               await requireSessionAccess(sessionId, userId);
-              return json({
+              return respond(json({
                 cursor: await store.getCursor(sessionId),
                 queued: await store.getQueuedFollowups(sessionId),
                 locked: await store.isSessionLocked(sessionId),
@@ -492,45 +497,45 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         const workspaceResponse = await handleWorkspaceRoutes(req, url.pathname);
-        if (workspaceResponse) return workspaceResponse;
+        if (workspaceResponse) return respond(workspaceResponse);
 
         if (parts[0] === "subagents" && parts[1]) {
           const runId = parts[1];
           const chatJid = url.searchParams.get("chat_jid") || config.defaultChatJid;
 
           if (req.method === "GET" && parts.length === 2) {
-            return json(await getSubagentStatus(chatJid, runId));
+            return respond(json(await getSubagentStatus(chatJid, runId));
           }
 
           if (req.method === "GET" && parts[2] === "messages") {
-            return json(await getSubagentTranscript(chatJid, runId));
+            return respond(json(await getSubagentTranscript(chatJid, runId));
           }
 
           if (req.method === "POST" && parts[2] === "steer") {
             const body = await readJson(req);
             const message = String(body.message ?? body.content ?? "");
-            if (!message) return json({ success: false, error: "message required" }, 400);
-            return json(await steerSubagentForChat(chatJid, runId, message));
+            if (!message) return respond(json({ success: false, error: "message required" }, 400);
+            return respond(json(await steerSubagentForChat(chatJid, runId, message));
           }
 
           if (req.method === "POST" && parts[2] === "stop") {
-            return json(await stopSubagentForChat(chatJid, runId));
+            return respond(json(await stopSubagentForChat(chatJid, runId));
           }
         }
 
         const staticResponse = serveStaticRequest(req);
-        if (staticResponse) return staticResponse;
+        if (staticResponse) return respond(staticResponse);
 
-        return json({ error: "not found" }, 404);
+        return respond(json({ error: "not found" }, 404);
       } catch (error) {
         if (error instanceof QuotaExceededError) {
-          return json(error.toJson(), 429);
+          return respond(json(error.toJson(), 429);
         }
         if (error instanceof AuthError) {
-          return json({ error: error.message }, 401);
+          return respond(json({ error: error.message }, 401);
         }
         const message = error instanceof Error ? error.message : String(error);
-        return json({ error: message }, 500);
+        return respond(json({ error: message }, 500);
       }
     },
     websocket: {

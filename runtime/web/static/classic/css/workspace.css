@@ -100,7 +100,7 @@
     padding: 0;
     width: var(--workspace-tab-width, 20px);
     height: 52px;
-    border-radius: var(--radius-md) 0 0 var(--radius-md);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
     box-shadow: var(--shadow-sm);
     cursor: pointer;
     align-items: center;

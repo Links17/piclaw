@@ -7,7 +7,7 @@ import { ensureSandbox } from "../sandbox/session.ts";
 import { WORKSPACE_ROOT } from "../tools/path.ts";
 import type { CodingSubagentResult } from "./types.ts";
 
-const PICLAW_DIR = `${WORKSPACE_ROOT}/.piclaw`;
+const PICLAW_DIR = `${WORKSPACE_ROOT}/.seeed`;
 const WORKER_PATH = `${PICLAW_DIR}/coding-worker.py`;
 
 export function buildCodingWorkerScript(): string {

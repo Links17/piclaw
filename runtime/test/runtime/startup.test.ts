@@ -43,8 +43,8 @@ describe("runtime startup helpers", () => {
       expect(run.exitCode, run.stderr.toString() || run.stdout.toString()).toBe(0);
 
       expect(existsSync(join(ws.workspace, "AGENTS.md"))).toBe(true);
-      expect(existsSync(join(ws.workspace, ".piclaw", "README.md"))).toBe(true);
-      expect(existsSync(join(ws.workspace, ".piclaw", "config.json.example"))).toBe(true);
+      expect(existsSync(join(ws.workspace, ".seeed", "README.md"))).toBe(true);
+      expect(existsSync(join(ws.workspace, ".seeed", "config.json.example"))).toBe(true);
       expect(existsSync(join(ws.workspace, ".mcp.json.example"))).toBe(true);
       expect(existsSync(join(ws.workspace, ".pi", "mcp.json.example"))).toBe(true);
       expect(existsSync(join(ws.workspace, "notes", "index.md"))).toBe(true);

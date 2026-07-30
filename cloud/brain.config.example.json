@@ -48,5 +48,8 @@
     "servers": []
   },
   "subagentMaxConcurrent": 4,
-  "subagentMaxTurns": 8
+  "subagentMaxTurns": 8,
+  "web": {
+    "allowedOrigins": []
+  }
 }

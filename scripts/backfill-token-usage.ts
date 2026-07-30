@@ -12,8 +12,8 @@ import { readdirSync, statSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import Database from "bun:sqlite";
 
-const sessionsDir = process.env.PICLAW_SESSIONS_DIR || "/workspace/.piclaw/data/sessions";
-const storeDir = process.env.PICLAW_STORE || "/workspace/.piclaw/store";
+const sessionsDir = process.env.PICLAW_SESSIONS_DIR || "/workspace/.seeed/data/sessions";
+const storeDir = process.env.PICLAW_STORE || "/workspace/.seeed/store";
 const dbPath = join(storeDir, "messages.db");
 
 const db = new Database(dbPath);
@@ -46,7 +46,7 @@ db.exec(`
 const sanitizeJid = (jid: string) => jid.replace(/[^a-zA-Z0-9._-]/g, "_");
 
 const jidMap = new Map<string, string>();
-const chatsFile = "/workspace/.piclaw/data/chats.json";
+const chatsFile = "/workspace/.seeed/data/chats.json";
 if (existsSync(chatsFile)) {
   try {
     const data = JSON.parse(readFileSync(chatsFile, "utf8"));

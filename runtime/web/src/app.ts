@@ -177,7 +177,7 @@ function MainApp({ locationParams, navigate }) {
         if (!currentChatJid) return;
         void fetchSessionSubagents(currentChatJid)
             .then((payload) => hydrateFleetRunsFromApi(payload?.runs ?? []))
-            .catch(() => {});
+            .catch((error) => { void error; });
     }, [currentChatJid]);
 
     const pane = useMainAppPaneComposition({

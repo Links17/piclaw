@@ -22,8 +22,8 @@ test("dream token defaults and auto gate follow nightly cadence", async () => {
 test("Dream scheduler uses typed restart configuration for cron and model", () => {
   const workspace = createTempWorkspace("piclaw-dream-scheduler-config-");
   try {
-    mkdirSync(join(workspace.workspace, ".piclaw"), { recursive: true });
-    writeFileSync(join(workspace.workspace, ".piclaw", "config.json"), JSON.stringify({
+    mkdirSync(join(workspace.workspace, ".seeed"), { recursive: true });
+    writeFileSync(join(workspace.workspace, ".seeed", "config.json"), JSON.stringify({
       domains: {
         dream: {
           cron: "45 3 * * *",

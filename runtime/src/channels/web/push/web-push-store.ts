@@ -10,7 +10,7 @@ import { WORKSPACE_DIR, getWebRuntimeConfig } from "../../../core/config.js";
 import { createLogger, debugSuppressedError } from "../../../utils/logger.js";
 
 const log = createLogger("web.push.store");
-const DEFAULT_PUSH_DIR = resolve(WORKSPACE_DIR, ".piclaw", "web-push");
+const DEFAULT_PUSH_DIR = resolve(WORKSPACE_DIR, ".seeed", "web-push");
 const VAPID_FILE_NAME = "vapid-keys.json";
 const SUBSCRIPTIONS_FILE_NAME = "subscriptions.json";
 

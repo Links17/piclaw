@@ -15,6 +15,31 @@
     overflow: hidden;
 }
 
+.app-shell.workspace-right > .session-sidebar,
+.app-shell.workspace-right > .session-sidebar-collapsed {
+    order: 1;
+}
+
+.app-shell.workspace-right > .container {
+    order: 2;
+}
+
+.app-shell.workspace-right > .editor-pane-container {
+    order: 3;
+}
+
+.app-shell.workspace-right > .editor-splitter {
+    order: 4;
+}
+
+.app-shell.workspace-right > .workspace-splitter {
+    order: 5;
+}
+
+.app-shell.workspace-right > .workspace-sidebar {
+    order: 6;
+}
+
 .app-shell.chat-only {
     justify-content: center;
 }

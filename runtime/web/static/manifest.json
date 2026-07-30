@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "PiClaw",
-  "short_name": "PiClaw",
+  "name": "Seeed",
+  "short_name": "Seeed",
   "description": "Slack-like interface for coding agents",
   "start_url": "/",
   "display": "standalone",

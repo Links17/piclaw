@@ -10,6 +10,7 @@ import { TimelineMenu } from '../components/timeline-menu.js';
 import { AgentRequestModal, AgentStatus } from '../components/status.js';
 import { Timeline } from '../components/timeline.js';
 import { WorkspaceExplorer } from '../components/workspace-explorer.js';
+import { SessionSidebar } from '../components/session-sidebar.js';
 import { TabStrip } from '../components/tab-strip.js';
 import { MarkdownPreview } from '../components/markdown-preview.js';
 import { SystemMetersHud } from '../components/system-meters-hud.js';
@@ -25,7 +26,7 @@ export function buildMainShellClassName(options: {
   zenMode: boolean;
 }): string {
   const { workspaceOpen, editorOpen, chatOnlyMode, zenMode } = options;
-  return `app-shell${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}${chatOnlyMode ? ' chat-only' : ''}${zenMode ? ' zen-mode' : ''}`;
+  return `app-shell workspace-right${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}${chatOnlyMode ? ' chat-only' : ''}${zenMode ? ' zen-mode' : ''}`;
 }
 
 export function extractPostedUserMessageId(response: unknown): number | null {
@@ -112,6 +113,8 @@ export function renderMainShell(options: MainShellRenderOptions): any {
   const {
     appShellRef,
     workspaceOpen,
+    sessionSidebarOpen,
+    toggleSessionSidebar,
     editorOpen,
     chatOnlyMode,
     zenMode,
@@ -336,26 +339,19 @@ export function renderMainShell(options: MainShellRenderOptions): any {
         </div>
       `}
       ${!chatOnlyMode && html`
-        <${WorkspaceExplorer}
-          onFileSelect=${addFileRef}
-          onFolderSelect=${addFolderRef}
-          visible=${workspaceOpen}
-          active=${workspaceOpen || editorOpen}
-          onOpenEditor=${openEditor}
-          onOpenTerminalTab=${openTerminalTab}
-          onOpenVncTab=${openVncTab}
+        <${SessionSidebar}
+          activeChatAgents=${activeChatAgents}
+          currentChatJid=${currentChatJid}
+          onSwitchChat=${handleBranchPickerChange}
+          onCreateSession=${handleCreateSessionFromCompose}
+          onCreateRootSession=${handleCreateRootSessionFromCompose}
+          onRenameSession=${openRenameCurrentBranchForm}
+          onDeleteSession=${handlePruneCurrentBranch}
+          onRestoreSession=${handleRestoreBranch}
+          onPurgeArchivedSession=${handlePurgeArchivedBranch}
+          collapsed=${!sessionSidebarOpen}
+          onToggleCollapsed=${toggleSessionSidebar}
         />
-        <button
-          class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}
-          onClick=${toggleWorkspace}
-          title=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
-          aria-label=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
-        >
-          <svg class="workspace-toggle-tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="6 3 11 8 6 13" />
-          </svg>
-        </button>
-        <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
       `}
       ${showEditorPaneContainer && html`
         <div class="editor-pane-container">
@@ -451,6 +447,28 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           </div>`}
         </div>
         <div class="editor-splitter" onMouseDown=${handleEditorSplitterMouseDown} onTouchStart=${handleEditorSplitterTouchStart}></div>
+      `}
+      ${!chatOnlyMode && html`
+        <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
+        <button
+          class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}
+          onClick=${toggleWorkspace}
+          title=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
+          aria-label=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
+        >
+          <svg class="workspace-toggle-tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="10 3 5 8 10 13" />
+          </svg>
+        </button>
+        <${WorkspaceExplorer}
+          onFileSelect=${addFileRef}
+          onFolderSelect=${addFolderRef}
+          visible=${workspaceOpen}
+          active=${workspaceOpen || editorOpen}
+          onOpenEditor=${openEditor}
+          onOpenTerminalTab=${openTerminalTab}
+          onOpenVncTab=${openVncTab}
+        />
       `}
       <${TimelineMenu}
         workspaceOpen=${workspaceOpen}

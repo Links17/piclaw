@@ -148,7 +148,7 @@ function makeDigest(source: string, text: string): string {
   return hash.digest("hex");
 }
 
-const sessionsDir = resolve(readArg("--sessions-dir") || "/workspace/.piclaw/data/sessions");
+const sessionsDir = resolve(readArg("--sessions-dir") || "/workspace/.seeed/data/sessions");
 const chatFilter = readArg("--chat")?.trim();
 const maxFiles = readIntArg("--max-files", Number.MAX_SAFE_INTEGER);
 const previewLines = readIntArg("--preview-lines", 8);

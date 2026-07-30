@@ -12,14 +12,14 @@ test("isLikelyTestHarnessProcess detects direct test argv values", () => {
 test("shouldBlockLiveDatabaseOpenInTests refuses the canonical live db for test processes", () => {
   expect(shouldBlockLiveDatabaseOpenInTests({
     useMemory: false,
-    nextPath: "/workspace/.piclaw/store/messages.db",
+    nextPath: "/workspace/.seeed/store/messages.db",
     workspaceDir: "/workspace",
     argv: ["bun", "test/channels/web/oobe-instance-state.test.ts"],
   })).toBe(true);
 
   expect(shouldBlockLiveDatabaseOpenInTests({
     useMemory: true,
-    nextPath: "/workspace/.piclaw/store/messages.db",
+    nextPath: "/workspace/.seeed/store/messages.db",
     workspaceDir: "/workspace",
     argv: ["bun", "test/channels/web/oobe-instance-state.test.ts"],
   })).toBe(false);
@@ -35,7 +35,7 @@ test("shouldBlockLiveDatabaseOpenInTests refuses the canonical live db for test 
   try {
     expect(shouldBlockLiveDatabaseOpenInTests({
       useMemory: false,
-      nextPath: "/workspace/.piclaw/store/messages.db",
+      nextPath: "/workspace/.seeed/store/messages.db",
       workspaceDir: "/workspace",
       argv: ["bun", "test/channels/web/oobe-instance-state.test.ts"],
     })).toBe(false);
