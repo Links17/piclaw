@@ -258,7 +258,12 @@ export function TimelineMenu({
     `;
 
     useLayoutEffect(() => {
-        if (portalRef.current) render(content, portalRef.current);
+        if (!portalRef.current) return undefined;
+        if (workspaceOpen) {
+            render(null, portalRef.current);
+            return undefined;
+        }
+        render(content, portalRef.current);
     });
 
     return null;
