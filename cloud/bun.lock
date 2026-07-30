@@ -32,6 +32,7 @@
     "scheduler": {
       "name": "@piclaw-cloud/scheduler",
       "dependencies": {
+        "@piclaw-cloud/shared": "workspace:*",
         "@piclaw-cloud/store": "workspace:*",
       },
       "devDependencies": {

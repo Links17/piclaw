@@ -1,17 +1,19 @@
 /**
  * Scheduler worker — pause idle session sandboxes to reduce cost.
  */
+import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 import * as store from "@piclaw-cloud/store";
 import { applyMigrations } from "@piclaw-cloud/store/db";
 
-const idleMs = Number(process.env.CLOUD_SANDBOX_IDLE_MS || 30 * 60 * 1000);
-const pollMs = Number(process.env.CLOUD_SCHEDULER_POLL_MS || 60_000);
+const cloud = getCloudConfig();
+const idleMs = cloud.sandbox.idleMs;
+const pollMs = cloud.scheduler.pollMs;
 
-const sandboxApiUrl = process.env.CUBE_API_URL || process.env.CLOUD_SANDBOX_API_URL || "";
-const sandboxApiKey = process.env.CUBE_API_KEY || process.env.CLOUD_SANDBOX_API_KEY || "";
-const sandboxOpsUrl = process.env.CUBE_OPS_URL || process.env.CLOUD_SANDBOX_OPS_URL || "";
-const sandboxOpsUser = process.env.CUBE_OPS_USER || process.env.CLOUD_SANDBOX_OPS_USER || "";
-const sandboxOpsPassword = process.env.CUBE_OPS_PASSWORD || process.env.CLOUD_SANDBOX_OPS_PASSWORD || "";
+const sandboxApiUrl = cloud.sandbox.apiUrl;
+const sandboxApiKey = cloud.sandbox.apiKey;
+const sandboxOpsUrl = cloud.sandbox.opsUrl;
+const sandboxOpsUser = cloud.sandbox.opsUser;
+const sandboxOpsPassword = cloud.sandbox.opsPassword;
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 

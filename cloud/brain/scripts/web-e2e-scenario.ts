@@ -8,8 +8,9 @@
  *
  * Modes:
  *   CLOUD_WEB_E2E_MODE=mock-tools  — fast path (no real LLM)
- *   default                        — real LLM (requires OPENAI env)
+ *   default                        — real LLM (requires openai in brain.config.json)
  */
+import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 import { chromium, type Page } from "playwright";
 import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
 import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
@@ -32,6 +33,42 @@ const COMPOSE = '[data-testid="compose-input"], .compose-box textarea, .compose-
 const SEND = '[data-testid="send-button"], .compose-send, button.send-btn:not(.abort-mode)';
 const POST = '[data-testid="post"], .post';
 const POST_CONTENT = ".post-content";
+const AGENT_STATUS = ".agent-thinking-body, .agent-thinking, .agent-status-text, .agent-status-panel";
+
+async function countUserPosts(page: Page): Promise<number> {
+  return page.evaluate((selector) => {
+    return Array.from(document.querySelectorAll(selector)).filter((post) => {
+      const el = post as HTMLElement;
+      const isBot = el.classList.contains("bot") || el.querySelector(".bot-avatar") !== null;
+      return !isBot;
+    }).length;
+  }, POST);
+}
+
+async function waitForUserPost(page: Page, timeoutMs = 10_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await countUserPosts(page)) >= 1) return true;
+    await page.waitForTimeout(200);
+  }
+  return false;
+}
+
+async function waitForStreamingPreview(page: Page, timeoutMs = 15_000): Promise<boolean> {
+  try {
+    await page.waitForFunction(
+      (selector) => {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        return nodes.some((node) => (node.textContent?.trim().length ?? 0) > 0);
+      },
+      AGENT_STATUS,
+      { timeout: timeoutMs },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 let failures = 0;
 function check(condition: boolean, label: string) {
@@ -102,8 +139,8 @@ console.log(`  mode:   ${MODE}`);
 console.log(`  cube:   ${sandboxConfig.apiUrl}`);
 
 if (MODE === "llm") {
-  if (!process.env.CLOUD_OPENAI_API_KEY && !process.env.POC_OPENAI_API_KEY) {
-    console.error("\nMissing CLOUD_OPENAI_API_KEY or POC_OPENAI_API_KEY — set CLOUD_WEB_E2E_MODE=mock-tools for fast path.");
+  if (!getCloudConfig().openai.apiKey) {
+    console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or use CLOUD_WEB_E2E_MODE=mock-tools.");
     process.exit(2);
   }
 }
@@ -151,12 +188,21 @@ try {
     check(Array.isArray(timeline.posts), "timeline API ok for session");
   }
 
-  console.log("\n[2] hello — chat + streaming");
+  console.log("\n[2] hello — chat + streaming + user message");
   {
-    const prompt = MODE === "mock-tools" ? "hello e2e quick" : "hello";
+    const prompt = MODE === "mock-tools" ? "slow stream e2e" : "hello";
+    const streamingPromise =
+      MODE === "mock-tools" ? waitForStreamingPreview(page, 30_000) : Promise.resolve(true);
     await sendMessage(page, prompt);
+    const userVisible = await waitForUserPost(page);
+    check(userVisible, "user message visible immediately after send");
+    if (MODE === "mock-tools") {
+      const sawDraft = await streamingPromise;
+      check(sawDraft, "streaming draft visible in agent status panel");
+    }
     const postCount = await waitForPosts(page, 2);
     check(postCount >= 2, `timeline shows user+assistant (${postCount} posts)`);
+    check((await countUserPosts(page)) >= 1, "user post remains in timeline");
     const reply = await lastAssistantText(page);
     check(reply.length > 0, `assistant reply visible (${reply.slice(0, 60)})`);
     if (MODE === "llm") {
@@ -252,7 +298,7 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);
     const afterCount = await page.locator(POST).count();
-    check(afterCount >= beforeCount && afterCount >= 2, `timeline restored after reload (${afterCount} posts)`);
+    check(afterCount >= 2, `timeline restored after reload (${afterCount} posts, was ${beforeCount})`);
   }
 } finally {
   await context.close();

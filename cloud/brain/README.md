@@ -6,15 +6,46 @@
 
 ```bash
 cd cloud && bun install
-export POC_PG_URL=postgres://sensecraft:sensecraft@localhost:25432/piclaw_cloud_poc
-export POC_REDIS_URL=redis://localhost:26379/5
-# 可选：CubeSandbox
-export E2B_API_URL=http://192.168.200.127:12088
-export CUBE_TEMPLATE_ID=tpl-474f7cc593f145f0bb4cf232
-export CUBE_PROXY_NODE_IP=192.168.200.127
-
+cp brain.config.example.json brain.config.json
+# 编辑 brain.config.json：openai.apiKey、openai.baseUrl、sandbox 等
 cd brain && bun run start
 ```
+
+可选：指定配置文件路径
+
+```bash
+bun run start -- --config=/path/to/brain.config.json
+```
+
+### 配置文件
+
+主配置位于 [`cloud/brain.config.json`](../brain.config.json)（本地文件，已 gitignore）。模板见 [`cloud/brain.config.example.json`](../brain.config.example.json)。
+
+| 节 | 说明 |
+|----|------|
+| `pg` / `redis` | 数据库与 Redis |
+| `openai` | LLM 端点与 API Key |
+| `sandbox` | CubeSandbox / E2B 集群 |
+| `subagent` | `coding_agent` worker 模式 |
+| `server` | 端口、replicaId 等 |
+
+**优先级**：`brain.config.json` > 环境变量（CI 可选覆盖）> 代码默认值。
+
+### 环境变量（可选 CI 覆盖）
+
+本地开发推荐只维护 JSON。CI/部署仍可通过环境变量覆盖：
+
+| 环境变量 | 配置项 |
+|----------|--------|
+| `POC_PG_URL` / `CLOUD_PG_URL` | `pg.url` |
+| `POC_REDIS_URL` / `CLOUD_REDIS_URL` | `redis.url` |
+| `POC_OPENAI_BASE_URL` / `CLOUD_OPENAI_BASE_URL` | `openai.baseUrl` |
+| `POC_OPENAI_API_KEY` / `CLOUD_OPENAI_API_KEY` | `openai.apiKey` |
+| `POC_OPENAI_MODEL` / `CLOUD_OPENAI_MODEL` | `openai.model` |
+| `E2B_API_URL` / `CUBE_API_URL` | `sandbox.apiUrl` |
+| `CUBE_TEMPLATE_ID` | `sandbox.templateId` |
+| `CUBE_PROXY_NODE_IP` | `sandbox.proxyNodeIp` |
+| `CLOUD_CODING_WORKER_MODE` | `subagent.codingWorkerMode` |
 
 ## API
 
@@ -43,7 +74,7 @@ cd brain && bun run start
 
 主 Agent 通过 `coding_agent` 工具委派；Gateway 阻塞等待 worker，只向主 turn 回传 `{ run_id, status, summary, artifacts }`。Subagent 内部的 bash/read/write **不会**写入主 session messages。
 
-**Worker 模式**（`CLOUD_CODING_WORKER_MODE`）：
+**Worker 模式**（`subagent.codingWorkerMode` in config）：
 
 | 值 | 行为 |
 |----|------|
@@ -72,12 +103,10 @@ curl http://localhost:7801/sessions/$SESSION/subagents
 curl http://localhost:7801/sessions/$SESSION/messages
 ```
 
-**真实 LLM + Sandbox subagent**（需 brain 已启、LLM 凭证、CubeSandbox）：
+**真实 LLM + Sandbox subagent**（需 brain 已启、brain.config.json 已填 LLM + sandbox）：
 
 ```bash
-export CLOUD_CODING_WORKER_MODE=sandbox
-export POC_OPENAI_BASE_URL=http://192.168.1.190/v1
-export POC_OPENAI_API_KEY=sk-...
+# 建议在 brain.config.json 中设置 subagent.codingWorkerMode = "sandbox"
 cd cloud && bun run verify:llm-subagent-e2e
 ```
 

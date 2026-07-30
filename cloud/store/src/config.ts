@@ -1,9 +1,8 @@
+import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
+
 /** Store layer configuration. */
 export const storeConfig = {
-  pgUrl:
-    process.env.CLOUD_PG_URL ||
-    process.env.POC_PG_URL ||
-    "postgres://sensecraft:sensecraft@localhost:25432/piclaw_cloud_poc",
+  pgUrl: getCloudConfig().pg.url,
 };
 
 /** Advisory lock namespace — do not collide with other apps on shared PG. */

@@ -1,0 +1,44 @@
+{
+  "pg": {
+    "url": "postgres://sensecraft:sensecraft@localhost:25432/piclaw_cloud_poc"
+  },
+  "redis": {
+    "url": "redis://localhost:26379/5"
+  },
+  "server": {
+    "port": 7801,
+    "replicaId": "dev",
+    "defaultChatJid": "web:default"
+  },
+  "openai": {
+    "baseUrl": "http://192.168.1.190/v1",
+    "apiKey": "sk-your-key-here",
+    "model": "gpt-5.6-terra"
+  },
+  "sandbox": {
+    "enabled": true,
+    "apiUrl": "http://192.168.200.127:12088",
+    "apiKey": "e2b_0000000000000000000000000000000000000000",
+    "templateId": "tpl-474f7cc593f145f0bb4cf232",
+    "proxyNodeIp": "192.168.200.127",
+    "domain": "cube.app",
+    "opsUrl": "http://192.168.200.127:12088/opsapi/v1",
+    "opsUser": "admin",
+    "opsPassword": "admin",
+    "timeoutMs": 300000,
+    "idleMs": 1800000
+  },
+  "subagent": {
+    "codingWorkerMode": "auto",
+    "timeoutMs": 300000,
+    "maxActiveSandboxesPerUser": 3
+  },
+  "limits": {
+    "maxToolRounds": 12,
+    "maxDailyTokensPerUser": 500000
+  },
+  "auth": {
+    "required": false,
+    "devApiKey": ""
+  }
+}

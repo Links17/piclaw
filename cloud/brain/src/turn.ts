@@ -15,10 +15,16 @@ import {
 } from "./llm/messages.ts";
 import { dispatchTool } from "./tools/dispatcher.ts";
 import { QuotaExceededError } from "./quota.ts";
+import { trackTurnDelta, trackTurnFinished, trackTurnStarted } from "./agent-run-state.ts";
 
 export type TurnOutcome = "ran" | "queued";
 
-export async function submitMessage(sessionId: string, content: string): Promise<TurnOutcome> {
+export interface SubmitMessageResult {
+  outcome: TurnOutcome;
+  userMessageId: number;
+}
+
+export async function submitMessage(sessionId: string, content: string): Promise<SubmitMessageResult> {
   await store.touchSessionActivity(sessionId);
   const session = await store.getSession(sessionId);
   if (session) {
@@ -41,6 +47,7 @@ export async function submitMessage(sessionId: string, content: string): Promise
     const messageId = await store.insertMessage(sessionId, "user", content, { counter });
     await store.enqueueFollowup(sessionId, { content, messageId }, counter);
     await publish(sessionId, { type: "followup_queued", content });
+    await publish(sessionId, { type: "message", id: messageId, role: "user", content });
     const retryLock = await store.tryLockSession(sessionId);
     if (retryLock) {
       try {
@@ -49,18 +56,20 @@ export async function submitMessage(sessionId: string, content: string): Promise
         await retryLock.release();
       }
     }
-    return "queued";
+    return { outcome: "queued", userMessageId: messageId };
   }
 
+  let userMessageId = 0;
   try {
     const counter = newCounter();
-    const messageId = await store.insertMessage(sessionId, "user", content, { counter });
-    await runTurnLocked(sessionId, messageId, counter);
+    userMessageId = await store.insertMessage(sessionId, "user", content, { counter });
+    await publish(sessionId, { type: "message", id: userMessageId, role: "user", content });
+    await runTurnLocked(sessionId, userMessageId, counter);
     await drainFollowups(sessionId);
   } finally {
     await lock.release();
   }
-  return "ran";
+  return { outcome: "ran", userMessageId };
 }
 
 function mergeUsage(total: LlmUsage, round: LlmUsage): LlmUsage {
@@ -166,6 +175,7 @@ async function runTurnLocked(
 ): Promise<void> {
   const startedAt = Date.now();
   await store.beginTurn(sessionId, messageId, counter);
+  trackTurnStarted(sessionId, messageId);
   await publish(sessionId, { type: "turn_started", messageId, replica: config.replicaId });
 
   try {
@@ -173,6 +183,7 @@ async function runTurnLocked(
       sessionId,
       counter,
       async (delta) => {
+        trackTurnDelta(sessionId, delta);
         await publish(sessionId, { type: "delta", text: delta, replica: config.replicaId });
       },
       { recovery: options.recovery ?? false },
@@ -215,9 +226,11 @@ async function runTurnLocked(
       dbRoundtrips: counter.count,
       durationMs,
     });
+    trackTurnFinished(sessionId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await store.endTurnWithError(sessionId, messageId, message, counter);
+    trackTurnFinished(sessionId);
     await publish(sessionId, { type: "turn_failed", messageId, error: message, replica: config.replicaId });
     throw error;
   }

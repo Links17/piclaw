@@ -3,9 +3,10 @@
  *
  * Requires:
  *   - brain running (CLOUD_E2E_BASE, default http://localhost:7801)
- *   - CLOUD_OPENAI_BASE_URL + CLOUD_OPENAI_API_KEY (or POC_OPENAI_*)
- *   - CubeSandbox cluster (CUBE_TEMPLATE_ID, etc.)
+ *   - openai config in cloud/brain.config.json (or POC_OPENAI_* env)
+ *   - CubeSandbox cluster (sandbox section in config)
  */
+import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
 import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
 import { getAccessToken } from "../src/sandbox/auth.ts";
@@ -104,6 +105,10 @@ async function reclaimSandboxQuota(): Promise<void> {
       cwd: new URL("..", import.meta.url).pathname,
       stdout: "inherit",
       stderr: "inherit",
+      env: {
+        ...process.env,
+        CLOUD_MAX_ACTIVE_SANDBOXES: process.env.CLOUD_MAX_ACTIVE_SANDBOXES || "10",
+      },
     });
     const code = await proc.exited;
     if (code !== 0) console.log("  ⚠ quota cleanup exited", code);
@@ -112,12 +117,12 @@ async function reclaimSandboxQuota(): Promise<void> {
   }
 }
 
-if (!process.env.CLOUD_OPENAI_API_KEY && !process.env.POC_OPENAI_API_KEY) {
-  console.error("\nMissing CLOUD_OPENAI_API_KEY or POC_OPENAI_API_KEY — real LLM required.");
+if (!getCloudConfig().openai.apiKey) {
+  console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or POC_OPENAI_API_KEY.");
   process.exit(2);
 }
-if (!process.env.CLOUD_OPENAI_BASE_URL && !process.env.POC_OPENAI_BASE_URL) {
-  console.error("\nMissing CLOUD_OPENAI_BASE_URL or POC_OPENAI_BASE_URL.");
+if (!getCloudConfig().openai.baseUrl) {
+  console.error("\nMissing openai.baseUrl — set in cloud/brain.config.json or POC_OPENAI_BASE_URL.");
   process.exit(2);
 }
 

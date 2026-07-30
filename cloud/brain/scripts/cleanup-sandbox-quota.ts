@@ -3,6 +3,7 @@
  * Safe for dev/E2E: targets test session id prefixes and sessions idle > 1h.
  */
 import * as store from "@piclaw-cloud/store";
+import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 import { applyMigrations, sql } from "@piclaw-cloud/store/db";
 import { applyE2bEnv } from "../src/sandbox/config.ts";
 import { cubeFetch, getAccessToken } from "../src/sandbox/auth.ts";
@@ -32,7 +33,7 @@ const rows = await sql`
 
 let cleared = 0;
 const activeBefore = await store.countActiveSandboxes("default-user");
-const forceAll = activeBefore >= Number(process.env.CLOUD_MAX_ACTIVE_SANDBOXES || 3);
+const forceAll = activeBefore >= Number(process.env.CLOUD_MAX_ACTIVE_SANDBOXES || getCloudConfig().subagent.maxActiveSandboxesPerUser);
 
 for (const row of rows as Array<{ id: string; sandbox_id: string; last_active_at: string }>) {
   const idle = Date.now() - new Date(String(row.last_active_at)).getTime();

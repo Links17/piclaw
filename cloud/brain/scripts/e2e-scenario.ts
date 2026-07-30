@@ -133,12 +133,22 @@ console.log("[1] create session (via timeline bootstrap)");
   check(Array.isArray(timeline.posts), "timeline endpoint ok");
 }
 
-console.log("\n[2] chat + streaming");
+console.log("\n[2] chat + streaming + user message SSE");
 {
   const result2 = await postAgent(CHAT, "hello e2e quick", true);
   check(result2.ok === true, `hello turn completed (outcome=${result2.outcome})`);
+  check(Boolean((result2.user_message as { id?: number })?.id), "POST returns user_message");
+  const userPost = events.find((e) => e.event === "new_post");
+  check(Boolean(userPost?.data.chat_jid === CHAT), "new_post SSE includes chat_jid");
+  const delta = events.find((e) => e.event === "agent_draft_delta");
+  check(Boolean(delta?.data.chat_jid === CHAT), "agent_draft_delta SSE includes chat_jid");
+  const doneStatus = events.find((e) => e.event === "agent_status" && e.data.type === "done");
+  check(Boolean(doneStatus?.data.chat_jid === CHAT), "agent_status done SSE includes chat_jid");
+  const status = await getJson(`/agent/status?chat_jid=${encodeURIComponent(CHAT)}`);
+  check(status.status === "idle" || status.status === "active", `agent/status shape ok (${status.status})`);
   const body2 = await getJson(`/sessions/${encodeURIComponent(CHAT)}/messages`);
   const rows2 = (body2.messages as Array<{ role: string; content: string }>) ?? [];
+  check(rows2.some((m) => m.role === "user"), "user message persisted");
   check(rows2.some((m) => m.role === "assistant" && m.content.length > 0), `assistant reply persisted (${rows2.length} messages)`);
   check(events.some((e) => e.event === "agent_draft_delta") || rows2.some((m) => m.role === "assistant"), "streaming or persisted reply");
 }
