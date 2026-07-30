@@ -50,6 +50,13 @@ import {
   normalizeContextUsage,
   persistContextUsage,
 } from './app-status-refresh-orchestration.js';
+import {
+  setCloudAgentQuestion,
+  upsertCloudFleetRun,
+  appendSubagentDelta,
+  setSubagentActivity,
+  appendLiveSubagentMessage,
+} from './app-cloud-agent-extensions.js';
 
 type StateSetter<T> = (next: T | ((prev: T) => T)) => void;
 
@@ -119,6 +126,8 @@ export interface HandleAppSseEventDependencies {
   setPosts: StateSetter<any[] | null>;
   preserveTimelineScrollTop: (mutate: () => void) => void;
   openEditor?: (path: string, options?: { label?: string }) => void;
+  setAgentQuestion?: StateSetter<any>;
+  setFleetRuns?: StateSetter<any[]>;
 }
 
 /**
@@ -191,6 +200,8 @@ export function handleAppSseEvent(
     setPosts,
     preserveTimelineScrollTop,
     openEditor,
+    setAgentQuestion,
+    setFleetRuns,
   } = deps;
 
   const { turnId, isCurrentChatEvent } = resolveSseEventRoutingContext(eventType, data, currentChatJid);
@@ -442,6 +453,81 @@ export function handleAppSseEvent(
       setFollowupQueueItems((current) => removeFollowupQueueRow(current, optimisticRemoval.rowId).items);
     }
     void refreshQueueState();
+    return;
+  }
+
+  if (eventType === 'agent_question') {
+    if (!isCurrentChatEvent) return;
+    const nextQuestion = {
+      questionId: data.question_id || data.questionId,
+      question: data.question || '',
+      options: Array.isArray(data.options) ? data.options : [],
+    };
+    setCloudAgentQuestion(nextQuestion);
+    setAgentQuestion?.(nextQuestion);
+    draftBufferRef.current = '';
+    setAgentDraft({ text: '', totalLines: 0 });
+    setAgentStatus({
+      type: 'question',
+      title: 'Waiting for your answer...',
+      chat_jid: currentChatJid,
+      ...(turnId ? { turn_id: turnId } : {}),
+    });
+    return;
+  }
+
+  if (eventType === 'agent_question_cleared') {
+    if (!isCurrentChatEvent) return;
+    setCloudAgentQuestion(null);
+    setAgentQuestion?.(null);
+    return;
+  }
+
+  if (eventType === 'subagent_created' || eventType === 'subagent_updated') {
+    if (!isCurrentChatEvent) return;
+    const runId = String(data.run_id || data.runId || '').trim();
+    if (!runId) return;
+    const update = {
+      runId,
+      agentType: data.agent_type || data.agentType || 'general-purpose',
+      description: data.description || data.task || '',
+      status: data.status || 'pending',
+      task: data.task,
+      summary: data.summary,
+      toolCount: data.tool_count ?? data.toolCount,
+    };
+    upsertCloudFleetRun(update);
+    if (update.summary && ['completed', 'failed', 'timed_out', 'stopped'].includes(update.status)) {
+      appendLiveSubagentMessage(runId, { role: 'assistant', content: update.summary });
+    }
+    return;
+  }
+
+  if (eventType === 'subagent_delta') {
+    if (!isCurrentChatEvent) return;
+    const runId = String(data.run_id || data.runId || '').trim();
+    const delta = String(data.delta ?? data.text ?? '');
+    if (!runId || !delta) return;
+    appendSubagentDelta(runId, delta);
+    return;
+  }
+
+  if (eventType === 'subagent_tool_start') {
+    if (!isCurrentChatEvent) return;
+    const runId = String(data.run_id || data.runId || '').trim();
+    const name = String(data.name ?? 'tool');
+    if (!runId) return;
+    setSubagentActivity(runId, `${name}…`);
+    return;
+  }
+
+  if (eventType === 'subagent_tool_result') {
+    if (!isCurrentChatEvent) return;
+    const runId = String(data.run_id || data.runId || '').trim();
+    const name = String(data.name ?? 'tool');
+    const isError = Boolean(data.is_error ?? data.isError);
+    if (!runId) return;
+    setSubagentActivity(runId, isError ? `${name} failed` : `${name} done`);
     return;
   }
 

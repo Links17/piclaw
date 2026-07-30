@@ -1,7 +1,9 @@
 import { html, useRef, useState, useEffect, useCallback, useMemo } from '../vendor/preact-htm.js';
 import { useTranslation } from '../utils/i18n.js';
 import { findPopupTypeaheadMatch, isPopupTypeaheadKey, resolvePopupTypeaheadMatch, updatePopupTypeaheadBuffer } from '../ui/popup-typeahead.js';
-import { getAgentModels, sendAgentMessage, uploadMedia } from '../api.js';
+import { getAgentModels, sendAgentMessage, uploadMedia, answerAgentQuestion } from '../api.js';
+import { getCloudAgentQuestion } from '../ui/app-cloud-agent-extensions.js';
+import { clearCloudAgentQuestion } from '../ui/use-cloud-agent-question.js';
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { buildMentionValue, filterMentionAgents, parseMentionAutocompleteQuery } from '../ui/agent-mentions.js';
 import { shouldOpenSessionSwitcherFromBlankCompose, shouldRouteComposeValueToSessionSwitcher } from '../ui/compose-session-switcher.js';
@@ -2334,6 +2336,20 @@ export function ComposeBox({
                     }).join('\n')}`
                     : '';
                 const message = [baseContent, fileBlock, folderBlock, messageRefBlock, mediaBlock].filter(Boolean).join('\n\n');
+                const pendingQuestion = getCloudAgentQuestion();
+                if (pendingQuestion?.questionId && baseContent.trim() && mediaIds.length === 0) {
+                    const answerResult = await answerAgentQuestion(
+                        currentChatJid,
+                        pendingQuestion.questionId,
+                        baseContent.trim(),
+                    );
+                    if (answerResult?.ok === false) {
+                        throw new Error(String(answerResult?.error || 'Failed to submit answer'));
+                    }
+                    clearCloudAgentQuestion();
+                    onPost?.({ ok: true, outcome: 'answered', user_message: { data: { content: baseContent.trim() } } });
+                    return;
+                }
                 const response = await sendAgentMessage('default', message, null, mediaIds, resolveSubmitMode(submitMode), currentChatJid);
                 onMessageResponse?.(response);
 

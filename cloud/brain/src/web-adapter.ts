@@ -2,9 +2,17 @@
  * Web UI compatibility — chat_jid ↔ session_id, timeline posts, agent routes.
  */
 import * as store from "@piclaw-cloud/store";
-import { getDraft, getInflightTurn } from "./agent-run-state.ts";
+import { getDraft, getInflightTurn, getPendingQuestionState, getPlanPreview } from "./agent-run-state.ts";
+import { answerPendingQuestion } from "./tools/question.ts";
+import { setSessionMode as setTurnSessionMode } from "./turn.ts";
+import {
+  deleteUserSkill,
+  installUserSkill,
+  listUserSkillsForApi,
+} from "./skills/registry.ts";
+import { spawnAgent, getSubagentResult, stopSubagent, steerSubagent } from "./subagents/manager.ts";
 import { config } from "./config.ts";
-import { submitMessage } from "./turn.ts";
+import { abortSessionTurn, submitMessage } from "./turn.ts";
 
 export function chatJidToSessionId(chatJid: string | null | undefined): string {
   const normalized = typeof chatJid === "string" && chatJid.trim() ? chatJid.trim() : config.defaultChatJid;
@@ -132,6 +140,29 @@ export async function getAgentStatus(chatJid: string) {
   const draftPreview = draft
     ? { text: draft, totalLines: draft.split("\n").length }
     : undefined;
+  const pendingQuestion = getPendingQuestionState(sessionId);
+  const plan = getPlanPreview(sessionId) || (await store.getSessionPlanText(sessionId)) || undefined;
+
+  if (pendingQuestion) {
+    return {
+      status: "active",
+      chat_jid: chatJid,
+      data: {
+        type: "question",
+        title: "Waiting for your answer...",
+        chat_jid: chatJid,
+        ...(turnId ? { turn_id: turnId } : {}),
+        pending_question: {
+          question_id: pendingQuestion.questionId,
+          question: pendingQuestion.question,
+          options: pendingQuestion.options,
+        },
+      },
+      draft: draftPreview,
+      plan: plan ? { text: plan } : undefined,
+      thought: undefined,
+    };
+  }
 
   return {
     status: "active",
@@ -143,6 +174,7 @@ export async function getAgentStatus(chatJid: string) {
       ...(turnId ? { turn_id: turnId } : {}),
     },
     draft: draftPreview,
+    plan: plan ? { text: plan } : undefined,
     thought: undefined,
   };
 }
@@ -162,19 +194,147 @@ export async function getQueueState(chatJid: string) {
 
 export async function sendAgentMessage(chatJid: string, content: string, mode?: string | null) {
   const sessionId = await ensureChatSession(chatJid);
+  if (mode === "steer" && (content.trim() === "/abort" || content.trim().startsWith("/abort "))) {
+    await abortSessionTurn(sessionId);
+    return {
+      ok: true,
+      ui_only: true,
+      command: { status: "success", message: "Turn aborted" },
+      outcome: "aborted",
+    };
+  }
   const { outcome, userMessageId } = await submitMessage(sessionId, content);
-  const userMessage = userPostPayload(chatJid, userMessageId, content);
+  const userMessage =
+    userMessageId > 0 ? userPostPayload(chatJid, userMessageId, content) : undefined;
+  if (outcome === "aborted") {
+    return {
+      ok: true,
+      ui_only: true,
+      command: { status: "success", message: "Turn aborted" },
+      outcome: "aborted",
+    };
+  }
   if (mode === "queue" && outcome === "ran") {
     return { ok: true, queued: false, ran: true, user_message: userMessage };
   }
   return { ok: true, outcome, queued: outcome === "queued", user_message: userMessage };
 }
 
-export async function listSessions() {
-  return store.listSessions();
+export async function answerAgentQuestion(chatJid: string, questionId: string, answer: string) {
+  const sessionId = await ensureChatSession(chatJid);
+  const result = await answerPendingQuestion(sessionId, questionId, answer);
+  return { ok: result.ok, error: result.error };
 }
 
-function sessionToBranchChat(session: { id: string; title: string }) {
+export async function setAgentMode(chatJid: string, mode: "plan" | "execute") {
+  const sessionId = await ensureChatSession(chatJid);
+  await setTurnSessionMode(sessionId, mode);
+  return { ok: true, mode };
+}
+
+export async function listSessionSubagents(chatJid: string) {
+  const sessionId = await ensureChatSession(chatJid);
+  const runs = await store.listSubagentRuns(sessionId, 50);
+  return {
+    runs: runs.map((run) => ({
+      run_id: run.id,
+      agent_type: run.agent_type,
+      description: run.description ?? run.task,
+      status: run.status,
+      task: run.task,
+      summary: run.summary,
+      tool_count: run.tool_count,
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      background: run.background,
+    })),
+  };
+}
+
+export async function getSubagentStatus(chatJid: string, runId: string) {
+  const sessionId = await ensureChatSession(chatJid);
+  const result = await getSubagentResult(sessionId, runId, { verbose: true });
+  return { success: !result.isError, data: JSON.parse(result.output) };
+}
+
+export async function steerSubagentForChat(chatJid: string, runId: string, message: string) {
+  const sessionId = await ensureChatSession(chatJid);
+  const result = await steerSubagent(sessionId, runId, message);
+  return { success: !result.isError, ...(result.isError ? { error: result.output } : { data: { ok: true } }) };
+}
+
+export async function stopSubagentForChat(chatJid: string, runId: string) {
+  const sessionId = await ensureChatSession(chatJid);
+  const { stopSubagent } = await import("./subagents/manager.ts");
+  return stopSubagent(sessionId, runId);
+}
+
+export async function getSubagentTranscript(chatJid: string, runId: string) {
+  const sessionId = await ensureChatSession(chatJid);
+  const run = await store.getSubagentRun(runId);
+  if (!run || run.session_id !== sessionId) return { messages: [] };
+  const messages = await store.listSubagentMessages(runId);
+  return { messages };
+}
+
+export async function spawnSubagentViaApi(
+  chatJid: string,
+  body: Record<string, unknown>,
+): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  const sessionId = await ensureChatSession(chatJid);
+  const prompt = String(body.prompt ?? body.task ?? "").trim();
+  const description = String(body.description ?? prompt).trim();
+  const subagentType = String(body.subagent_type ?? "general-purpose") as
+    | "general-purpose"
+    | "explore"
+    | "plan";
+  if (!prompt) return { success: false, error: "prompt required" };
+  const outcome = await spawnAgent(sessionId, {
+    prompt,
+    description,
+    subagentType,
+    maxTurns: typeof body.max_turns === "number" ? body.max_turns : undefined,
+    runInBackground: Boolean(body.run_in_background),
+    resume: typeof body.resume === "string" ? body.resume : undefined,
+  });
+  return { success: true, data: outcome };
+}
+
+export async function listUserSkills(userId: string) {
+  const skills = await listUserSkillsForApi(userId);
+  return { skills };
+}
+
+export async function installSkillForUser(
+  userId: string,
+  body: { name: string; description?: string; content: string },
+) {
+  const name = body.name.trim();
+  const content = body.content.trim();
+  if (!name || !content) throw new Error("name and content required");
+  await installUserSkill(userId, {
+    name,
+    description: body.description ?? "",
+    content,
+  });
+  return { ok: true };
+}
+
+export async function removeUserSkill(userId: string, name: string) {
+  const deleted = await deleteUserSkill(userId, name);
+  if (!deleted) throw new Error(`unknown skill: ${name}`);
+  return { ok: true };
+}
+
+export async function listSessions(userId?: string, options?: store.ListSessionsOptions) {
+  return store.listSessions(userId, options);
+}
+
+export function sessionToBranchChat(session: {
+  id: string;
+  title: string;
+  archived_at?: string | null;
+}) {
   const title = session.title?.trim() || session.id;
   return {
     chat_jid: session.id,
@@ -182,17 +342,75 @@ function sessionToBranchChat(session: { id: string; title: string }) {
     agent_name: title,
     title,
     is_root: true,
+    archived_at: session.archived_at ?? null,
   };
 }
 
-export async function getChatBranches() {
-  const sessions = await listSessions();
+async function assertSessionCanMutate(
+  sessionId: string,
+  userId: string,
+  action: "archive" | "purge",
+): Promise<store.SessionRow> {
+  const session = await store.getSessionForUser(sessionId, userId);
+  if (!session) throw new Error(`Unknown chat branch: ${sessionId}`);
+  if (sessionId === config.defaultChatJid) {
+    throw new Error("Cannot archive the default chat session.");
+  }
+  const locked = await store.isSessionLocked(sessionId);
+  const inflight = getInflightTurn(sessionId);
+  if (locked || inflight) {
+    throw new Error(
+      action === "purge"
+        ? "Cannot permanently delete a branch while it is active."
+        : "Cannot archive a session while it is active.",
+    );
+  }
+  return session;
+}
+
+export async function getChatBranches(options?: { includeArchived?: boolean; userId?: string }) {
+  const sessions = await listSessions(options?.userId, { includeArchived: options?.includeArchived });
   return { chats: sessions.map(sessionToBranchChat) };
 }
 
-export async function getActiveChatAgents() {
-  const sessions = await listSessions();
+export async function getActiveChatAgents(userId?: string) {
+  const sessions = await listSessions(userId);
   return { chats: sessions.map(sessionToBranchChat) };
+}
+
+export async function pruneChatBranch(chatJid: string, userId: string) {
+  const sessionId = chatJidToSessionId(chatJid);
+  const session = await assertSessionCanMutate(sessionId, userId, "archive");
+  if (session.archived_at) {
+    return { status: "ok", branch: sessionToBranchChat(session) };
+  }
+  const archived = await store.archiveSession(sessionId, userId);
+  return { status: "ok", branch: sessionToBranchChat(archived) };
+}
+
+export async function purgeChatBranch(chatJid: string, userId: string) {
+  const sessionId = chatJidToSessionId(chatJid);
+  await assertSessionCanMutate(sessionId, userId, "purge");
+  const branch = await store.purgeSession(sessionId, userId);
+  return { status: "ok", branch: sessionToBranchChat(branch), removedSessionArtifacts: [] };
+}
+
+export async function restoreChatBranch(
+  chatJid: string,
+  userId: string,
+  agentName?: string,
+) {
+  const sessionId = chatJidToSessionId(chatJid);
+  const existing = await store.getSessionForUser(sessionId, userId);
+  if (!existing) throw new Error(`Unknown chat branch: ${sessionId}`);
+  const restored = await store.restoreSession(sessionId, userId, agentName);
+  return { status: "ok", branch: sessionToBranchChat(restored) };
+}
+
+export async function renameChatBranch(chatJid: string, userId: string, agentName: string) {
+  const sessionId = chatJidToSessionId(chatJid);
+  const renamed = await store.renameSessionTitle(sessionId, agentName, userId);
+  return { status: "ok", branch: sessionToBranchChat(renamed) };
 }
 
 export function getAgentsRoster() {

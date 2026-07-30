@@ -50,6 +50,14 @@ export interface CloudConfig {
   scheduler: {
     pollMs: number;
   };
+  question: {
+    timeoutMs: number;
+  };
+  mcp?: {
+    servers: Array<{ name: string; url: string; headers?: Record<string, string> }>;
+  };
+  subagentMaxConcurrent: number;
+  subagentMaxTurns: number;
 }
 
 type DeepPartial<T> = {
@@ -109,6 +117,14 @@ function defaultConfig(): CloudConfig {
     scheduler: {
       pollMs: 60_000,
     },
+    question: {
+      timeoutMs: 5 * 60 * 1000,
+    },
+    mcp: {
+      servers: [],
+    },
+    subagentMaxConcurrent: 4,
+    subagentMaxTurns: 8,
   };
 }
 
@@ -179,6 +195,11 @@ function envLayer(): DeepPartial<CloudConfig> {
     scheduler: {
       pollMs: envNumber("CLOUD_SCHEDULER_POLL_MS"),
     },
+    question: {
+      timeoutMs: envNumber("CLOUD_QUESTION_TIMEOUT_MS"),
+    },
+    subagentMaxConcurrent: envNumber("CLOUD_SUBAGENT_MAX_CONCURRENT"),
+    subagentMaxTurns: envNumber("CLOUD_SUBAGENT_MAX_TURNS"),
   };
 }
 

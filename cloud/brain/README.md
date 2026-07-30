@@ -46,6 +46,7 @@ bun run start -- --config=/path/to/brain.config.json
 | `CUBE_TEMPLATE_ID` | `sandbox.templateId` |
 | `CUBE_PROXY_NODE_IP` | `sandbox.proxyNodeIp` |
 | `CLOUD_CODING_WORKER_MODE` | `subagent.codingWorkerMode` |
+| `CLOUD_LLM_MOCK` | 设为 `1` 启用 `mock-tools:` / `mock-coding:` 测试响应 |
 
 ## API
 
@@ -64,7 +65,9 @@ bun run start -- --config=/path/to/brain.config.json
 | `POST /terminal/handoff` | Terminal handoff（cloud no-op） |
 | `GET /terminal/ws?chat_jid=` | Terminal WebSocket |
 
-工具调用：LLM 流式 `tool_calls` → bash/read/write/edit（`/workspace` 限制），或 **`coding_agent`** 委派 Sandbox 内 coding worker。`mock-tools:` / `mock-coding:` 前缀用于确定性验收。
+工具调用：LLM 流式 `tool_calls` → bash/read/write/edit（`/workspace` 限制），或 **`coding_agent`** 委派 Sandbox 内 coding worker。
+
+**Mock 仅用于测试**：`mock-tools:` / `mock-coding:` 前缀在 brain 进程设置 `CLOUD_LLM_MOCK=1` 时启用确定性验收响应；未配置 LLM 时不再静默返回 `mock-reply`，而是 `turn_failed` 报错。
 
 | 路径 | 说明 |
 |------|------|
@@ -78,17 +81,18 @@ bun run start -- --config=/path/to/brain.config.json
 
 | 值 | 行为 |
 |----|------|
-| `auto`（默认） | 有 LLM + sandbox 时用 sandbox worker，否则 mock |
+| `auto`（默认） | 有 LLM + sandbox 时用 sandbox worker；缺失时报错（不再 silent mock） |
 | `sandbox` | 上传 Python worker 到 microVM；若 microVM 无法直连 LLM，Gateway 自动 fallback 到 Brain 侧 coding loop（工具仍走 Sandbox） |
 | `brain` | Brain 侧隔离 tool loop，工具仍走 sandbox |
-| `mock` | 纯 mock，无需 sandbox |
+| `mock` | 纯 mock（需 `CLOUD_LLM_MOCK=1`），无需 sandbox |
 
 **Mock 回归（无需真实 LLM）**：
 
 ```bash
 cd cloud
-bun test                                    # gateway / sse 单元测试
-bun run verify:1b                           # scenario 步骤 [5] mock-tools:coding_agent
+CLOUD_LLM_MOCK=1 cd brain && bun run start   # 终端 A
+bun test                                     # gateway / sse 单元测试
+bun run verify:1b                            # scenario 自启双副本（已内置 CLOUD_LLM_MOCK=1）
 ```
 
 **手动 API**（brain 已启动）：
@@ -117,9 +121,9 @@ E2E 前会自动运行 `scripts/cleanup-sandbox-quota.ts` 释放测试 session �
 ```bash
 cd cloud
 bun run verify:1a   # migrations + typecheck
-bun run verify:1b   # 双副本 scenario（无需 sandbox）
-# 先 bun run start，再：
-bun run verify:1e       # MVP API 联调（需 CubeSandbox）
+bun run verify:1b   # 双副本 scenario（无需 sandbox；spawn 内置 CLOUD_LLM_MOCK=1）
+# 先 CLOUD_LLM_MOCK=1 bun run start（mock-tools 步骤），或配置 openai 后 bun run start：
+bun run verify:1e       # MVP API 联调（mock-tools 步骤需 CLOUD_LLM_MOCK=1）
 bun run verify:llm-e2e  # 真实 LLM + Wio 三步（直连工具，非 subagent）
 bun run verify:llm-subagent-e2e  # 真实 LLM 委派 coding_agent + sandbox worker
 bun run verify:web-e2e  # Web UI 浏览器验收（需 build:web:cloud + Playwright）

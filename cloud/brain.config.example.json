@@ -40,5 +40,13 @@
   "auth": {
     "required": false,
     "devApiKey": ""
-  }
+  },
+  "question": {
+    "timeoutMs": 300000
+  },
+  "mcp": {
+    "servers": []
+  },
+  "subagentMaxConcurrent": 4,
+  "subagentMaxTurns": 8
 }

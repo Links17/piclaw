@@ -1,4 +1,5 @@
 import type { MessageRow } from "@piclaw-cloud/store";
+import type { SessionMode } from "@piclaw-cloud/store";
 
 export interface OpenAiToolCall {
   id: string;
@@ -18,15 +19,47 @@ export interface ContentBlocks {
   tool_name?: string;
 }
 
-export const SYSTEM_PROMPT = `You are PiClaw, a coding assistant running in a remote sandbox.
+export const BASE_SYSTEM_PROMPT = `You are PiClaw, a coding assistant running in a remote sandbox.
 Working directory: /workspace
-For creating or modifying code/files, prefer the coding_agent tool to delegate work to an isolated coding worker in the sandbox; the worker returns a summary and artifacts without filling your context with every tool step.
-Use bash, read, write, and edit directly only for quick one-off checks — never to duplicate work after a successful coding_agent result, and never as a substitute when coding_agent fails (ask the user or retry coding_agent instead).
+For creating or modifying code/files, prefer the Agent tool (subagent_type=general-purpose) to delegate work to an isolated coding worker in the sandbox; the worker returns a summary and artifacts without filling your context with every tool step.
+Use bash, read, write, and edit directly only for quick one-off checks — never to duplicate work after a successful Agent result, and never as a substitute when Agent fails (ask the user or retry Agent instead).
+When requirements are ambiguous, use the question tool with clear options instead of guessing. Call the question tool at most once per user message; if the user does not answer, proceed with reasonable defaults.
+For multi-step tasks, create todos with the todo tool and toggle them as you progress.
 When modifying existing files via direct tools, read them first if needed, then use edit with a unique old_string match.
 Answer concisely after completing the requested work.`;
 
-export function historyToOpenAi(rows: MessageRow[]): OpenAiMessage[] {
-  const messages: OpenAiMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
+export const PLAN_MODE_PROMPT = `You are in PLAN mode. Produce a clear implementation plan only.
+Use read, bash (read-only inspection), question, and todo tools. Do not write or edit files.
+Output the plan as structured markdown. Wait for user confirmation before execution.`;
+
+export function buildSystemPrompt(options: {
+  mode: SessionMode;
+  skillsSection?: string;
+  planText?: string;
+}): string {
+  const parts = [BASE_SYSTEM_PROMPT];
+  if (options.mode === "plan") parts.push(PLAN_MODE_PROMPT);
+  if (options.skillsSection?.trim()) parts.push(options.skillsSection.trim());
+  if (options.planText?.trim()) {
+    parts.push(`Current approved plan:\n${options.planText.trim()}`);
+  }
+  return parts.join("\n\n");
+}
+
+export function historyToOpenAi(
+  rows: MessageRow[],
+  options: { mode?: SessionMode; skillsSection?: string; planText?: string } = {},
+): OpenAiMessage[] {
+  const messages: OpenAiMessage[] = [
+    {
+      role: "system",
+      content: buildSystemPrompt({
+        mode: options.mode ?? "execute",
+        skillsSection: options.skillsSection,
+        planText: options.planText,
+      }),
+    },
+  ];
   for (const row of rows) {
     if (row.role === "user") {
       messages.push({ role: "user", content: row.content });
@@ -62,3 +95,6 @@ export function assistantToolCallBlocks(toolCalls: OpenAiToolCall[]): ContentBlo
 export function toolResultBlocks(toolCallId: string, name: string): ContentBlocks {
   return { tool_call_id: toolCallId, tool_name: name };
 }
+
+/** @deprecated Use buildSystemPrompt — kept for tests. */
+export const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT;

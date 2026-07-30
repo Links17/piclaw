@@ -7,7 +7,7 @@
  *   - CubeSandbox configured (terminal + file steps)
  *
  * Modes:
- *   CLOUD_WEB_E2E_MODE=mock-tools  — fast path (no real LLM)
+ *   CLOUD_WEB_E2E_MODE=mock-tools  — fast path (no real LLM; brain needs CLOUD_LLM_MOCK=1)
  *   default                        — real LLM (requires openai in brain.config.json)
  */
 import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
@@ -138,6 +138,12 @@ console.log(`  chat:   ${CHAT}`);
 console.log(`  mode:   ${MODE}`);
 console.log(`  cube:   ${sandboxConfig.apiUrl}`);
 
+if (MODE === "mock-tools" && process.env.CLOUD_LLM_MOCK !== "1") {
+  console.warn(
+    "\n⚠ mock-tools mode requires brain started with CLOUD_LLM_MOCK=1, e.g.:\n  CLOUD_LLM_MOCK=1 cd cloud/brain && bun run start\n",
+  );
+}
+
 if (MODE === "llm") {
   if (!getCloudConfig().openai.apiKey) {
     console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or use CLOUD_WEB_E2E_MODE=mock-tools.");
@@ -190,7 +196,7 @@ try {
 
   console.log("\n[2] hello — chat + streaming + user message");
   {
-    const prompt = MODE === "mock-tools" ? "slow stream e2e" : "hello";
+    const prompt = MODE === "mock-tools" ? "mock-tools:slow stream e2e" : "hello";
     const streamingPromise =
       MODE === "mock-tools" ? waitForStreamingPreview(page, 30_000) : Promise.resolve(true);
     await sendMessage(page, prompt);

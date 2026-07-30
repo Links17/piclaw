@@ -58,6 +58,9 @@ export function composeRenderedMainAppOptions(input: {
     setPendingRequest: (...args: any[]) => any;
     pendingRequestRef: any;
     isCompactionStatus: (status: any) => boolean;
+    cloudAgentQuestion: any;
+    cloudAgentFleet: any[];
+    onCloudAgentQuestionAnswered: () => void;
   };
   helpers: {
     formatBranchPickerLabel: (...args: any[]) => any;
@@ -161,6 +164,9 @@ export function composeRenderedMainAppOptions(input: {
       handleInjectQueuedFollowup: input.orchestration.followupActions.handleInjectQueuedFollowup,
       handleRemoveQueuedFollowup: input.orchestration.followupActions.handleRemoveQueuedFollowup,
       handleMoveQueuedFollowup: input.orchestration.followupActions.handleMoveQueuedFollowup,
+      cloudAgentQuestion: input.agentState.cloudAgentQuestion,
+      cloudAgentFleet: input.agentState.cloudAgentFleet,
+      onCloudAgentQuestionAnswered: input.agentState.onCloudAgentQuestionAnswered,
     },
     composeState: {
       btwSession: input.surface.btwSession,

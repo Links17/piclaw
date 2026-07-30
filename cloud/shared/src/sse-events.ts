@@ -25,6 +25,9 @@ export type WebSseEvent =
   | { type: "agent_followup_queued"; content: string }
   | { type: "agent_followup_consumed"; content: string }
   | { type: "agent_steer_queued"; content: string }
+  | { type: "agent_question"; questionId: string; question: string; options: unknown[] }
+  | { type: "subagent_created"; runId: string; agentType: string; description?: string }
+  | { type: "subagent_updated"; runId: string; status: string }
   | { type: "model_changed"; model: string }
   | { type: "workspace_update"; path: string };
 
@@ -38,12 +41,18 @@ export type InternalSessionEvent =
   | { type: "followup_queued"; content: string }
   | { type: "followup_consumed"; content: string }
   | { type: "recovery"; messageId: number; action: "retried" | "cleared"; replica: string }
-  | { type: "tool_start"; name: string; toolCallId: string; replica: string }
+  | { type: "tool_start"; name: string; toolCallId: string; replica: string; detail?: string }
   | { type: "tool_result"; name: string; toolCallId: string; isError: boolean; replica: string }
-  | { type: "subagent_started"; runId: string; agentType: string; task: string; replica: string }
+  | { type: "question_asked"; questionId: string; question: string; options: Array<{ label: string; description?: string }>; replica: string }
+  | { type: "question_cleared"; replica: string }
+  | { type: "todo_update"; markdown: string; replica: string }
+  | { type: "plan_update"; text: string; replica: string }
+  | { type: "subagent_created"; runId: string; agentType: string; description?: string; replica: string }
+  | { type: "subagent_started"; runId: string; agentType: string; task: string; description?: string; replica: string }
   | { type: "subagent_delta"; runId: string; text: string; replica: string }
   | { type: "subagent_tool_start"; runId: string; name: string; toolCallId: string; replica: string }
   | { type: "subagent_tool_result"; runId: string; name: string; toolCallId: string; isError: boolean; replica: string }
+  | { type: "subagent_steered"; runId: string; message: string; replica: string }
   | { type: "subagent_done"; runId: string; status: string; summary: string; artifacts: string[]; replica: string };
 
 function scoped(scope: SseScope, data: Record<string, unknown>): Record<string, unknown> {
@@ -95,15 +104,97 @@ export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): 
         data: scoped(scope, { content: event.content }),
       };
     case "tool_start":
-      return agentStatusEnvelope(scope, "tool", event.name, { detail: event.name });
+      return agentStatusEnvelope(scope, "tool", event.name, { detail: event.detail ?? event.name });
     case "tool_result":
       return agentStatusEnvelope(scope, "streaming", "Working...");
+    case "question_asked":
+      return {
+        event: "agent_question",
+        data: scoped(scope, {
+          question_id: event.questionId,
+          question: event.question,
+          options: event.options,
+        }),
+      };
+    case "question_cleared":
+      return {
+        event: "agent_question_cleared",
+        data: scoped(scope, {}),
+      };
+    case "todo_update":
+    case "plan_update":
+      return {
+        event: "agent_draft",
+        data: scoped(scope, {
+          kind: "plan",
+          text: event.type === "plan_update" ? event.text : event.markdown,
+          mode: "replace",
+        }),
+      };
+    case "subagent_created":
+      return {
+        event: "subagent_created",
+        data: scoped(scope, {
+          run_id: event.runId,
+          agent_type: event.agentType,
+          description: event.description ?? "",
+          status: "pending",
+        }),
+      };
     case "subagent_started":
-      return agentStatusEnvelope(scope, "tool", `coding:${event.runId}`, {
-        detail: `coding:${event.runId}`,
-      });
+      return {
+        event: "subagent_updated",
+        data: scoped(scope, {
+          run_id: event.runId,
+          agent_type: event.agentType,
+          status: "running",
+          task: event.task,
+          description: event.description ?? "",
+        }),
+      };
+    case "subagent_steered":
+      return {
+        event: "subagent_updated",
+        data: scoped(scope, {
+          run_id: event.runId,
+          status: "steered",
+          message: event.message,
+        }),
+      };
     case "subagent_done":
-      return agentStatusEnvelope(scope, "streaming", "Working...");
+      return {
+        event: "subagent_updated",
+        data: scoped(scope, {
+          run_id: event.runId,
+          status: event.status,
+          summary: event.summary,
+          artifacts: event.artifacts,
+        }),
+      };
+    case "subagent_delta":
+      return {
+        event: "subagent_delta",
+        data: scoped(scope, { run_id: event.runId, delta: event.text }),
+      };
+    case "subagent_tool_start":
+      return {
+        event: "subagent_tool_start",
+        data: scoped(scope, {
+          run_id: event.runId,
+          name: event.name,
+          tool_call_id: event.toolCallId,
+        }),
+      };
+    case "subagent_tool_result":
+      return {
+        event: "subagent_tool_result",
+        data: scoped(scope, {
+          run_id: event.runId,
+          name: event.name,
+          tool_call_id: event.toolCallId,
+          is_error: event.isError,
+        }),
+      };
     default:
       return null;
   }
@@ -135,6 +226,14 @@ export function mapInternalToWeb(
   }
   if (envelope.event === "agent_followup_consumed") {
     return { type: "agent_followup_consumed", content: String(envelope.data.content ?? "") };
+  }
+  if (envelope.event === "agent_question") {
+    return {
+      type: "agent_question",
+      questionId: String(envelope.data.question_id ?? ""),
+      question: String(envelope.data.question ?? ""),
+      options: Array.isArray(envelope.data.options) ? envelope.data.options : [],
+    };
   }
   return null;
 }

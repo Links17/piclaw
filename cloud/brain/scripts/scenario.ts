@@ -21,6 +21,7 @@ function startReplica(port: number, id: string) {
       POC_REPLICA_ID: id,
       CLOUD_SANDBOX_ENABLED: "0",
       CLOUD_CODING_WORKER_MODE: "mock",
+      CLOUD_LLM_MOCK: "1",
     },
     stdout: "inherit",
     stderr: "inherit",

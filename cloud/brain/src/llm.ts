@@ -9,7 +9,7 @@ import {
   type ParsedToolCall,
 } from "./llm/stream-parser.ts";
 import type { OpenAiMessage } from "./llm/messages.ts";
-import { TOOL_DEFINITIONS } from "./tools/schemas.ts";
+import { TOOL_DEFINITIONS, type ToolDefinition } from "./tools/schemas.ts";
 
 export interface LlmUsage {
   inputTokens: number | null;
@@ -24,22 +24,39 @@ export interface CompletionRound {
   usage: LlmUsage;
 }
 
+export class LlmNotConfiguredError extends Error {
+  constructor() {
+    super(
+      "LLM not configured: set openai.baseUrl and openai.apiKey in cloud/brain.config.json",
+    );
+    this.name = "LlmNotConfiguredError";
+  }
+}
+
+/** When true, mock-tools:/mock-coding: prefixes use deterministic test responses. */
+export function isLlmMockEnabled(): boolean {
+  return process.env.CLOUD_LLM_MOCK === "1";
+}
+
+function isOpenAiConfigured(): boolean {
+  return Boolean(config.openaiBaseUrl && config.openaiApiKey);
+}
+
 export async function streamCompletionRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
+  tools: ToolDefinition[] = TOOL_DEFINITIONS,
 ): Promise<CompletionRound> {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const prompt = lastUser && "content" in lastUser ? String(lastUser.content ?? "") : "";
-  if (prompt.startsWith("mock-tools:")) {
+  const isMockPrefix = prompt.startsWith("mock-tools:") || prompt.startsWith("mock-coding:");
+  if (isMockPrefix && isLlmMockEnabled()) {
     return streamMockRound(messages, onDelta, prompt);
   }
-  if (prompt.startsWith("mock-coding:")) {
-    return streamMockRound(messages, onDelta, prompt);
+  if (isOpenAiConfigured()) {
+    return streamOpenAiRound(messages, onDelta, tools);
   }
-  if (config.openaiBaseUrl && config.openaiApiKey) {
-    return streamOpenAiRound(messages, onDelta);
-  }
-  return streamMockRound(messages, onDelta, prompt);
+  throw new LlmNotConfiguredError();
 }
 
 /** Legacy single-shot completion for infra scenarios without tools. */
@@ -54,42 +71,15 @@ export async function streamCompletion(
 async function streamMockRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
-  promptOverride?: string,
+  prompt: string,
 ): Promise<CompletionRound> {
-  const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  const prompt = promptOverride ?? (lastUser && "content" in lastUser ? String(lastUser.content ?? "") : "");
-
-  // Deterministic tool-loop mock for integration tests.
   if (prompt.startsWith("mock-tools:")) {
     return mockToolsRound(messages, onDelta, prompt);
   }
   if (prompt.startsWith("mock-coding:")) {
     return mockCodingRound(messages, onDelta, prompt);
   }
-
-  let tokens = 8;
-  let delayMs = 30;
-  if (prompt.startsWith("slow")) {
-    tokens = 40;
-    delayMs = 500;
-  } else if (prompt.startsWith("medium")) {
-    tokens = 20;
-    delayMs = 150;
-  }
-
-  const parts: string[] = [];
-  for (let i = 0; i < tokens; i += 1) {
-    const piece = i === 0 ? `mock-reply(to: ${prompt.slice(0, 24)})` : ` t${i}`;
-    parts.push(piece);
-    await onDelta(piece);
-    await Bun.sleep(delayMs);
-  }
-  return {
-    text: parts.join(""),
-    toolCalls: [],
-    finishReason: "stop",
-    usage: { inputTokens: null, cachedTokens: null, outputTokens: tokens },
-  };
+  throw new Error(`mock prefix required when CLOUD_LLM_MOCK=1 (got: ${prompt.slice(0, 40)})`);
 }
 
 async function mockToolsRound(
@@ -103,7 +93,38 @@ async function mockToolsRound(
   );
 
   if (!hasAssistantTools) {
-    if (prompt.includes("coding_agent") || prompt.includes("coding-agent")) {
+    if (prompt.includes("question")) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_mock_question",
+            name: "question",
+            arguments: JSON.stringify({
+              question: "Which target platform should we use?",
+              options: [{ label: "Wio Terminal" }, { label: "ESP32" }],
+            }),
+          },
+        ],
+        finishReason: "tool_calls",
+        usage: { inputTokens: 1, cachedTokens: 0, outputTokens: 1 },
+      };
+    }
+    if (prompt.includes("todo")) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_mock_todo",
+            name: "todo",
+            arguments: JSON.stringify({ action: "add", text: "Implement mock feature" }),
+          },
+        ],
+        finishReason: "tool_calls",
+        usage: { inputTokens: 1, cachedTokens: 0, outputTokens: 1 },
+      };
+    }
+    if (prompt.includes("coding_agent") || prompt.includes("coding-agent") || prompt.includes("Agent")) {
       return {
         text: "",
         toolCalls: [
@@ -155,7 +176,12 @@ async function mockToolsRound(
   }
 
   if (hasToolResults) {
-    const text = prompt.includes("edit") ? "Updated the demo to hello agent." : "Created the hello world demo.";
+    const hadQuestion = messages.some((m) => m.role === "tool" && m.content.includes("User selected"));
+    const text = hadQuestion
+      ? "Thanks for clarifying — proceeding with Wio Terminal."
+      : prompt.includes("edit")
+        ? "Updated the demo to hello agent."
+        : "Created the hello world demo.";
     await onDelta(text);
     return {
       text,
@@ -233,6 +259,7 @@ async function mockCodingRound(
 async function streamOpenAiRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
+  tools: ToolDefinition[] = TOOL_DEFINITIONS,
 ): Promise<CompletionRound> {
   const response = await fetch(`${config.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -243,7 +270,7 @@ async function streamOpenAiRound(
     body: JSON.stringify({
       model: config.openaiModel,
       messages,
-      tools: TOOL_DEFINITIONS,
+      tools,
       tool_choice: "auto",
       stream: true,
       stream_options: { include_usage: true },

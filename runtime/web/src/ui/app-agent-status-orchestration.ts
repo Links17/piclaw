@@ -6,6 +6,7 @@ import {
 import { inferAgentPreviewTotalLines } from './app-agent-previews.js';
 import { isMainTimelineView } from './app-realtime-timeline.js';
 import { parseStatusLastEventAt } from './status-duration.js';
+import { setCloudAgentQuestion } from './app-cloud-agent-extensions.js';
 
 interface RefBox<T> {
   current: T;
@@ -129,6 +130,19 @@ export async function refreshAgentStatusForChat(options: RefreshAgentStatusForCh
     clearLastActivityFlag();
     setAgentStatus(payload);
     setExtensionWorkingState(resolveExtensionWorkingRestoreState(response.extension_working));
+
+    const pendingQuestion = payload.pending_question;
+    if (pendingQuestion?.question_id && pendingQuestion?.question) {
+      setCloudAgentQuestion({
+        questionId: String(pendingQuestion.question_id),
+        question: String(pendingQuestion.question),
+        options: Array.isArray(pendingQuestion.options) ? pendingQuestion.options : [],
+      });
+      draftBufferRef.current = '';
+      setAgentDraft({ text: '', totalLines: 0 });
+    } else if (!pendingQuestion) {
+      setCloudAgentQuestion(null);
+    }
 
     const thoughtRestore = resolveAgentPreviewRestoreState(response.thought);
     if (thoughtRestore) {

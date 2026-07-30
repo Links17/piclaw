@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { agentResponseSsePayload, messageToPost, userPostPayload } from "./web-adapter.ts";
+import { agentResponseSsePayload, messageToPost, sessionToBranchChat, userPostPayload } from "./web-adapter.ts";
 
 describe("web-adapter post shapes", () => {
   test("messageToPost sets data.type for user and assistant", () => {
@@ -41,5 +41,24 @@ describe("web-adapter post shapes", () => {
       } as any),
     ).toBe(false);
     expect(isTimelineVisibleMessage({ role: "assistant", content_blocks: null } as any)).toBe(true);
+  });
+});
+
+describe("sessionToBranchChat", () => {
+  test("includes archived_at when present", () => {
+    const branch = sessionToBranchChat({
+      id: "web:test",
+      title: "Test Chat",
+      archived_at: "2026-07-30T00:00:00.000Z",
+    });
+    expect(branch.chat_jid).toBe("web:test");
+    expect(branch.agent_name).toBe("Test Chat");
+    expect(branch.archived_at).toBe("2026-07-30T00:00:00.000Z");
+    expect(branch.is_root).toBe(true);
+  });
+
+  test("defaults archived_at to null", () => {
+    const branch = sessionToBranchChat({ id: "web:test", title: "Test Chat" });
+    expect(branch.archived_at).toBeNull();
   });
 });

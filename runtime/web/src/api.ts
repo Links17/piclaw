@@ -307,6 +307,48 @@ export async function sendAgentMessage(agentId, content, threadId = null, mediaI
     });
 }
 
+export async function answerAgentQuestion(chatJid, questionId, answer) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return request(`/agent/question/answer${query}`, {
+        method: 'POST',
+        body: JSON.stringify({ question_id: questionId, answer }),
+    });
+}
+
+export async function setAgentMode(chatJid, mode) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return request(`/agent/mode${query}`, {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+    });
+}
+
+export async function fetchSessionSubagents(chatJid) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return deduplicatedGet(`/agent/subagents${query}`);
+}
+
+export async function steerSubagentRun(chatJid, runId, message) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return request(`/subagents/${encodeURIComponent(runId)}/steer${query}`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+    });
+}
+
+export async function stopSubagentRun(chatJid, runId) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return request(`/subagents/${encodeURIComponent(runId)}/stop${query}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+    });
+}
+
+export async function fetchSubagentTranscript(chatJid, runId) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return deduplicatedGet(`/subagents/${encodeURIComponent(runId)}/messages${query}`);
+}
+
 export async function getAgentCommands(chatJid = 'web:default') {
     const normalized = typeof chatJid === 'string' && chatJid.trim() ? chatJid.trim() : 'web:default';
     return deduplicatedGet(`/agent/commands?chat_jid=${encodeURIComponent(normalized)}`);
@@ -1198,6 +1240,13 @@ export class SSEClient {
         bindJsonEvent('agent_draft_delta');
         bindJsonEvent('agent_thought');
         bindJsonEvent('agent_thought_delta');
+        bindJsonEvent('agent_question');
+        bindJsonEvent('agent_question_cleared');
+        bindJsonEvent('subagent_created');
+        bindJsonEvent('subagent_updated');
+        bindJsonEvent('subagent_delta');
+        bindJsonEvent('subagent_tool_start');
+        bindJsonEvent('subagent_tool_result');
         bindJsonEvent('model_changed');
         bindJsonEvent('ui_theme');
         bindJsonEvent('ui_meters');

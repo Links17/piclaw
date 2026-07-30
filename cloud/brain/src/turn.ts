@@ -13,18 +13,76 @@ import {
   type OpenAiMessage,
   type OpenAiToolCall,
 } from "./llm/messages.ts";
-import { dispatchTool } from "./tools/dispatcher.ts";
+import { dispatchTool, getDispatchMcpTools } from "./tools/dispatcher.ts";
+import { getToolDefinitionsForMode, type ToolDefinition } from "./tools/schemas.ts";
 import { QuotaExceededError } from "./quota.ts";
-import { trackTurnDelta, trackTurnFinished, trackTurnStarted } from "./agent-run-state.ts";
+import { trackTurnDelta, trackTurnFinished, trackTurnStarted, setPlanPreview } from "./agent-run-state.ts";
+import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuestionCleared } from "./tools/question.ts";
+import { getPendingQuestion } from "./question/state.ts";
+import { buildSkillsPromptSection } from "./skills/registry.ts";
+import {
+  TurnAbortedError,
+  assertTurnNotAborted,
+  beginTurnAbortScope,
+  clearTurnAbortScope,
+  isTurnAborted,
+  signalTurnAbort,
+} from "./turn-abort.ts";
 
-export type TurnOutcome = "ran" | "queued";
+export type TurnOutcome = "ran" | "queued" | "answered" | "aborted";
 
 export interface SubmitMessageResult {
   outcome: TurnOutcome;
   userMessageId: number;
 }
 
+function normalizeIncomingContent(content: string): { content: string; modeSwitch?: "plan" | "execute" } {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("/plan")) {
+    return { content: trimmed.slice(5).trim() || "Enter plan mode.", modeSwitch: "plan" };
+  }
+  if (trimmed.startsWith("/execute")) {
+    return { content: trimmed.slice(8).trim() || "Execute the approved plan.", modeSwitch: "execute" };
+  }
+  return { content };
+}
+
+function isAbortCommand(content: string): boolean {
+  const trimmed = content.trim();
+  return trimmed === "/abort" || trimmed.startsWith("/abort ");
+}
+
+export async function abortSessionTurn(sessionId: string): Promise<{ ok: boolean; aborted: boolean }> {
+  const hadPendingQuestion = Boolean(getPendingQuestion(sessionId));
+  signalTurnAbort(sessionId);
+  if (hadPendingQuestion) {
+    await interruptPendingQuestion(sessionId);
+  } else {
+    await publishQuestionCleared(sessionId);
+  }
+  return { ok: true, aborted: true };
+}
+
 export async function submitMessage(sessionId: string, content: string): Promise<SubmitMessageResult> {
+  if (isAbortCommand(content)) {
+    await abortSessionTurn(sessionId);
+    return { outcome: "aborted", userMessageId: 0 };
+  }
+
+  const pendingQuestion = getPendingQuestion(sessionId);
+  if (pendingQuestion) {
+    const answerResult = await answerPendingQuestionForSession(sessionId, content);
+    if (answerResult.ok) {
+      return { outcome: "answered", userMessageId: 0 };
+    }
+  }
+
+  const normalized = normalizeIncomingContent(content);
+  if (normalized.modeSwitch) {
+    await store.setSessionMode(sessionId, normalized.modeSwitch);
+  }
+  const messageContent = normalized.content;
+
   await store.touchSessionActivity(sessionId);
   const session = await store.getSession(sessionId);
   if (session) {
@@ -44,10 +102,10 @@ export async function submitMessage(sessionId: string, content: string): Promise
   const lock = await store.tryLockSession(sessionId);
   if (!lock) {
     const counter = newCounter();
-    const messageId = await store.insertMessage(sessionId, "user", content, { counter });
-    await store.enqueueFollowup(sessionId, { content, messageId }, counter);
-    await publish(sessionId, { type: "followup_queued", content });
-    await publish(sessionId, { type: "message", id: messageId, role: "user", content });
+    const messageId = await store.insertMessage(sessionId, "user", messageContent, { counter });
+    await store.enqueueFollowup(sessionId, { content: messageContent, messageId }, counter);
+    await publish(sessionId, { type: "followup_queued", content: messageContent });
+    await publish(sessionId, { type: "message", id: messageId, role: "user", content: messageContent });
     const retryLock = await store.tryLockSession(sessionId);
     if (retryLock) {
       try {
@@ -62,8 +120,8 @@ export async function submitMessage(sessionId: string, content: string): Promise
   let userMessageId = 0;
   try {
     const counter = newCounter();
-    userMessageId = await store.insertMessage(sessionId, "user", content, { counter });
-    await publish(sessionId, { type: "message", id: userMessageId, role: "user", content });
+    userMessageId = await store.insertMessage(sessionId, "user", messageContent, { counter });
+    await publish(sessionId, { type: "message", id: userMessageId, role: "user", content: messageContent });
     await runTurnLocked(sessionId, userMessageId, counter);
     await drainFollowups(sessionId);
   } finally {
@@ -88,19 +146,48 @@ function toOpenAiToolCalls(calls: Array<{ id: string; name: string; arguments: s
   }));
 }
 
+async function buildTurnContext(sessionId: string): Promise<{
+  mode: "plan" | "execute";
+  tools: ToolDefinition[];
+  skillsSection: string;
+  planText: string;
+}> {
+  const session = await store.getSession(sessionId);
+  const userId = session?.user_id ?? "default-user";
+  const [mode, planText, skillsSection, mcpTools] = await Promise.all([
+    store.getSessionMode(sessionId),
+    store.getSessionPlanText(sessionId),
+    buildSkillsPromptSection(sessionId, userId),
+    getDispatchMcpTools(),
+  ]);
+  return {
+    mode,
+    planText,
+    skillsSection,
+    tools: getToolDefinitionsForMode(mode, mcpTools),
+  };
+}
+
 async function runToolLoop(
   sessionId: string,
   counter: ReturnType<typeof newCounter>,
   onDelta: (text: string) => Promise<void>,
   options: { recovery?: boolean } = {},
 ): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
-  let messages: OpenAiMessage[] = historyToOpenAi(await store.hydrate(sessionId, counter));
+  const turnContext = await buildTurnContext(sessionId);
+  let messages: OpenAiMessage[] = historyToOpenAi(await store.hydrate(sessionId, counter), {
+    mode: turnContext.mode,
+    skillsSection: turnContext.skillsSection,
+    planText: turnContext.planText,
+  });
   let totalUsage: LlmUsage = { inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
   let finalText = "";
   let assistantMessageId: number | null = null;
+  let questionCallsThisTurn = 0;
 
   for (let round = 0; round < config.maxToolRounds; round += 1) {
-    const result = await streamCompletionRound(messages, onDelta);
+    assertTurnNotAborted(sessionId);
+    const result = await streamCompletionRound(messages, onDelta, turnContext.tools);
     totalUsage = mergeUsage(totalUsage, result.usage);
 
     if (result.toolCalls.length === 0) {
@@ -110,6 +197,11 @@ async function runToolLoop(
         recoveryMarker: options.recovery ?? false,
       });
       messages.push({ role: "assistant", content: finalText });
+      if (turnContext.mode === "plan" && finalText.trim()) {
+        await store.setSessionPlanText(sessionId, finalText.trim());
+        setPlanPreview(sessionId, finalText.trim());
+        await publish(sessionId, { type: "plan_update", text: finalText.trim(), replica: config.replicaId });
+      }
       break;
     }
 
@@ -121,13 +213,7 @@ async function runToolLoop(
     messages.push({ role: "assistant", content: result.text || null, tool_calls: toolCalls });
 
     for (const call of result.toolCalls) {
-      await publish(sessionId, {
-        type: "tool_start",
-        name: call.name,
-        toolCallId: call.id,
-        replica: config.replicaId,
-      });
-
+      assertTurnNotAborted(sessionId);
       let args: Record<string, unknown> = {};
       let parseError: string | null = null;
       try {
@@ -135,10 +221,37 @@ async function runToolLoop(
       } catch {
         parseError = `Invalid tool arguments JSON for ${call.name}`;
       }
+      const skillDetail =
+        call.name === "skill" && typeof args.name === "string" ? String(args.name) : undefined;
 
-      const toolResult = parseError
-        ? { output: parseError, isError: true }
-        : await dispatchTool(sessionId, call.name, args);
+      await publish(sessionId, {
+        type: "tool_start",
+        name: call.name,
+        toolCallId: call.id,
+        replica: config.replicaId,
+        ...(skillDetail ? { detail: skillDetail } : {}),
+      });
+
+      let toolResult: { output: string; isError: boolean };
+      if (parseError) {
+        toolResult = { output: parseError, isError: true };
+      } else if (call.name === "question") {
+        if (questionCallsThisTurn >= 1) {
+          toolResult = {
+            output: "question tool already used this turn; proceed with reasonable defaults.",
+            isError: true,
+          };
+        } else {
+          questionCallsThisTurn += 1;
+          toolResult = await dispatchTool(sessionId, call.name, args, turnContext.mode, turnContext.tools);
+        }
+      } else {
+        toolResult = await dispatchTool(sessionId, call.name, args, turnContext.mode, turnContext.tools);
+      }
+
+      if (isTurnAborted(sessionId)) {
+        throw new TurnAbortedError();
+      }
 
       await publish(sessionId, {
         type: "tool_result",
@@ -177,6 +290,7 @@ async function runTurnLocked(
   await store.beginTurn(sessionId, messageId, counter);
   trackTurnStarted(sessionId, messageId);
   await publish(sessionId, { type: "turn_started", messageId, replica: config.replicaId });
+  beginTurnAbortScope(sessionId);
 
   try {
     const { finalText, usage, assistantMessageId } = await runToolLoop(
@@ -232,7 +346,11 @@ async function runTurnLocked(
     await store.endTurnWithError(sessionId, messageId, message, counter);
     trackTurnFinished(sessionId);
     await publish(sessionId, { type: "turn_failed", messageId, error: message, replica: config.replicaId });
-    throw error;
+    if (!(error instanceof TurnAbortedError)) {
+      throw error;
+    }
+  } finally {
+    clearTurnAbortScope(sessionId);
   }
 }
 
@@ -289,4 +407,8 @@ export async function sweepInflight(): Promise<void> {
       await lock.release();
     }
   }
+}
+
+export async function setSessionMode(sessionId: string, mode: "plan" | "execute"): Promise<void> {
+  await store.setSessionMode(sessionId, mode);
 }

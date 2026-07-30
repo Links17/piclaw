@@ -3,19 +3,28 @@
  */
 import * as store from "@piclaw-cloud/store";
 import { config } from "../config.ts";
+import { isLlmMockEnabled } from "../llm.ts";
 import { publish } from "../events.ts";
 import { runBrainCodingLoop } from "./coding-loop.ts";
+import { allocateSubagentRunId, normalizeSubagentRunId } from "./run-id.ts";
 import { runSandboxPiWorker } from "./sandbox-worker.ts";
 import type { CodingSubagentOptions, CodingSubagentResult } from "./types.ts";
 
 function resolveWorkerMode(task: string): "mock" | "brain" | "sandbox" {
-  if (config.codingWorkerMode === "mock" || task.startsWith("mock-coding:")) {
-    return "mock";
+  if (task.startsWith("mock-coding:")) {
+    if (isLlmMockEnabled()) return "mock";
+    throw new Error("mock-coding: prefix requires CLOUD_LLM_MOCK=1 on the brain process");
+  }
+  if (config.codingWorkerMode === "mock") {
+    if (isLlmMockEnabled()) return "mock";
+    throw new Error("subagent.codingWorkerMode=mock requires CLOUD_LLM_MOCK=1 on the brain process");
   }
   if (config.codingWorkerMode === "brain") return "brain";
   if (config.codingWorkerMode === "sandbox") return "sandbox";
   if (!config.sandboxEnabled || !config.openaiApiKey || !config.openaiBaseUrl) {
-    return "mock";
+    throw new Error(
+      "Coding worker unavailable: configure openai and sandbox in brain.config.json, or set CLOUD_LLM_MOCK=1 for mock-coding tests",
+    );
   }
   return "sandbox";
 }
@@ -61,21 +70,32 @@ async function runSandboxWorkerWithFallback(
 
 export async function runCodingSubagent(
   sessionId: string,
-  options: CodingSubagentOptions,
+  options: CodingSubagentOptions & {
+    runId?: string;
+    agentType?: string;
+    description?: string;
+  },
 ): Promise<CodingSubagentResult> {
-  const runId = `run-${crypto.randomUUID()}`;
+  const parentRunId = normalizeSubagentRunId(options.runId);
+  const runId = allocateSubagentRunId(parentRunId);
   const timeoutMs = options.timeoutMs ?? config.subagentTimeoutMs;
   const session = await store.getSession(sessionId);
   if (!session) {
     throw new Error(`unknown session ${sessionId}`);
   }
 
-  await store.createSubagentRun({
-    id: runId,
-    sessionId,
-    task: options.task,
-    sandboxId: session.sandbox_id,
-  });
+  if (!parentRunId) {
+    await store.createSubagentRun({
+      id: runId,
+      sessionId,
+      task: options.task,
+      sandboxId: session.sandbox_id,
+      agentType: options.agentType ?? "coding",
+    });
+    if (options.description) {
+      await store.updateSubagentRunMeta(runId, { description: options.description });
+    }
+  }
 
   await publish(sessionId, {
     type: "subagent_started",
@@ -91,13 +111,23 @@ export async function runCodingSubagent(
   let outcome: CodingSubagentResult;
 
   try {
-    if (mode === "mock" || mode === "brain") {
-      const loop = await runBrainCodingLoop(
-        sessionId,
+    if (mode === "mock") {
+      const task = options.task.startsWith("mock-coding:")
+        ? options.task
+        : `mock-coding:${options.task}`;
+      const loop = await runBrainCodingLoop(sessionId, runId, task, options.constraints);
+      outcome = {
         runId,
-        options.task.startsWith("mock-coding:") ? options.task : `mock-coding:${options.task}`,
-        options.constraints,
-      );
+        status: "completed",
+        summary: loop.summary,
+        artifacts: loop.artifacts,
+        usage: {
+          inputTokens: loop.usage.inputTokens ?? 0,
+          outputTokens: loop.usage.outputTokens ?? 0,
+        },
+      };
+    } else if (mode === "brain") {
+      const loop = await runBrainCodingLoop(sessionId, runId, options.task, options.constraints);
       outcome = {
         runId,
         status: "completed",

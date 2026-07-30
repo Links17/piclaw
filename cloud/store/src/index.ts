@@ -7,6 +7,10 @@ export * from "./quota.ts";
 export * from "./rls.ts";
 export * from "./scheduler.ts";
 export * from "./subagent-runs.ts";
+export * from "./session-capabilities.ts";
+export * from "./skills.ts";
+export type { SessionMode, TodoItem, TodoState } from "./session-capabilities.ts";
+export type { SkillScope, SkillSource, SkillRow, SkillPublicRow, SkillCatalogRow } from "./skills.ts";
 
 export interface MessageRow {
   id: number;
@@ -23,6 +27,11 @@ export interface SessionRow {
   user_id: string;
   title: string;
   sandbox_id: string | null;
+  archived_at: string | null;
+}
+
+export interface ListSessionsOptions {
+  includeArchived?: boolean;
 }
 
 // ── sessions ──────────────────────────────────────────────────────────
@@ -43,29 +52,115 @@ export async function createSession(
   });
 }
 
-export async function listSessions(userId = DEFAULT_USER_ID): Promise<SessionRow[]> {
-  const rows = await sql`
-    SELECT id, user_id, title, sandbox_id
-    FROM sessions WHERE user_id = ${userId}
-    ORDER BY updated_at DESC`;
+export async function listSessions(
+  userId = DEFAULT_USER_ID,
+  options: ListSessionsOptions = {},
+): Promise<SessionRow[]> {
+  const includeArchived = Boolean(options.includeArchived);
+  const rows = includeArchived
+    ? await sql`
+        SELECT id, user_id, title, sandbox_id, archived_at
+        FROM sessions WHERE user_id = ${userId}
+        ORDER BY updated_at DESC`
+    : await sql`
+        SELECT id, user_id, title, sandbox_id, archived_at
+        FROM sessions WHERE user_id = ${userId} AND archived_at IS NULL
+        ORDER BY updated_at DESC`;
   return rows as SessionRow[];
 }
 
 export async function getSession(id: string): Promise<SessionRow | null> {
-  const rows = await sql`SELECT id, user_id, title, sandbox_id FROM sessions WHERE id = ${id}`;
+  const rows = await sql`
+    SELECT id, user_id, title, sandbox_id, archived_at FROM sessions WHERE id = ${id}`;
   return (rows[0] as SessionRow) ?? null;
 }
 
 export async function getSessionForUser(id: string, userId: string): Promise<SessionRow | null> {
   const rows = await sql`
-    SELECT id, user_id, title, sandbox_id FROM sessions
+    SELECT id, user_id, title, sandbox_id, archived_at FROM sessions
     WHERE id = ${id} AND user_id = ${userId}`;
   return (rows[0] as SessionRow) ?? null;
 }
 
+export async function archiveSession(id: string, userId = DEFAULT_USER_ID): Promise<SessionRow> {
+  const existing = await getSessionForUser(id, userId);
+  if (!existing) throw new Error(`Unknown chat branch: ${id}`);
+  if (existing.archived_at) return existing;
+
+  const rows = await sql`
+    UPDATE sessions
+    SET archived_at = now(), updated_at = now()
+    WHERE id = ${id} AND user_id = ${userId}
+    RETURNING id, user_id, title, sandbox_id, archived_at`;
+  return rows[0] as SessionRow;
+}
+
+export async function restoreSession(
+  id: string,
+  userId = DEFAULT_USER_ID,
+  title?: string,
+): Promise<SessionRow> {
+  const existing = await getSessionForUser(id, userId);
+  if (!existing) throw new Error(`Unknown chat branch: ${id}`);
+
+  const nextTitle = typeof title === "string" && title.trim() ? title.trim() : null;
+  const rows = await sql`
+    UPDATE sessions
+    SET archived_at = NULL,
+        title = COALESCE(${nextTitle}, title),
+        updated_at = now()
+    WHERE id = ${id} AND user_id = ${userId}
+    RETURNING id, user_id, title, sandbox_id, archived_at`;
+  return rows[0] as SessionRow;
+}
+
+export async function renameSessionTitle(
+  id: string,
+  title: string,
+  userId = DEFAULT_USER_ID,
+): Promise<SessionRow> {
+  const existing = await getSessionForUser(id, userId);
+  if (!existing) throw new Error(`Unknown chat branch: ${id}`);
+
+  const nextTitle = title.trim();
+  if (!nextTitle) throw new Error("agent_name is required");
+
+  const rows = await sql`
+    UPDATE sessions
+    SET title = ${nextTitle}, updated_at = now()
+    WHERE id = ${id} AND user_id = ${userId}
+    RETURNING id, user_id, title, sandbox_id, archived_at`;
+  return rows[0] as SessionRow;
+}
+
+export async function purgeSession(
+  id: string,
+  userId = DEFAULT_USER_ID,
+): Promise<SessionRow> {
+  const existing = await getSessionForUser(id, userId);
+  if (!existing) throw new Error(`Unknown chat branch: ${id}`);
+  if (!existing.archived_at) {
+    throw new Error(`Cannot permanently delete a branch that is not archived: ${id}`);
+  }
+
+  await sql.begin(async (tx) => {
+    await tx`DELETE FROM session_cursors WHERE session_id = ${id}`;
+    await tx`
+      DELETE FROM sessions
+      WHERE id = ${id} AND user_id = ${userId} AND archived_at IS NOT NULL`;
+  });
+  return existing;
+}
+
 export async function setSandboxId(sessionId: string, sandboxId: string): Promise<void> {
   await sql`
-    UPDATE sessions SET sandbox_id = ${sandboxId}, updated_at = now()
+    UPDATE sessions SET sandbox_id = ${sandboxId}, sandbox_paused_at = NULL, updated_at = now()
+    WHERE id = ${sessionId}`;
+}
+
+export async function clearSandboxId(sessionId: string): Promise<void> {
+  await sql`
+    UPDATE sessions SET sandbox_id = NULL, sandbox_paused_at = NULL, updated_at = now()
     WHERE id = ${sessionId}`;
 }
 

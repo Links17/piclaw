@@ -58,7 +58,8 @@ flowchart LR
 # 仓库根目录
 bun run build:web:cloud
 cd cloud/brain && bun run start   # 终端 1
-cd cloud && CLOUD_WEB_E2E_MODE=mock-tools bun run verify:web-e2e   # 快路径
+cd cloud && CLOUD_LLM_MOCK=1 cd brain && bun run start   # 终端 A
+cd cloud && CLOUD_WEB_E2E_MODE=mock-tools bun run verify:web-e2e   # 快路径（需 brain CLOUD_LLM_MOCK=1）
 # 或真实 LLM + Wio 三步：
 cd cloud && bun run verify:web-e2e
 ```

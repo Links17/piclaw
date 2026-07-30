@@ -82,6 +82,18 @@ export function serveStaticRequest(req: Request): Response | null {
     return serveFromRoot(STATIC_DIR, "sw.js", req);
   }
 
+  if (pathname === "/manifest.json") {
+    return serveFromRoot(STATIC_DIR, "manifest.json", req);
+  }
+
+  if (pathname === "/favicon.ico") {
+    return (
+      serveFromRoot(STATIC_DIR, "favicon.ico", req)
+      ?? serveFromRoot(STATIC_DIR, "icon-192.png", req)
+      ?? new Response(null, { status: 204 })
+    );
+  }
+
   if (pathname.startsWith("/static/")) {
     const relPath = pathname.slice("/static/".length);
     return serveFromRoot(STATIC_DIR, relPath, req);

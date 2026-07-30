@@ -262,6 +262,9 @@
     flex-shrink: 0;
     width: 100%;
     box-sizing: border-box;
+    position: relative;
+    z-index: 12;
+    pointer-events: auto;
 }
 
 .agent-thinking {
@@ -1552,3 +1555,332 @@
     background-color: var(--danger-color);
     color: white;
 }
+
+/* Cloud agent question — inline in agent-status-panel (agent-thinking style) */
+.agent-thinking-question {
+    pointer-events: auto;
+}
+
+.agent-question-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.agent-question-prompt {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+
+.agent-question-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.agent-question-option {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.agent-question-option:hover:not(:disabled),
+.agent-question-option:focus-visible:not(:disabled) {
+    border-color: color-mix(in srgb, var(--accent-color) 55%, var(--border-color));
+    background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-primary));
+    outline: none;
+}
+
+.agent-question-option.is-selected {
+    border-color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 14%, var(--bg-primary));
+}
+
+.agent-question-option:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.agent-question-option-label {
+    display: block;
+}
+
+.agent-question-option-desc {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.agent-question-custom {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.agent-question-custom-input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    pointer-events: auto;
+}
+
+.agent-question-custom-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.agent-question-submit {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.agent-question-submit:hover:not(:disabled),
+.agent-question-submit:focus-visible:not(:disabled) {
+    border-color: var(--accent-color);
+    outline: none;
+}
+
+.agent-question-submit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.agent-question-compose-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+}
+
+.agent-question-selected-row {
+    display: flex;
+    margin-top: 2px;
+}
+
+.agent-question-submit-selected {
+    width: 100%;
+}
+
+.agent-question-error {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-md, 8px);
+    background: color-mix(in srgb, var(--danger-color) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger-color) 28%, transparent);
+    color: var(--danger-color);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/* Cloud subagents — inline in agent-status-panel (pi-subagents inspired) */
+.agent-thinking-subagents {
+    pointer-events: auto;
+}
+
+.agent-subagent-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.agent-subagent-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.agent-subagent-row {
+    border-left: 2px solid var(--border-color);
+    padding-left: 10px;
+    margin-left: 2px;
+}
+
+.agent-subagent-row.is-running {
+    border-left-color: var(--accent-color);
+}
+
+.agent-subagent-row.is-selected {
+    border-left-color: color-mix(in srgb, var(--accent-color) 70%, var(--border-color));
+}
+
+.agent-subagent-select {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 4px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--radius-sm, 6px);
+    pointer-events: auto;
+}
+
+.agent-subagent-select:hover,
+.agent-subagent-select:focus-visible {
+    background: color-mix(in srgb, var(--accent-color) 6%, transparent);
+    outline: none;
+}
+
+.agent-subagent-status {
+    flex: 0 0 auto;
+    width: 1.1em;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.agent-subagent-row.is-running .agent-subagent-status {
+    color: var(--accent-color);
+}
+
+.agent-subagent-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.agent-subagent-title-row {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.agent-subagent-type {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: lowercase;
+    color: var(--text-secondary);
+}
+
+.agent-subagent-desc {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-subagent-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.agent-subagent-run-id {
+    font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.agent-subagent-activity {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-subagent-queued {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.agent-subagent-actions {
+    display: flex;
+    gap: 6px;
+    padding: 0 4px 4px 1.9em;
+}
+
+.agent-subagent-transcript {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.agent-subagent-transcript-empty {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+.agent-subagent-transcript-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.agent-subagent-transcript-role {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+}
+
+.agent-subagent-transcript-content {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-primary);
+}
+
+.agent-subagent-steer {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.agent-subagent-steer-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+

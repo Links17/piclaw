@@ -4,6 +4,10 @@ import { paneRegistry, TERMINAL_TAB_PATH, VNC_TAB_PREFIX, tabStore } from './pan
 import { getLocalStorageBoolean, getLocalStorageNumber, setLocalStorageItem } from './utils/storage.js';
 import { dedupePosts } from './ui/timeline-utils.js';
 import { useAgentState } from './ui/use-agent-state.js';
+import { clearCloudAgentQuestion, useCloudAgentQuestion } from './ui/use-cloud-agent-question.js';
+import { useCloudAgentFleet } from './ui/use-cloud-agent-fleet.js';
+import { fetchSessionSubagents } from './api.js';
+import { hydrateFleetRunsFromApi, clearCloudAgentExtensions } from './ui/app-cloud-agent-extensions.js';
 import { useSplitters } from './ui/use-splitters.js';
 import {
     LAST_ACTIVITY_TTL_MS,
@@ -161,6 +165,20 @@ function MainApp({ locationParams, navigate }) {
         thoughtExpandedRef,
         draftExpandedRef,
     } = useAgentState();
+
+    const cloudAgentQuestion = useCloudAgentQuestion();
+    const cloudAgentFleet = useCloudAgentFleet();
+    const handleCloudAgentQuestionAnswered = useCallback(() => {
+        clearCloudAgentQuestion();
+    }, []);
+
+    useEffect(() => {
+        clearCloudAgentExtensions();
+        if (!currentChatJid) return;
+        void fetchSessionSubagents(currentChatJid)
+            .then((payload) => hydrateFleetRunsFromApi(payload?.runs ?? []))
+            .catch(() => {});
+    }, [currentChatJid]);
 
     const pane = useMainAppPaneComposition({
         panePopoutMode,
@@ -639,6 +657,9 @@ function MainApp({ locationParams, navigate }) {
             setPendingRequest,
             pendingRequestRef,
             isCompactionStatus,
+            cloudAgentQuestion,
+            cloudAgentFleet,
+            onCloudAgentQuestionAnswered: handleCloudAgentQuestionAnswered,
         },
         helpers: {
             formatBranchPickerLabel,
