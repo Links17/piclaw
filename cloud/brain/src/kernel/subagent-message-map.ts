@@ -1,9 +1,9 @@
 import {
-  CLOUD_KERNEL_PROVIDER_ID,
   type AgentMessage,
   type AssistantMessage,
   type Usage,
-} from "@piclaw/agent-kernel";
+} from "./pi.ts";
+import { CLOUD_KERNEL_PROVIDER_ID } from "./provider.ts";
 import {
   assistantToolCallBlocks,
   type ContentBlocks,

@@ -13,7 +13,7 @@ import {
   type AssistantMessage,
   type ToolResultMessage,
   type Usage,
-} from "@piclaw/agent-kernel";
+} from "./pi.ts";
 import { config } from "../config.ts";
 import { publish } from "../events.ts";
 import type { LlmUsage } from "../llm.ts";

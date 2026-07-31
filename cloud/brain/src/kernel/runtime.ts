@@ -1,7 +1,7 @@
 import {
   createCloudKernelRuntime,
   type CloudKernelRuntime,
-} from "@piclaw/agent-kernel";
+} from "./provider.ts";
 import { config } from "../config.ts";
 import { isLlmMockEnabled } from "../llm.ts";
 import { createMockKernelRuntime } from "./mock-runtime.ts";

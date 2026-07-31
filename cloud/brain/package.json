@@ -13,7 +13,8 @@
     "web-e2e": "bun run scripts/web-e2e-scenario.ts"
   },
   "dependencies": {
-    "@piclaw/agent-kernel": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.82.1",
+    "@earendil-works/pi-ai": "0.82.1",
     "@piclaw-cloud/shared": "workspace:*",
     "@piclaw-cloud/store": "workspace:*",
     "e2b": "^2.36.1",

@@ -1,4 +1,4 @@
-import { Type, type AgentTool } from "@piclaw/agent-kernel";
+import { Type, type AgentTool } from "./pi.ts";
 import { dispatchTool } from "../tools/dispatcher.ts";
 import type { ToolDefinition } from "../tools/schemas.ts";
 

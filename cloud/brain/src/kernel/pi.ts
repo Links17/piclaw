@@ -1,6 +1,6 @@
 /**
- * @piclaw/agent-kernel — single import surface for pi-agent-core / pi-ai in PiClaw.
- * Upgrade pi versions here; brain and (future) runtime consume this package only.
+ * Pi facade for cloud brain — single import surface for pi-agent-core / pi-ai.
+ * Upgrade pi versions in cloud/brain/package.json only.
  */
 export {
   agentLoop,
@@ -28,20 +28,19 @@ export {
 export {
   Type,
   contentText,
+  createModels,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
   type AssistantMessage,
   type Context,
+  type ImageContent,
   type Message,
   type Model,
   type Models,
+  type SimpleStreamOptions,
+  type TextContent,
   type ToolResultMessage,
   type Usage,
   type UserMessage,
 } from "@earendil-works/pi-ai";
-
-export {
-  CLOUD_KERNEL_PROVIDER_ID,
-  createCloudKernelModel,
-  createCloudKernelRuntime,
-  type CloudKernelConfig,
-  type CloudKernelRuntime,
-} from "./provider.ts";

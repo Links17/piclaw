@@ -1,7 +1,15 @@
-import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import type { CloudKernelRuntime } from "@piclaw/agent-kernel";
-import { CLOUD_KERNEL_PROVIDER_ID } from "@piclaw/agent-kernel";
+import {
+  createModels,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  type AssistantMessage,
+  type Context,
+  type Model,
+  type SimpleStreamOptions,
+} from "./pi.ts";
+import type { CloudKernelRuntime } from "./provider.ts";
+import { CLOUD_KERNEL_PROVIDER_ID } from "./provider.ts";
 import { resolveMockCompletionForContext } from "../llm/mock-completion.ts";
 import type { CompletionRound } from "../llm.ts";
 
