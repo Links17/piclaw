@@ -1,4 +1,4 @@
-import type { Api, Model, ModelsSimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, Model, ModelsSimpleStreamOptions } from "@piclaw/agent-kernel";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { sanitizeProviderPayloadItemIds } from "./provider-request-sanitizer.js";

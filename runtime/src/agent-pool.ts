@@ -30,7 +30,7 @@ import {
   type ModelRuntime,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { Provider } from "@earendil-works/pi-ai";
+import type { Provider } from "@piclaw/agent-kernel";
 
 import { type AgentControlCommand, type AgentControlResult } from "./agent-control/index.js";
 import { getPiclawAgentDir } from "./core/agent-dir.js";

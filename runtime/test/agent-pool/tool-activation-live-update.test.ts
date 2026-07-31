@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { SettingsManager, getAgentDir, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolCall } from "@piclaw/agent-kernel";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import "../helpers.js";
 import { createSessionInDir } from "../../src/agent-pool/session.ts";

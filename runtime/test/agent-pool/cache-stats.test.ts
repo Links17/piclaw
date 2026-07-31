@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@piclaw/agent-kernel";
 import type { ModelRegistry, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { computePromptCacheWaste } from "../../src/agent-pool/cache-stats.js";

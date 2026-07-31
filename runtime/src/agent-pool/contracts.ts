@@ -6,7 +6,7 @@ import type { AgentSessionEvent, AgentSessionRuntime, ModelRuntime, SettingsMana
 import type {
   AssistantMessageEvent,
   Usage,
-} from "@earendil-works/pi-ai";
+} from "@piclaw/agent-kernel";
 
 import type { AttachmentInfo } from "./attachments.js";
 import type { PiclawCredentialStore } from "./credential-store.js";

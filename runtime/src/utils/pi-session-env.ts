@@ -2,8 +2,8 @@
  * utils/pi-session-env.ts – Upstream-compatible PI_* metadata for subprocesses.
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ThinkingLevel } from "@piclaw/agent-kernel";
+import type { Api, Model } from "@piclaw/agent-kernel";
 
 export interface PiSessionEnvInput {
   sessionId?: string | null;

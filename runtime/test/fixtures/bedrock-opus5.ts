@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@piclaw/agent-kernel";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 
 const IDS = [

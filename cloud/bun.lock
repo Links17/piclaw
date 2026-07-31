@@ -4,7 +4,7 @@
     "": {
       "name": "piclaw-cloud",
     },
-    "../packages/agent-kernel": {
+    "../agent-kernel": {
       "name": "@piclaw/agent-kernel",
       "version": "0.1.0",
       "dependencies": {
@@ -157,7 +157,7 @@
 
     "@piclaw-cloud/store": ["@piclaw-cloud/store@workspace:store"],
 
-    "@piclaw/agent-kernel": ["@piclaw/agent-kernel@workspace:../packages/agent-kernel"],
+    "@piclaw/agent-kernel": ["@piclaw/agent-kernel@workspace:../agent-kernel"],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
 

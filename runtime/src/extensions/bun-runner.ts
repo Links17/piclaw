@@ -8,7 +8,7 @@
 
 import { Type, type Static } from "typebox";
 import type { AgentToolResult, ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@piclaw/agent-kernel";
 
 import { registerToolStatusHintProvider } from "../tool-status-hints.js";
 import type { CapturedBunStreamResult } from "../tools/bun-runner.js";

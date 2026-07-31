@@ -8,8 +8,8 @@
  */
 
 import type { AgentSession, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ThinkingLevel } from "@piclaw/agent-kernel";
+import type { Api, Model } from "@piclaw/agent-kernel";
 import type { AgentControlCommand, AgentControlResult } from "../agent-control-types.js";
 import { THINKING_LEVELS, normalizeModelMatch, resolveThinkingAlias, isEffortProvider, formatThinkingLevelForDisplay, getAvailableThinkingLevelsForModel, setSessionThinkingLevelCompat } from "../agent-control-helpers.js";
 import { createLogger, debugSuppressedError } from "../../utils/logger.js";

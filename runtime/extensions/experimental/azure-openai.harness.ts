@@ -19,7 +19,7 @@ import {
   type Model,
   type ToolCall,
   type ToolResultMessage,
-} from "@earendil-works/pi-ai";
+} from "@piclaw/agent-kernel";
 import {
   applySessionCorrelationHeaders,
   applyToolCallLimit,

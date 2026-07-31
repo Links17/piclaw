@@ -8,8 +8,8 @@
 
 import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
+import type { ThinkingLevel } from "@piclaw/agent-kernel";
+import type { ImageContent, Message, TextContent } from "@piclaw/agent-kernel";
 import type { AgentSession, SessionContext, SessionEntry, SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { seedRotatedSession } from "../session-rotation.js";
@@ -76,7 +76,7 @@ export function normalizeThinkingLevel(value: string | null | undefined): Thinki
   // Pi 0.80.x runtime can receive provider-specific future thinking aliases
   // before the shared ThinkingLevel type is widened. Preserve the serialized
   // value for replay while keeping this module source-compatible with the
-  // current @earendil-works/pi-agent-core type surface.
+  // current @piclaw/agent-kernel type surface.
   return value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max"
     ? value as ThinkingLevel
     : null;

@@ -7,7 +7,7 @@
  * scoped to github-copilot only and imports chat-capable live model IDs while filtering known
  * non-chat model IDs such as embeddings and trajectory compaction helpers.
  */
-import type { Api, Model, OAuthCredential, Provider, RefreshModelsContext } from "@earendil-works/pi-ai";
+import type { Api, Model, OAuthCredential, Provider, RefreshModelsContext } from "@piclaw/agent-kernel";
 import type { ExtensionAPI, ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { getToolsIntegrationConfig } from "../core/config.js";

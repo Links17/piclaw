@@ -7,7 +7,7 @@
  */
 
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import type { Usage } from "@earendil-works/pi-ai";
+import type { Usage } from "@piclaw/agent-kernel";
 
 import type { AttachmentInfo } from "./attachments.js";
 

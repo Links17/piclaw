@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Context, Message } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@piclaw/agent-kernel";
+import type { Context, Message } from "@piclaw/agent-kernel";
 
 const MAX_COERCED_TEXT_CHARS = 4_000;
 

@@ -6,7 +6,7 @@
  */
 
 import type { FileOperations } from "@earendil-works/pi-coding-agent";
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message } from "@piclaw/agent-kernel";
 import {
   HEAD_USER_TURNS,
   MAX_PROMPT_CHARS,

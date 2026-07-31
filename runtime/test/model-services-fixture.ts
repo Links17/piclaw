@@ -1,4 +1,4 @@
-import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
+import type { Credential, CredentialInfo } from "@piclaw/agent-kernel";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import type { AgentPoolOptions } from "../src/agent-pool/contracts.js";

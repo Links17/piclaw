@@ -17,7 +17,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { Api, Model, Provider } from "@earendil-works/pi-ai";
+import type { Api, Model, Provider } from "@piclaw/agent-kernel";
 
 type AzureProviderConfig = Parameters<ExtensionAPI["registerProvider"]>[1];
 type AzureProviderConfigRegistrar = (name: string, config: AzureProviderConfig) => void;
@@ -29,7 +29,7 @@ import {
   type AssistantMessage,
   type ToolCall,
   type ToolResultMessage,
-} from "@earendil-works/pi-ai";
+} from "@piclaw/agent-kernel";
 import {
   applySessionCorrelationHeaders,
   applyToolCallLimit,

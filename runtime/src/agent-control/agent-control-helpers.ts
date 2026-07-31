@@ -14,7 +14,7 @@
  */
 
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type Api, type Model } from "@piclaw/agent-kernel";
 import { existsSync } from "fs";
 import { getConfigPath, WORKSPACE_DIR } from "../core/config.js";
 import { readJsonConfig, writeJsonConfig } from "../core/config-store.js";

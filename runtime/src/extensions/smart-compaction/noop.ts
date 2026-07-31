@@ -6,7 +6,7 @@
  */
 
 import type { FileOperations, CompactionResult } from "@earendil-works/pi-coding-agent";
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message } from "@piclaw/agent-kernel";
 import { createLogger } from "../../utils/logger.js";
 import { MIN_SUMMARY_CHARS } from "./config.js";
 import { compressFilePaths, fileListsFromOps } from "./files.js";

@@ -3,7 +3,7 @@
  */
 
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { Provider } from "@earendil-works/pi-ai";
+import type { Provider } from "@piclaw/agent-kernel";
 import { createLogger } from "../utils/logger.js";
 
 export type AzureProviderBootstrapHandle = { stop: () => void; refresh: () => Promise<void> };

@@ -1,6 +1,6 @@
 /**
  * @piclaw/agent-kernel — single import surface for pi-agent-core / pi-ai in PiClaw.
- * Upgrade pi versions here; brain and (future) runtime consume this package only.
+ * Upgrade pi versions here; runtime and cloud consume this package only.
  */
 export {
   agentLoop,
@@ -23,16 +23,47 @@ export {
   type AgentTool,
   type AgentToolResult,
   type StreamFn,
+  type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 
 export {
   Type,
   contentText,
+  createModels,
+  createAssistantMessageEventStream,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  getSupportedThinkingLevels,
+  clampThinkingLevel,
+  InMemoryModelsStore,
+  type Api,
   type AssistantMessage,
+  type AssistantMessageEvent,
+  type AssistantMessageEventStream,
+  type AuthEvent,
+  type AuthPrompt,
+  type AuthType,
   type Context,
+  type Credential,
+  type CredentialInfo,
+  type CredentialStore,
+  type ImageContent,
   type Message,
   type Model,
   type Models,
+  type ModelsRefreshResult,
+  type ModelsSimpleStreamOptions,
+  type ModelsStoreEntry,
+  type MutableModels,
+  type OAuthCredential,
+  type Provider,
+  type RefreshModelsContext,
+  type SimpleStreamOptions,
+  type StreamOptions,
+  type TextContent,
+  type Tool,
+  type ToolCall,
   type ToolResultMessage,
   type Usage,
   type UserMessage,
@@ -44,4 +75,4 @@ export {
   createCloudKernelRuntime,
   type CloudKernelConfig,
   type CloudKernelRuntime,
-} from "./provider.ts";
+} from "./provider";

@@ -11,7 +11,7 @@
  */
 
 import { streamSimple } from "@earendil-works/pi-ai/compat";
-import type { AssistantMessage, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, SimpleStreamOptions } from "@piclaw/agent-kernel";
 import { normalizeLlmContext } from "../../agent-pool/llm-context-normalizer.js";
 import { SMART_COMPACTION_PROGRESS_INTERVAL_MS } from "./config.js";
 

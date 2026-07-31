@@ -1,5 +1,5 @@
 /** Pure progressive-compaction budgets, chunking, prompts, and fallback summaries. */
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message } from "@piclaw/agent-kernel";
 import type { FileOperations } from "@earendil-works/pi-coding-agent";
 import { checkPiclawCompactionBudget } from "../../agent-pool/compaction-trigger-context.js";
 import { getProgressiveCompactionConfig } from "../../core/config.js";

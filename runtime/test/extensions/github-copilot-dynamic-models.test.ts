@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { InMemoryModelsStore, type Credential, type CredentialInfo, type Model, type ModelsStoreEntry } from "@earendil-works/pi-ai";
+import { InMemoryModelsStore, type Credential, type CredentialInfo, type Model, type ModelsStoreEntry } from "@piclaw/agent-kernel";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import {

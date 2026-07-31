@@ -1,6 +1,6 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@piclaw/agent-kernel";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@piclaw/agent-kernel";
 
 const NOISE_FLOOR_TOKENS = 1024;
 

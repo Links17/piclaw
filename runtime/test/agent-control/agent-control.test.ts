@@ -8,7 +8,7 @@
 
 import { expect, test } from "bun:test";
 import "../helpers.js";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@piclaw/agent-kernel";
 import type { AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import { applyControlCommand, parseControlCommand } from "../../src/agent-control/index.js";
 

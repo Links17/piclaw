@@ -1,5 +1,5 @@
 /** Smart-compaction lifecycle orchestrator. Policy and provider execution live in focused modules. */
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@piclaw/agent-kernel";
 import type { ExtensionAPI, ExtensionFactory, CompactionResult, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "../../utils/logger.js";
 import { applyTokenEstimateSafetyMultiplier } from "../../utils/context-window-budget.js";

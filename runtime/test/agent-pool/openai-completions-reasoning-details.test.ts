@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { Type } from "typebox";
-import type { AssistantMessage, Model, Tool } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model, Tool } from "@piclaw/agent-kernel";
 
 const mockState = {
   chunkSets: [] as unknown[][],

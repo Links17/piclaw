@@ -1,5 +1,5 @@
 /** Shared provenance-bearing discarded-source projection for all compaction methods. */
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message } from "@piclaw/agent-kernel";
 import type { FileOperations } from "@earendil-works/pi-coding-agent";
 import {
   convertMessagesWithMetadata,

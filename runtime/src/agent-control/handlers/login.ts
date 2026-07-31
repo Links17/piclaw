@@ -14,7 +14,7 @@
  */
 
 import type { AgentSession, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { AuthEvent, AuthPrompt, AuthType, CredentialInfo } from "@earendil-works/pi-ai";
+import type { AuthEvent, AuthPrompt, AuthType, CredentialInfo } from "@piclaw/agent-kernel";
 import type { AgentControlCommand, AgentControlResult } from "../agent-control-types.js";
 import { writeFileSync, readFileSync, existsSync, copyFileSync } from "fs";
 import { join } from "path";

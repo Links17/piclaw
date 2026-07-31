@@ -3,7 +3,7 @@
  */
 
 import type { AgentSession, AgentSessionEvent, AgentSessionRuntime, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { type AssistantMessageEvent, type Usage } from "@earendil-works/pi-ai";
+import { type AssistantMessageEvent, type Usage } from "@piclaw/agent-kernel";
 
 import { getAgentRuntimeConfig } from "../core/config.js";
 import { detectChannel } from "../router.js";

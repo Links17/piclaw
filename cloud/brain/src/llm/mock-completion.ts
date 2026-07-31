@@ -1,7 +1,7 @@
 /**
  * Bridge pi-ai Context ↔ legacy mock completion rounds for kernel mock runtime.
  */
-import type { Context, TextContent, ImageContent } from "@earendil-works/pi-ai";
+import type { Context, TextContent, ImageContent } from "@piclaw/agent-kernel";
 import type { OpenAiMessage, OpenAiToolCall } from "./messages.ts";
 import { streamCompletionRound, type CompletionRound, type StreamCompletionOptions } from "../llm.ts";
 import { TOOL_DEFINITIONS } from "../tools/schemas.ts";

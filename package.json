@@ -4,6 +4,9 @@
   "description": "Personal pi coding agent assistant. Lightweight nanoclaw-style orchestrator using Bun and pi.",
   "type": "module",
   "license": "MIT",
+  "workspaces": [
+    "agent-kernel"
+  ],
   "main": "runtime/src/index.ts",
   "bin": {
     "piclaw": "runtime/src/index.ts",
@@ -89,8 +92,9 @@
     "check:silent-swallows": "bun run runtime/scripts/silent-swallow-metrics.ts --check",
     "check:structured-logging": "bun run runtime/scripts/structured-logging-scope-metrics.ts --check",
     "check:dependency-pins": "bun run runtime/scripts/check-dependency-pins.ts",
+    "check:pi-versions": "bun run scripts/check-pi-versions.ts",
     "check:env-surface": "bun run scripts/audit-piclaw-env-surface.ts --check",
-    "ci:fast": "bun run check:silent-swallows && bun run check:structured-logging && bun run check:dependency-pins && bun run check:env-surface && bun run check:circular-dependencies && bun run ci:fast:tests && bun run ci:fast:features && make build-web",
+    "ci:fast": "bun run check:silent-swallows && bun run check:structured-logging && bun run check:dependency-pins && bun run check:pi-versions && bun run check:env-surface && bun run check:circular-dependencies && bun run ci:fast:tests && bun run ci:fast:features && make build-web",
     "ci:fast:tests": "cd runtime && PICLAW_DB_IN_MEMORY=1 bun test --max-concurrency=1 --path-ignore-patterns='**/features/**' --path-ignore-patterns='**/scripts/**' --path-ignore-patterns='**/*.optional.test.ts'",
     "ci:fast:features": "bun run runtime/test/features/run-feature-tests.ts",
     "ci:integration": "bun run scripts/integration-test-suite.ts",
@@ -115,9 +119,9 @@
   },
   "dependencies": {
     "@e965/xlsx": "0.20.3",
-    "@earendil-works/pi-agent-core": "0.82.1",
     "@earendil-works/pi-ai": "0.82.1",
     "@earendil-works/pi-coding-agent": "0.82.1",
+    "@piclaw/agent-kernel": "workspace:*",
     "@fontsource-variable/inter": "5.2.8",
     "@lezer/highlight": "1.2.3",
     "@simplewebauthn/server": "13.3.1",

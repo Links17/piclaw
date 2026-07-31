@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
+import type { Credential, CredentialInfo, CredentialStore } from "@piclaw/agent-kernel";
 import lockfile from "proper-lockfile";
 
 import { getPiclawAgentDir } from "../core/agent-dir.js";

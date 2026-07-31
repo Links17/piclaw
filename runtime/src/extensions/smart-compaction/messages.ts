@@ -6,7 +6,7 @@
  */
 
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message } from "@piclaw/agent-kernel";
 import { checkPiclawCompactionBudget } from "../../agent-pool/compaction-trigger-context.js";
 import { RECENT_CONTEXT_BUDGET_CHARS, TOOL_RESULT_MAX_CHARS, USER_PREVIEW_MAX_CHARS } from "./config.js";
 

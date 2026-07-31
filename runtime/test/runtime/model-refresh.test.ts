@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ModelsRefreshResult } from "@earendil-works/pi-ai";
+import type { ModelsRefreshResult } from "@piclaw/agent-kernel";
 
 import { ModelRefreshCoordinator } from "../../src/runtime/model-refresh.js";
 

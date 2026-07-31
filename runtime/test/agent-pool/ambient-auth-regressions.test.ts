@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model, type Provider, type SimpleStreamOptions, type StreamOptions } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model, type Provider, type SimpleStreamOptions, type StreamOptions } from "@piclaw/agent-kernel";
 import {
   createAgentSession,
   ModelRuntime,

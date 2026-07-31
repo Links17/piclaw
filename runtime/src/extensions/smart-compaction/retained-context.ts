@@ -1,5 +1,5 @@
 /** Render the retained live window and split-turn prefix for compaction prompts. */
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message } from "@piclaw/agent-kernel";
 import { KEPT_CONTEXT_BUDGET_CHARS } from "./config.js";
 import {
   analyzeToolOutcomes,

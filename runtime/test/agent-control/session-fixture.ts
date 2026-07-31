@@ -1,5 +1,5 @@
 import type { AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
-import { clampThinkingLevel, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, getSupportedThinkingLevels } from "@piclaw/agent-kernel";
 import { mkdirSync, writeFileSync, rmSync, readdirSync } from "fs";
 import { dirname, join } from "path";
 

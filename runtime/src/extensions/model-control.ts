@@ -5,8 +5,8 @@
  * Tools: get_model_state, list_models, switch_model, switch_thinking
  */
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@piclaw/agent-kernel";
+import type { ThinkingLevel } from "@piclaw/agent-kernel";
 import { Type } from "typebox";
 import { findModel, parseModelInput } from "../utils/model-utils.js";
 import { resolveModelScope, type EnabledModelsSettingsProvider } from "../utils/scoped-models.js";

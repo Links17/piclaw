@@ -14,7 +14,7 @@ import type {
   ExtensionContext,
   ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@piclaw/agent-kernel";
 import { createLogger, debugSuppressedError } from "../utils/logger.js";
 
 const log = createLogger("local-lite-prompt-profile");

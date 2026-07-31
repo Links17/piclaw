@@ -1,5 +1,5 @@
 /** Deterministic event grouping and canonical rendering for pipelined compaction. */
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message } from "@piclaw/agent-kernel";
 import {
   analyzeToolOutcomes,
   extractText,

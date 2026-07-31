@@ -2,7 +2,7 @@
  * utils/scoped-models.ts – Apply Pi enabledModels scoping to Piclaw model lists.
  */
 
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@piclaw/agent-kernel";
 
 import { getScopedModelsOnly } from "../core/config.js";
 

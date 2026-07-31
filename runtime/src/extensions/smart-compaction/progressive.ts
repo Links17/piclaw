@@ -5,7 +5,7 @@
  * ../smart-compaction.ts.
  */
 
-import type { Message, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Message, SimpleStreamOptions } from "@piclaw/agent-kernel";
 import type { FileOperations } from "@earendil-works/pi-coding-agent";
 import { streamComplete, type CompactionStreamFn } from "./stream-complete.js";
 import {

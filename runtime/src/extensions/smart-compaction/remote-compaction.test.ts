@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@piclaw/agent-kernel";
+import type { Api, Model } from "@piclaw/agent-kernel";
 import {
   attemptRemoteCompaction,
   stripRemoteCompactionMarker,

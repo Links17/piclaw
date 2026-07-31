@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Type } from "typebox";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
-import type { AssistantMessage, Context, Model, Tool, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, Model, Tool, ToolResultMessage } from "@piclaw/agent-kernel";
 
 function assistantToolCall(): AssistantMessage {
   return {

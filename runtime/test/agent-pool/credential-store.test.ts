@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Credential } from "@earendil-works/pi-ai";
+import type { Credential } from "@piclaw/agent-kernel";
 import { FileCredentialStore, isTransientOAuthRefreshError } from "../../src/agent-pool/credential-store.js";
 
 const roots: string[] = [];

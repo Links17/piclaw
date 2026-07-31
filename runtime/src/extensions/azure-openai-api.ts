@@ -5,7 +5,7 @@
  * does not depend directly on fragile deep implementation paths.
  */
 
-import type { Api, AssistantMessage, AssistantMessageEventStream, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, AssistantMessageEventStream, Model } from "@piclaw/agent-kernel";
 import {
   convertResponsesMessages,
   convertResponsesTools,

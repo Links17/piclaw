@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@piclaw/agent-kernel";
 import type { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 type CompatRecord = Record<string, unknown>;

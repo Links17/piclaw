@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Type } from "typebox";
-import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, Model } from "@piclaw/agent-kernel";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import {
   convertResponsesMessages,

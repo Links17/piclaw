@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@piclaw/agent-kernel";
 import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 
 import "../helpers.js";

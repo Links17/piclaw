@@ -1,7 +1,7 @@
 /** Provider-native remote compaction with opaque, persisted canonical-context replay. */
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@piclaw/agent-kernel";
 import { convertResponsesMessages, convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
-import type { Api, Model, Tool } from "@earendil-works/pi-ai";
+import type { Api, Model, Tool } from "@piclaw/agent-kernel";
 import { convertToLlm, type FileOperations, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { ModelRequestAuth } from "../../utils/model-auth.js";
 import { sanitizeProviderPayloadItemIds } from "../provider-request-sanitizer.js";

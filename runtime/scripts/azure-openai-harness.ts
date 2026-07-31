@@ -32,11 +32,12 @@ import type {
   Message,
   Model,
   SimpleStreamOptions,
-  ThinkingLevel,
   Tool,
   ToolCall,
   ToolResultMessage,
-} from "@earendil-works/pi-ai";
+} from "@piclaw/agent-kernel";
+
+type ThinkingLevel = NonNullable<SimpleStreamOptions["reasoning"]>;
 
 type HarnessCaseName = "smoke" | "json" | "tool" | "history";
 

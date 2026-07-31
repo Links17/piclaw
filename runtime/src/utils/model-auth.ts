@@ -1,5 +1,5 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@piclaw/agent-kernel";
 
 /** Canonical request auth needed only by direct provider-native HTTP helpers. */
 export type ModelRequestAuth =
