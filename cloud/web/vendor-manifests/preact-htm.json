@@ -2,9 +2,9 @@
   "id": "preact-htm",
   "packageName": "preact",
   "additionalPackages": ["htm"],
-  "sourceEntry": "web/src/vendor/preact-htm-entry.ts",
-  "outputFile": "web/static/common/js/vendor/preact-htm.js",
-  "metadataFile": "web/static/common/js/vendor/preact-htm.meta.json",
+  "sourceEntry": "src/vendor/preact-htm-entry.ts",
+  "outputFile": "static/common/js/vendor/preact-htm.js",
+  "metadataFile": "static/common/js/vendor/preact-htm.meta.json",
   "buildCommand": [
     "bun",
     "build",

@@ -18,6 +18,7 @@
     "verify:1e": "bun run --filter @piclaw-cloud/brain e2e",
     "verify:llm-e2e": "bun run --filter @piclaw-cloud/brain llm-e2e",
     "verify:llm-subagent-e2e": "bun run --filter @piclaw-cloud/brain llm-subagent-e2e",
-    "verify:web-e2e": "bun run --cwd .. cloud/brain/scripts/web-e2e-scenario.ts"
+    "verify:web-e2e": "bun run --cwd .. cloud/brain/scripts/web-e2e-scenario.ts",
+    "build:web:cloud": "cd .. && bun run build:web:cloud"
   }
 }

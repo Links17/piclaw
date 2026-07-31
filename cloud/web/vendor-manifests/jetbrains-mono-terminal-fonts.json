@@ -1,0 +1,39 @@
+{
+  "id": "jetbrains-mono-terminal-fonts",
+  "packageName": "@fontsource/jetbrains-mono",
+  "metadataFile": "static/common/fonts/vendor/jetbrains-mono.meta.json",
+  "exportFiles": [
+    {
+      "packagePath": "files/jetbrains-mono-latin-400-normal.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-400-normal.woff2"
+    },
+    {
+      "packagePath": "files/jetbrains-mono-latin-ext-400-normal.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-ext-400-normal.woff2"
+    },
+    {
+      "packagePath": "files/jetbrains-mono-latin-400-italic.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-400-italic.woff2"
+    },
+    {
+      "packagePath": "files/jetbrains-mono-latin-ext-400-italic.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-ext-400-italic.woff2"
+    },
+    {
+      "packagePath": "files/jetbrains-mono-latin-700-normal.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-700-normal.woff2"
+    },
+    {
+      "packagePath": "files/jetbrains-mono-latin-ext-700-normal.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-ext-700-normal.woff2"
+    },
+    {
+      "packagePath": "files/jetbrains-mono-latin-700-italic.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-700-italic.woff2"
+    },
+    {
+      "packagePath": "files/jetbrains-mono-latin-ext-700-italic.woff2",
+      "outputFile": "static/common/fonts/vendor/jetbrains-mono-latin-ext-700-italic.woff2"
+    }
+  ]
+}

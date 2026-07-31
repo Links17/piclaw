@@ -1,9 +1,9 @@
 {
   "id": "marked-global",
   "packageName": "marked",
-  "sourceEntry": "web/src/vendor/marked-entry.ts",
-  "outputFile": "web/static/common/js/marked.min.js",
-  "metadataFile": "web/static/common/js/marked.meta.json",
+  "sourceEntry": "src/vendor/marked-entry.ts",
+  "outputFile": "static/common/js/marked.min.js",
+  "metadataFile": "static/common/js/marked.meta.json",
   "buildCommand": [
     "bun",
     "build",
