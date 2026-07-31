@@ -2,8 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { applyMigrations } from "./db.ts";
 import {
   archiveSession,
+  appendMessagesToSession,
+  createForkedSession,
   createSession,
   getSessionForUser,
+  insertMessage,
+  listMessages,
   listSessions,
   purgeSession,
   renameSessionTitle,
@@ -87,5 +91,47 @@ describe("session archive lifecycle", () => {
     await expect(purgeSession(id, TEST_USER)).rejects.toThrow("not archived");
     await archiveSession(id, TEST_USER);
     await purgeSession(id, TEST_USER);
+  });
+
+  it("copies fork history and appends merged branch messages", async () => {
+    if (!pgAvailable) return;
+
+    const parentId = `${TEST_SESSION}-lineage-parent`;
+    const branchId = `${TEST_SESSION}-lineage-branch`;
+    await createSession(parentId, "Parent", TEST_USER);
+    await insertMessage(parentId, "user", "Parent prompt");
+    await insertMessage(parentId, "assistant", "Parent reply");
+    const inherited = await listMessages(parentId, 10);
+
+    await createForkedSession(
+      branchId,
+      "Branch",
+      TEST_USER,
+      parentId,
+      inherited.at(-1)?.id ?? null,
+      inherited,
+    );
+    await insertMessage(branchId, "user", "Branch-only prompt");
+
+    const branch = await getSessionForUser(branchId, TEST_USER);
+    expect(branch?.parent_session_id).toBe(parentId);
+    expect(branch?.inherited_message_count).toBe(2);
+    expect((await listMessages(branchId, 10)).map((message) => message.content)).toEqual([
+      "Parent prompt",
+      "Parent reply",
+      "Branch-only prompt",
+    ]);
+
+    await appendMessagesToSession(parentId, (await listMessages(branchId, 10)).slice(2));
+    expect((await listMessages(parentId, 10)).map((message) => message.content)).toEqual([
+      "Parent prompt",
+      "Parent reply",
+      "Branch-only prompt",
+    ]);
+
+    for (const id of [branchId, parentId]) {
+      await archiveSession(id, TEST_USER);
+      await purgeSession(id, TEST_USER);
+    }
   });
 });
