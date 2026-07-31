@@ -41,6 +41,9 @@ export interface SessionRow {
   sandbox_id: string | null;
   workspace_volume_id: string | null;
   archived_at: string | null;
+  parent_session_id: string | null;
+  forked_from_message_id: number | null;
+  inherited_message_count: number;
 }
 
 export interface ListSessionsOptions {
@@ -73,6 +76,60 @@ export async function createSession(
   });
 }
 
+export async function createForkedSession(
+  id: string,
+  title: string,
+  userId: string,
+  parentSessionId: string,
+  forkedFromMessageId: number | null,
+  inheritedMessages: MessageRow[],
+): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`
+      INSERT INTO sessions (
+        id, user_id, title, parent_session_id, forked_from_message_id, inherited_message_count
+      ) VALUES (
+        ${id}, ${userId}, ${title}, ${parentSessionId}, ${forkedFromMessageId}, ${inheritedMessages.length}
+      )`;
+    await tx`
+      INSERT INTO session_cursors (session_id) VALUES (${id})`;
+    for (const message of inheritedMessages) {
+      await tx`
+        INSERT INTO messages (session_id, role, content, content_blocks, recovery_marker, created_at)
+        VALUES (
+          ${id},
+          ${message.role},
+          ${message.content},
+          ${message.content_blocks == null ? null : JSON.stringify(message.content_blocks)},
+          ${message.recovery_marker},
+          ${message.created_at}
+        )`;
+    }
+  });
+}
+
+export async function appendMessagesToSession(
+  sessionId: string,
+  messages: MessageRow[],
+): Promise<void> {
+  if (messages.length === 0) return;
+  await sql.begin(async (tx) => {
+    for (const message of messages) {
+      await tx`
+        INSERT INTO messages (session_id, role, content, content_blocks, recovery_marker, created_at)
+        VALUES (
+          ${sessionId},
+          ${message.role},
+          ${message.content},
+          ${message.content_blocks == null ? null : JSON.stringify(message.content_blocks)},
+          ${message.recovery_marker},
+          now()
+        )`;
+    }
+    await tx`UPDATE sessions SET updated_at = now() WHERE id = ${sessionId}`;
+  });
+}
+
 export async function listSessions(
   userId = DEFAULT_USER_ID,
   options: ListSessionsOptions = {},
@@ -80,11 +137,13 @@ export async function listSessions(
   const includeArchived = Boolean(options.includeArchived);
   const rows = includeArchived
     ? await sql`
-        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at
+        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+          parent_session_id, forked_from_message_id, inherited_message_count
         FROM sessions WHERE user_id = ${userId}
         ORDER BY updated_at DESC`
     : await sql`
-        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at
+        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+          parent_session_id, forked_from_message_id, inherited_message_count
         FROM sessions WHERE user_id = ${userId} AND archived_at IS NULL
         ORDER BY updated_at DESC`;
   return rows as SessionRow[];
@@ -92,13 +151,17 @@ export async function listSessions(
 
 export async function getSession(id: string): Promise<SessionRow | null> {
   const rows = await sql`
-    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at FROM sessions WHERE id = ${id}`;
+    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+      parent_session_id, forked_from_message_id, inherited_message_count
+    FROM sessions WHERE id = ${id}`;
   return (rows[0] as SessionRow) ?? null;
 }
 
 export async function getSessionForUser(id: string, userId: string): Promise<SessionRow | null> {
   const rows = await sql`
-    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at FROM sessions
+    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+      parent_session_id, forked_from_message_id, inherited_message_count
+    FROM sessions
     WHERE id = ${id} AND user_id = ${userId}`;
   return (rows[0] as SessionRow) ?? null;
 }
@@ -112,7 +175,8 @@ export async function archiveSession(id: string, userId = DEFAULT_USER_ID): Prom
     UPDATE sessions
     SET archived_at = now(), updated_at = now()
     WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+      parent_session_id, forked_from_message_id, inherited_message_count`;
   return rows[0] as SessionRow;
 }
 
@@ -131,7 +195,8 @@ export async function restoreSession(
         title = COALESCE(${nextTitle}, title),
         updated_at = now()
     WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+      parent_session_id, forked_from_message_id, inherited_message_count`;
   return rows[0] as SessionRow;
 }
 
@@ -150,7 +215,8 @@ export async function renameSessionTitle(
     UPDATE sessions
     SET title = ${nextTitle}, updated_at = now()
     WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+      parent_session_id, forked_from_message_id, inherited_message_count`;
   return rows[0] as SessionRow;
 }
 
@@ -172,7 +238,8 @@ export async function renameSessionTitleIfTemporary(
     WHERE id = ${id}
       AND user_id = ${userId}
       AND title IN (${UNTITLED_SESSION_TITLE}, 'Chat')
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+      parent_session_id, forked_from_message_id, inherited_message_count`;
   return (rows[0] as SessionRow) ?? null;
 }
 

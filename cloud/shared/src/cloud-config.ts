@@ -265,7 +265,7 @@ function readFileLayer(path: string): DeepPartial<CloudConfig> {
 }
 
 function resolveConfigPath(): string {
-  return configPathOverride ?? DEFAULT_CONFIG_PATH;
+  return configPathOverride ?? envFirst("CLOUD_CONFIG_PATH") ?? DEFAULT_CONFIG_PATH;
 }
 
 function loadCloudConfig(): CloudConfig {

@@ -382,16 +382,20 @@ export function sessionToBranchChat(session: {
   title: string;
   sandbox_id?: string | null;
   archived_at?: string | null;
+  parent_session_id?: string | null;
+  forked_from_message_id?: number | null;
 }) {
   const title = session.title?.trim() || session.id;
   return {
     chat_jid: session.id,
-    root_chat_jid: session.id,
+    root_chat_jid: session.parent_session_id ?? session.id,
     agent_name: title,
     title,
     sandbox_id: session.sandbox_id ?? null,
     is_root: true,
     archived_at: session.archived_at ?? null,
+    parent_chat_jid: session.parent_session_id ?? null,
+    forked_from_message_id: session.forked_from_message_id ?? null,
   };
 }
 

@@ -36,6 +36,7 @@ function toolInputText(args: unknown): string {
 export async function getSessionTreeForChat(chatJid: string) {
   await ensureChatSession(chatJid);
   const sessionId = chatJidToSessionId(chatJid);
+  const session = await store.getSession(sessionId);
   const rows = await store.listMessages(sessionId, 500);
   const leafId = rows.length > 0 ? String(rows[rows.length - 1]!.id) : null;
   const nodes: SessionTreeNode[] = [];
@@ -120,5 +121,13 @@ export async function getSessionTreeForChat(chatJid: string) {
     }
   }
 
-  return { leafId, nodes, flat: true as const, total: nodes.length };
+  return {
+    leafId,
+    nodes,
+    flat: !session?.parent_session_id,
+    total: nodes.length,
+    parentChatJid: session?.parent_session_id ?? null,
+    forkedFromMessageId: session?.forked_from_message_id ?? null,
+    inheritedMessageCount: session?.inherited_message_count ?? 0,
+  };
 }

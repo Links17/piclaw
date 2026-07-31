@@ -23,6 +23,7 @@ import { handleKeychainRoutes } from "./keychain/routes.ts";
 import { getSettingsData } from "./settings/data.ts";
 import { buildAgentCommandList } from "./commands/service.ts";
 import { getSessionTreeForChat } from "./session-tree/service.ts";
+import { createForkedChatBranch, mergeChatBranchIntoParent } from "./branch-lineage.ts";
 import { readSystemMetrics } from "./system-metrics/sampler.ts";
 import {
   handleScheduledTasksAction,
@@ -352,11 +353,39 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "POST" && url.pathname === "/agent/branch-fork") {
-          return respond(json({ error: "Branch fork is not available in cloud mode." }, 501));
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            const sourceChatJid = typeof body.source_chat_jid === "string"
+              ? body.source_chat_jid.trim()
+              : "";
+            if (!sourceChatJid) return respond(json({ error: "source_chat_jid required" }, 400));
+            try {
+              const branch = await createForkedChatBranch(
+                sourceChatJid,
+                userId,
+                body.agent_name,
+                body.message_id ?? body.forked_from_message_id,
+              );
+              return respond(json({ status: "ok", branch }, 201));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              return respond(json({ error: message }, 400));
+            }
+          });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/branch-merge-parent") {
-          return respond(json({ error: "Branch merge is not available in cloud mode." }, 501));
+          return withAuth(req, async ({ userId }) => {
+            const body = await readJson(req);
+            const chatJid = typeof body.chat_jid === "string" ? body.chat_jid.trim() : "";
+            if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
+            try {
+              return respond(json(await mergeChatBranchIntoParent(chatJid, userId)));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              return respond(json({ error: message }, 400));
+            }
+          });
         }
 
         if (req.method === "POST" && url.pathname === "/agent/root-session") {

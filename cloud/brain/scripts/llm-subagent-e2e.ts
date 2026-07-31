@@ -16,6 +16,9 @@ import { readFile } from "../src/sandbox/fs.ts";
 
 applyE2bEnv();
 
+const EXAMPLE_CONFIG = new URL("../../brain.config.example.json", import.meta.url).pathname;
+process.env.CLOUD_CONFIG_PATH ||= EXAMPLE_CONFIG;
+
 const BASE = process.env.CLOUD_E2E_BASE || "http://localhost:7801";
 const CHAT = `llm-subagent-e2e-${Date.now()}`;
 const TARGET_INO = "/workspace/wio_subagent_test.ino";
@@ -172,12 +175,12 @@ console.log(`  chat:   ${CHAT}`);
 console.log(`  cube:   ${sandboxConfig.apiUrl}`);
 console.log(`  worker: ${getCloudConfig().subagent.codingWorkerMode}`);
 
-if (!getCloudConfig().openai.apiKey) {
-  console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or POC_OPENAI_API_KEY.");
+if (!getCloudConfig().openai.apiKey || getCloudConfig().openai.apiKey === "sk-your-key-here") {
+  console.error("\nMissing real openai.apiKey — set CLOUD_OPENAI_API_KEY or POC_OPENAI_API_KEY.");
   process.exit(2);
 }
 if (!getCloudConfig().openai.baseUrl) {
-  console.error("\nMissing openai.baseUrl — set in cloud/brain.config.json or POC_OPENAI_BASE_URL.");
+  console.error("\nMissing openai.baseUrl in cloud/brain.config.example.json or CLOUD_OPENAI_BASE_URL.");
   process.exit(2);
 }
 
