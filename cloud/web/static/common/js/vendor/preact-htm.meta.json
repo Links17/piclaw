@@ -16,27 +16,27 @@
     "preact": "preactjs/preact",
     "htm": "developit/htm"
   },
-  "source_entry": "web/src/vendor/preact-htm-entry.ts",
-  "output_file": "web/static/common/js/vendor/preact-htm.js",
+  "source_entry": "cloud/web/src/vendor/preact-htm-entry.ts",
+  "output_file": "cloud/web/static/common/js/vendor/preact-htm.js",
   "output_files": [
     {
       "package_path": null,
-      "output_file": "web/static/common/js/vendor/preact-htm.js",
+      "output_file": "cloud/web/static/common/js/vendor/preact-htm.js",
       "sha256": "13ba77b3b2da3423c91b389444b27faa2c72d292770c86ccff825e7aaa6fc2c1",
       "size_bytes": 15878
     }
   ],
-  "metadata_file": "web/static/common/js/vendor/preact-htm.meta.json",
+  "metadata_file": "cloud/web/static/common/js/vendor/preact-htm.meta.json",
   "sha256": "13ba77b3b2da3423c91b389444b27faa2c72d292770c86ccff825e7aaa6fc2c1",
   "size_bytes": 15878,
   "build_command": [
     "bun",
     "build",
-    "web/src/vendor/preact-htm-entry.ts",
+    "cloud/web/src/vendor/preact-htm-entry.ts",
     "--target=browser",
     "--format=esm",
     "--minify",
     "--outfile",
-    "web/static/common/js/vendor/preact-htm.js"
+    "cloud/web/static/common/js/vendor/preact-htm.js"
   ]
 }

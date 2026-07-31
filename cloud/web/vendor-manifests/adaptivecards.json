@@ -1,9 +1,9 @@
 {
   "id": "adaptivecards",
   "packageName": "adaptivecards",
-  "sourceEntry": "src/vendor/adaptivecards-entry.ts",
-  "outputFile": "static/common/js/vendor/adaptivecards.min.js",
-  "metadataFile": "static/common/js/vendor/adaptivecards.meta.json",
+  "sourceEntry": "cloud/web/src/vendor/adaptivecards-entry.ts",
+  "outputFile": "cloud/web/static/common/js/vendor/adaptivecards.min.js",
+  "metadataFile": "cloud/web/static/common/js/vendor/adaptivecards.meta.json",
   "buildCommand": [
     "bun",
     "build",

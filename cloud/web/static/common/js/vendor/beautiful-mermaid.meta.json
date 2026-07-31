@@ -13,26 +13,26 @@
   "package_repositories": {
     "beautiful-mermaid": "https://github.com/lukilabs/beautiful-mermaid"
   },
-  "source_entry": "web/src/vendor/mermaid-entry.ts",
-  "output_file": "web/static/common/js/vendor/beautiful-mermaid.js",
+  "source_entry": "cloud/web/src/vendor/mermaid-entry.ts",
+  "output_file": "cloud/web/static/common/js/vendor/beautiful-mermaid.js",
   "output_files": [
     {
       "package_path": null,
-      "output_file": "web/static/common/js/vendor/beautiful-mermaid.js",
+      "output_file": "cloud/web/static/common/js/vendor/beautiful-mermaid.js",
       "sha256": "2c51943b0dbf93f5b0c347608272665bc4cb32bd3c6c7a14078df8915eafe406",
       "size_bytes": 1575301
     }
   ],
-  "metadata_file": "web/static/common/js/vendor/beautiful-mermaid.meta.json",
+  "metadata_file": "cloud/web/static/common/js/vendor/beautiful-mermaid.meta.json",
   "sha256": "2c51943b0dbf93f5b0c347608272665bc4cb32bd3c6c7a14078df8915eafe406",
   "size_bytes": 1575301,
   "build_command": [
     "bun",
     "build",
-    "web/src/vendor/mermaid-entry.ts",
+    "cloud/web/src/vendor/mermaid-entry.ts",
     "--target=browser",
     "--minify",
     "--outfile",
-    "web/static/common/js/vendor/beautiful-mermaid.js"
+    "cloud/web/static/common/js/vendor/beautiful-mermaid.js"
   ]
 }

@@ -1,9 +1,9 @@
 {
   "manifest_id": "remote-display-decoder",
-  "source_file": "assemblyscript/remote-display-decoder.ts",
-  "output_file": "web/static/common/js/vendor/remote-display-decoder.wasm",
-  "metadata_file": "web/static/common/js/vendor/remote-display-decoder.meta.json",
-  "sha256": "4f96821ac70ff10409aab7be93021788ef1bd1924db61b0f9530b895a723b752",
+  "source_file": "runtime/assemblyscript/remote-display-decoder.ts",
+  "output_file": "cloud/web/static/common/js/vendor/remote-display-decoder.wasm",
+  "metadata_file": "cloud/web/static/common/js/vendor/remote-display-decoder.meta.json",
+  "sha256": "79b102e411a1d1df0ed2707fb729ba087747106547086f6d117157bae46b02cb",
   "size_bytes": 22618,
   "toolchain": "assemblyscript"
 }

@@ -1,9 +1,9 @@
 {
   "id": "codemirror-editor",
   "packageName": "codemirror",
-  "sourceEntry": "extensions/viewers/editor/vendor/codemirror-entry.ts",
-  "outputFile": "extensions/viewers/editor/vendor/codemirror.js",
-  "metadataFile": "extensions/viewers/editor/vendor/codemirror.meta.json",
+  "sourceEntry": "cloud/web/extensions/viewers/editor/vendor/codemirror-entry.ts",
+  "outputFile": "cloud/web/extensions/viewers/editor/vendor/codemirror.js",
+  "metadataFile": "cloud/web/extensions/viewers/editor/vendor/codemirror.meta.json",
   "buildCommand": [
     "bun",
     "build",

@@ -13,12 +13,14 @@ import {
 } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
-const PROJECT_DIR = process.cwd();
+const REPO_ROOT = resolve(import.meta.dir, "../../..");
+const WEB_ROOT = resolve(import.meta.dir, "..");
+const PROJECT_DIR = REPO_ROOT;
 
 function resolveInstalledPath(packagePath: string): string {
   const candidates = [
-    resolve(PROJECT_DIR, packagePath),
-    resolve(PROJECT_DIR, "..", packagePath),
+    resolve(REPO_ROOT, packagePath),
+    resolve(REPO_ROOT, "..", packagePath),
   ];
 
   for (const candidate of candidates) {
@@ -29,9 +31,9 @@ function resolveInstalledPath(packagePath: string): string {
 
 const SOURCE_CSS = resolveInstalledPath("node_modules/katex/dist/katex.min.css");
 const SOURCE_FONTS_DIR = resolveInstalledPath("node_modules/katex/dist/fonts");
-const CSS_OUTPUT = resolve(PROJECT_DIR, "src/styles/katex.bundle.css");
-const META_OUTPUT = resolve(PROJECT_DIR, "src/styles/katex.bundle.meta.json");
-const FONTS_OUTPUT_DIR = resolve(PROJECT_DIR, "static/common/fonts");
+const CSS_OUTPUT = resolve(WEB_ROOT, "src/styles/katex.bundle.css");
+const META_OUTPUT = resolve(WEB_ROOT, "src/styles/katex.bundle.meta.json");
+const FONTS_OUTPUT_DIR = resolve(WEB_ROOT, "static/common/fonts");
 const FONT_URL_PREFIX = "../../static/common/fonts";
 const LOG_PREFIX = "[vendor:katex-css-fonts]";
 

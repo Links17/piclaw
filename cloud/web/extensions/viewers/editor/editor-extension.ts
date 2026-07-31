@@ -57,9 +57,9 @@ import {
     githubDark,
     MergeView,
 } from '#editor-vendor/codemirror';
-import { getWorkspaceBranch, getWorkspaceFile, getWorkspaceFileStat, updateWorkspaceFile, uploadWorkspaceFile } from '../../../web/src/api.js';
-import { createFileConflictMonitor, type FileConflictMonitor } from '../../../web/src/panes/file-conflict-monitor.js';
-import type { WebPaneExtension, PaneContext, PaneInstance, PaneCapability, PaneHostAttachContext, PaneHostDetachContext } from '../../../web/src/panes/pane-types.js';
+import { getWorkspaceBranch, getWorkspaceFile, getWorkspaceFileStat, updateWorkspaceFile, uploadWorkspaceFile } from '../../../src/api.js';
+import { createFileConflictMonitor, type FileConflictMonitor } from '../../../src/panes/file-conflict-monitor.js';
+import type { WebPaneExtension, PaneContext, PaneInstance, PaneCapability, PaneHostAttachContext, PaneHostDetachContext } from '../../../src/panes/pane-types.js';
 import { frontmatterExtension } from './markdown/frontmatter.js';
 import { footnoteExtension } from './markdown/footnote.js';
 import { hashtagExtension } from './markdown/tag.js';
@@ -86,7 +86,7 @@ import {
 import {
     dispatchEditorFileReferenceRequest,
     normalizeEditorFileReferencePath,
-} from '../../../web/src/ui/editor-file-reference.js';
+} from '../../../src/ui/editor-file-reference.js';
 
 // ── Constants ───────────────────────────────────────────────────
 

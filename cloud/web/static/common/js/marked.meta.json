@@ -13,27 +13,27 @@
   "package_repositories": {
     "marked": "git+https://github.com/markedjs/marked.git"
   },
-  "source_entry": "web/src/vendor/marked-entry.ts",
-  "output_file": "web/static/common/js/marked.min.js",
+  "source_entry": "cloud/web/src/vendor/marked-entry.ts",
+  "output_file": "cloud/web/static/common/js/marked.min.js",
   "output_files": [
     {
       "package_path": null,
-      "output_file": "web/static/common/js/marked.min.js",
+      "output_file": "cloud/web/static/common/js/marked.min.js",
       "sha256": "4d8995c7a82edd74cae36d064720280f62969ea807f1adb9ce43f0cb1f30fec6",
       "size_bytes": 41726
     }
   ],
-  "metadata_file": "web/static/common/js/marked.meta.json",
+  "metadata_file": "cloud/web/static/common/js/marked.meta.json",
   "sha256": "4d8995c7a82edd74cae36d064720280f62969ea807f1adb9ce43f0cb1f30fec6",
   "size_bytes": 41726,
   "build_command": [
     "bun",
     "build",
-    "web/src/vendor/marked-entry.ts",
+    "cloud/web/src/vendor/marked-entry.ts",
     "--target=browser",
     "--format=iife",
     "--minify",
     "--outfile",
-    "web/static/common/js/marked.min.js"
+    "cloud/web/static/common/js/marked.min.js"
   ]
 }

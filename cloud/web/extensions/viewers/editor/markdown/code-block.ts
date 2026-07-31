@@ -18,7 +18,7 @@ import type { DecorationEntry, SyntaxNode, EditorView } from './live-preview.js'
 import {
     highlightCodeLinesAsHtml,
     normalizeCodeLanguageLabel,
-} from '../../../../web/src/utils/code-highlighting.js';
+} from '../../../../src/utils/code-highlighting.js';
 
 const COPY_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 const CHECK_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>';

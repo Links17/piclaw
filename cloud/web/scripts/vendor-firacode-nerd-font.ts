@@ -4,10 +4,13 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
+const REPO_ROOT = resolve(import.meta.dir, "../../..");
+const WEB_ROOT = resolve(import.meta.dir, "..");
+
 const RELEASE_VERSION = "v3.4.0";
 const ZIP_NAME = "FiraCode.zip";
 const RELEASE_URL = `https://github.com/ryanoasis/nerd-fonts/releases/download/${RELEASE_VERSION}/${ZIP_NAME}`;
-const CACHE_DIR = resolve(process.cwd(), "generated", "cache", "vendor", "firacode-nerd-font", RELEASE_VERSION);
+const CACHE_DIR = resolve(REPO_ROOT, "generated", "cache", "vendor", "firacode-nerd-font", RELEASE_VERSION);
 const ARCHIVE_PATH = resolve(CACHE_DIR, ZIP_NAME);
 const OUTPUTS = [
   {
@@ -21,7 +24,7 @@ const OUTPUTS = [
     weight: 700,
   },
 ] as const;
-const METADATA_FILE = resolve(process.cwd(), "static/common/fonts/vendor/firacode-nerd-font.meta.json");
+const METADATA_FILE = resolve(WEB_ROOT, "static/common/fonts/vendor/firacode-nerd-font.meta.json");
 
 function sha256ForFile(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -62,7 +65,7 @@ async function main(): Promise<void> {
   await ensureArchive();
 
   const outputs = OUTPUTS.map((entry) => {
-    const outputPath = resolve(process.cwd(), entry.outputFile);
+    const outputPath = resolve(WEB_ROOT, entry.outputFile);
     extractArchiveFile(entry.archivePath, outputPath);
     return {
       archive_path: entry.archivePath,
@@ -81,11 +84,11 @@ async function main(): Promise<void> {
     package_license: "MIT",
     package_repository: "https://github.com/ryanoasis/nerd-fonts",
     source_url: RELEASE_URL,
-    archive_file: relative(process.cwd(), ARCHIVE_PATH),
+    archive_file: relative(REPO_ROOT, ARCHIVE_PATH),
     font_family: "FiraCode Nerd Font Mono",
     output_file: outputs[0]?.output_file ?? null,
     output_files: outputs,
-    metadata_file: relative(process.cwd(), METADATA_FILE),
+    metadata_file: relative(REPO_ROOT, METADATA_FILE),
     sha256: outputs[0]?.sha256 ?? null,
     size_bytes: outputs[0]?.size_bytes ?? null,
   };
@@ -96,7 +99,7 @@ async function main(): Promise<void> {
   process.stdout.write([
     ...outputs.map((output) => `[vendor:firacode-nerd-font-mono] exported ${output.output_file}`),
     `[vendor:firacode-nerd-font-mono] version ${RELEASE_VERSION}`,
-    `[vendor:firacode-nerd-font-mono] metadata ${relative(process.cwd(), METADATA_FILE)}`,
+    `[vendor:firacode-nerd-font-mono] metadata ${relative(REPO_ROOT, METADATA_FILE)}`,
   ].join("\n"));
 }
 

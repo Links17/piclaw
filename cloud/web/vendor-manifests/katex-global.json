@@ -1,9 +1,9 @@
 {
   "id": "katex-global",
   "packageName": "katex",
-  "sourceEntry": "src/vendor/katex-entry.ts",
-  "outputFile": "static/common/js/vendor/katex.min.js",
-  "metadataFile": "static/common/js/vendor/katex.meta.json",
+  "sourceEntry": "cloud/web/src/vendor/katex-entry.ts",
+  "outputFile": "cloud/web/static/common/js/vendor/katex.min.js",
+  "metadataFile": "cloud/web/static/common/js/vendor/katex.meta.json",
   "buildCommand": [
     "bun",
     "build",

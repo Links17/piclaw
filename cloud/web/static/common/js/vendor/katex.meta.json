@@ -13,27 +13,27 @@
   "package_repositories": {
     "katex": "https://github.com/KaTeX/KaTeX.git"
   },
-  "source_entry": "web/src/vendor/katex-entry.ts",
-  "output_file": "web/static/common/js/vendor/katex.min.js",
+  "source_entry": "cloud/web/src/vendor/katex-entry.ts",
+  "output_file": "cloud/web/static/common/js/vendor/katex.min.js",
   "output_files": [
     {
       "package_path": null,
-      "output_file": "web/static/common/js/vendor/katex.min.js",
+      "output_file": "cloud/web/static/common/js/vendor/katex.min.js",
       "sha256": "02bd3b9727829885a88e46f106dc5fc2d4e1e8a8dba9619747e420bfb14b485a",
       "size_bytes": 272893
     }
   ],
-  "metadata_file": "web/static/common/js/vendor/katex.meta.json",
+  "metadata_file": "cloud/web/static/common/js/vendor/katex.meta.json",
   "sha256": "02bd3b9727829885a88e46f106dc5fc2d4e1e8a8dba9619747e420bfb14b485a",
   "size_bytes": 272893,
   "build_command": [
     "bun",
     "build",
-    "web/src/vendor/katex-entry.ts",
+    "cloud/web/src/vendor/katex-entry.ts",
     "--target=browser",
     "--format=iife",
     "--minify",
     "--outfile",
-    "web/static/common/js/vendor/katex.min.js"
+    "cloud/web/static/common/js/vendor/katex.min.js"
   ]
 }

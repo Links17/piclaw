@@ -4,16 +4,17 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
-const PROJECT_DIR = process.cwd();
-const SOURCE_FILE = resolve(PROJECT_DIR, "assemblyscript/remote-display-decoder.ts");
-const OUTPUT_FILE = resolve(PROJECT_DIR, "static/common/js/vendor/remote-display-decoder.wasm");
-const METADATA_FILE = resolve(PROJECT_DIR, "static/common/js/vendor/remote-display-decoder.meta.json");
+const REPO_ROOT = resolve(import.meta.dir, "../../..");
+const WEB_ROOT = resolve(import.meta.dir, "..");
+const SOURCE_FILE = resolve(REPO_ROOT, "runtime/assemblyscript/remote-display-decoder.ts");
+const OUTPUT_FILE = resolve(WEB_ROOT, "static/common/js/vendor/remote-display-decoder.wasm");
+const METADATA_FILE = resolve(WEB_ROOT, "static/common/js/vendor/remote-display-decoder.meta.json");
 const ASC_BIN_CANDIDATES = [
-  resolve(PROJECT_DIR, "../node_modules/.bin/asc"),
-  resolve(PROJECT_DIR, "../node_modules/.bin/asc.cmd"),
-  resolve(PROJECT_DIR, "../node_modules/.bin/asc.ps1"),
+  resolve(REPO_ROOT, "node_modules/.bin/asc"),
+  resolve(REPO_ROOT, "node_modules/.bin/asc.cmd"),
+  resolve(REPO_ROOT, "node_modules/.bin/asc.ps1"),
 ];
-const ASC_JS = resolve(PROJECT_DIR, "../node_modules/assemblyscript/bin/asc.js");
+const ASC_JS = resolve(REPO_ROOT, "node_modules/assemblyscript/bin/asc.js");
 const LOG_PREFIX = "[vendor:remote-display-decoder]";
 
 function sha256ForFile(path: string): string {
@@ -43,7 +44,7 @@ function main(): void {
     "--stackSize", "65536",
     "--outFile", OUTPUT_FILE,
   ], {
-    cwd: PROJECT_DIR,
+    cwd: REPO_ROOT,
     stdout: "inherit",
     stderr: "inherit",
   });
@@ -56,16 +57,16 @@ function main(): void {
   const sha256 = sha256ForFile(OUTPUT_FILE);
   const metadata = {
     manifest_id: "remote-display-decoder",
-    source_file: relative(PROJECT_DIR, SOURCE_FILE),
-    output_file: relative(PROJECT_DIR, OUTPUT_FILE),
-    metadata_file: relative(PROJECT_DIR, METADATA_FILE),
+    source_file: relative(REPO_ROOT, SOURCE_FILE),
+    output_file: relative(REPO_ROOT, OUTPUT_FILE),
+    metadata_file: relative(REPO_ROOT, METADATA_FILE),
     sha256,
     size_bytes: size,
     toolchain: "assemblyscript",
   };
   writeFileSync(METADATA_FILE, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
   process.stdout.write(
-    `${LOG_PREFIX} built ${relative(PROJECT_DIR, OUTPUT_FILE)} (${(size / 1024).toFixed(1)} KB)\n` +
+    `${LOG_PREFIX} built ${relative(REPO_ROOT, OUTPUT_FILE)} (${(size / 1024).toFixed(1)} KB)\n` +
     `${LOG_PREFIX} sha256 ${sha256}\n`
   );
 }
