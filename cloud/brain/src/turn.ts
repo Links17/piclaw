@@ -14,6 +14,7 @@ import { getPendingQuestion } from "./question/state.ts";
 import { scheduleSessionTitleGeneration } from "./session-title.ts";
 import { stopAllRunningSubagents } from "./subagents/service.ts";
 import { enqueueSessionSteerMessage } from "./subagents/channels.ts";
+import { sendAgentReplyWebPush } from "./push/service.ts";
 import {
   TurnAbortedError,
   beginTurnAbortScope,
@@ -211,6 +212,9 @@ async function runTurnLocked(
       durationMs,
     });
     trackTurnFinished(sessionId);
+    void sendAgentReplyWebPush({ chatJid: sessionId, body: finalText }).catch((error) => {
+      console.warn(`[${config.replicaId}] web push failed for ${sessionId}:`, error);
+    });
   } catch (error) {
     if (error instanceof TurnAbortedError) {
       await store.endTurn(sessionId, messageId, counter);

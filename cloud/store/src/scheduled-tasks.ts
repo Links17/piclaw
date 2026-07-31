@@ -181,3 +181,40 @@ export async function markScheduledTaskRan(
         status = CASE WHEN ${nextRun} IS NULL THEN 'completed' ELSE status END
     WHERE id = ${taskId}`;
 }
+
+export async function upsertScheduledTask(row: {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  scheduleType: string;
+  scheduleValue: string;
+  nextRun?: string | null;
+  taskKind?: ScheduledTaskKind;
+  model?: string | null;
+  status?: ScheduledTaskStatus;
+}): Promise<void> {
+  await sql`
+    INSERT INTO scheduled_tasks (
+      id, session_id, prompt, schedule_type, schedule_value, next_run, status, task_kind, model
+    )
+    VALUES (
+      ${row.id},
+      ${row.sessionId},
+      ${row.prompt},
+      ${row.scheduleType},
+      ${row.scheduleValue},
+      ${row.nextRun ?? null},
+      ${row.status ?? "active"},
+      ${row.taskKind ?? "agent"},
+      ${row.model ?? null}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      session_id = EXCLUDED.session_id,
+      prompt = EXCLUDED.prompt,
+      schedule_type = EXCLUDED.schedule_type,
+      schedule_value = EXCLUDED.schedule_value,
+      next_run = EXCLUDED.next_run,
+      status = EXCLUDED.status,
+      task_kind = EXCLUDED.task_kind,
+      model = EXCLUDED.model`;
+}

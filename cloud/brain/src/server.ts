@@ -15,10 +15,12 @@ import { getContextUsage } from "./agent-run-state.ts";
 import { getKernelRuntime } from "./kernel/runtime.ts";
 import { handleWorkspaceRoutes } from "./workspace/routes.ts";
 import { handleMediaRoutes } from "./media/routes.ts";
+import { handleWebPushRoutes } from "./push/routes.ts";
 import {
   handleScheduledTasksAction,
   handleScheduledTasksList,
 } from "./scheduled-tasks/handlers.ts";
+import { handleInternalScheduledTaskExecute } from "./scheduled-tasks/run-handler.ts";
 import {
   agentResponseSsePayload,
   answerAgentQuestion,
@@ -366,6 +368,10 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return respond(await handleScheduledTasksAction(req));
         }
 
+        if (req.method === "POST" && url.pathname === "/internal/scheduled-tasks/execute") {
+          return respond(await handleInternalScheduledTaskExecute(req));
+        }
+
         if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
           return respond(json({}));
         }
@@ -438,17 +444,8 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return respond(json({ entries: [] }));
         }
 
-        if (req.method === "POST" && url.pathname === "/agent/push/presence") {
-          return respond(json({ ok: true }));
-        }
-
-        if (req.method === "POST" && url.pathname === "/agent/push/subscription") {
-          return respond(json({ ok: true }));
-        }
-
-        if (req.method === "DELETE" && url.pathname === "/agent/push/subscription") {
-          return respond(json({ ok: true }));
-        }
+        const pushResponse = await handleWebPushRoutes(req, url.pathname);
+        if (pushResponse) return respond(pushResponse);
 
         if (req.method === "GET" && url.pathname === "/terminal/session") {
           const chatJid = readRequestChatJid(url);

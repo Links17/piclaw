@@ -64,13 +64,27 @@ export async function createScheduledTask(row: {
 }
 
 export async function listDueScheduledTasks(limit = 20): Promise<
-  Array<{ id: string; session_id: string; prompt: string; schedule_type: string; schedule_value: string }>
+  Array<{
+    id: string;
+    session_id: string;
+    prompt: string;
+    schedule_type: string;
+    schedule_value: string;
+    task_kind: string;
+  }>
 > {
   const rows = await sql`
-    SELECT id, session_id, prompt, schedule_type, schedule_value
+    SELECT id, session_id, prompt, schedule_type, schedule_value, task_kind
     FROM scheduled_tasks
     WHERE status = 'active' AND next_run IS NOT NULL AND next_run <= now()
     ORDER BY next_run ASC
     LIMIT ${limit}`;
-  return rows as Array<{ id: string; session_id: string; prompt: string; schedule_type: string; schedule_value: string }>;
+  return rows.map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    session_id: String(row.session_id),
+    prompt: String(row.prompt),
+    schedule_type: String(row.schedule_type),
+    schedule_value: String(row.schedule_value),
+    task_kind: row.task_kind != null ? String(row.task_kind) : "agent",
+  }));
 }

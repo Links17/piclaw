@@ -70,6 +70,21 @@ async function sweepScheduledTasks(): Promise<void> {
   for (const task of due) {
     const startedAt = Date.now();
     try {
+      if (task.task_kind === "internal") {
+        const res = await fetch(`${brainBase.replace(/\/$/, "")}/internal/scheduled-tasks/execute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(task),
+        });
+        const body = await res.json().catch(() => ({})) as { ok?: boolean; summary?: string; error?: string };
+        if (res.ok && body.ok) {
+          console.log(`[scheduler] ran internal task ${task.id}: ${body.summary ?? "ok"}`);
+        } else {
+          console.warn(`[scheduler] internal task ${task.id} failed: ${body.error ?? `HTTP ${res.status}`}`);
+        }
+        continue;
+      }
+
       const res = await fetch(`${brainBase.replace(/\/$/, "")}/sessions/${encodeURIComponent(task.session_id)}/subagents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
