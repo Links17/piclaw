@@ -286,7 +286,17 @@ function loadCloudConfig(): CloudConfig {
     }
   }
 
-  return deepMerge(defaultConfig(), envLayer(), fileLayer);
+  const merged = deepMerge(defaultConfig(), envLayer(), fileLayer);
+  const env = envLayer();
+  const fileOpenAiKey = fileLayer.openai?.apiKey;
+  if (
+    (fileOpenAiKey === "sk-your-key-here" || !fileOpenAiKey)
+    && typeof env.openai?.apiKey === "string"
+    && env.openai.apiKey.trim()
+  ) {
+    merged.openai.apiKey = env.openai.apiKey;
+  }
+  return merged;
 }
 
 /** Override config file path (call before first getCloudConfig()). */

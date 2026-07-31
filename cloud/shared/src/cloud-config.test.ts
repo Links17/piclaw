@@ -39,6 +39,25 @@ describe("cloud-config", () => {
     expect(cfg.server.port).toBe(9999);
   });
 
+  test("a placeholder example API key yields to a real environment key", () => {
+    const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
+    const path = join(dir, "brain.config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        openai: {
+          baseUrl: "http://example.test/v1",
+          apiKey: "sk-your-key-here",
+          model: "example-model",
+        },
+      }),
+    );
+    process.env.CLOUD_OPENAI_API_KEY = "real-environment-key";
+
+    setCloudConfigPath(path);
+    expect(getCloudConfig().openai.apiKey).toBe("real-environment-key");
+  });
+
   test("env fills gaps when config file is missing", () => {
     const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
     const path = join(dir, "missing.json");
