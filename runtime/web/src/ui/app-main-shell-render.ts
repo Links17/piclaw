@@ -1,4 +1,5 @@
 import { html } from '../vendor/preact-htm.js';
+import { remoteAccessTabsAvailable } from './workspace-visibility.js';
 import { ComposeBox } from '../components/compose-box.js';
 import { OobePanel } from '../components/oobe-panel.js';
 import { BtwPanel } from '../components/btw-panel.js';
@@ -113,6 +114,7 @@ export function renderMainShell(options: MainShellRenderOptions): any {
   const {
     appShellRef,
     workspaceOpen,
+    workspaceAvailable = true,
     sessionSidebarOpen,
     toggleSessionSidebar,
     editorOpen,
@@ -252,13 +254,13 @@ export function renderMainShell(options: MainShellRenderOptions): any {
     removeMessageRef,
     clearMessageRefs,
     setMessageRefsFromCompose,
-    handleCreateSessionFromCompose,
     handleCreateRootSessionFromCompose,
     handleRestoreBranch,
     attachActiveEditorFile,
     followupQueueCount,
     handleBtwIntercept,
     handleMessageResponse,
+    handleAbortAgent,
     handleComposeSubmitError,
     isComposeBoxAgentActive,
     activeChatAgents,
@@ -285,6 +287,11 @@ export function renderMainShell(options: MainShellRenderOptions): any {
     if (isIOSDevice()) return;
     scrollToBottom();
   };
+
+  const remoteAccessAvailable = remoteAccessTabsAvailable();
+  const showDockPanes = hasDockPanes && remoteAccessAvailable;
+  const terminalTabOpener = remoteAccessAvailable ? openTerminalTab : undefined;
+  const vncTabOpener = remoteAccessAvailable ? openVncTab : undefined;
 
   return html`
     <div class=${buildMainShellClassName({ workspaceOpen, editorOpen, chatOnlyMode, zenMode })} ref=${appShellRef}>
@@ -343,7 +350,6 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           activeChatAgents=${activeChatAgents}
           currentChatJid=${currentChatJid}
           onSwitchChat=${handleBranchPickerChange}
-          onCreateSession=${handleCreateSessionFromCompose}
           onCreateRootSession=${handleCreateRootSessionFromCompose}
           onRenameSession=${openRenameBranchFormFor}
           onDeleteSession=${handlePruneCurrentBranch}
@@ -372,8 +378,8 @@ export function renderMainShell(options: MainShellRenderOptions): any {
               paneOverrides=${tabPaneOverrides}
               detachedTabs=${detachedTabs}
               onReattachTab=${handleReattachPane}
-              onToggleDock=${hasDockPanes ? toggleDock : undefined}
-              dockVisible=${hasDockPanes && dockVisible}
+              onToggleDock=${showDockPanes ? toggleDock : undefined}
+              dockVisible=${showDockPanes && dockVisible}
               onToggleZen=${toggleZenMode}
               zenMode=${zenMode}
               onPopOutTab=${isWebAppMode ? undefined : handlePopOutPane}
@@ -399,8 +405,8 @@ export function renderMainShell(options: MainShellRenderOptions): any {
               onClose=${() => handleTabTogglePreview(tabStripActiveId)}
             />
           `}
-          ${hasDockPanes && dockVisible && html`<div class="dock-splitter" onMouseDown=${handleDockSplitterMouseDown} onTouchStart=${handleDockSplitterTouchStart}></div>`}
-          ${hasDockPanes && html`<div class=${`dock-panel${dockVisible ? '' : ' hidden'}${editorOpen ? '' : ' standalone'}`}>
+          ${showDockPanes && dockVisible && html`<div class="dock-splitter" onMouseDown=${handleDockSplitterMouseDown} onTouchStart=${handleDockSplitterTouchStart}></div>`}
+          ${showDockPanes && html`<div class=${`dock-panel${dockVisible ? '' : ' hidden'}${editorOpen ? '' : ' standalone'}`}>
             <div class="dock-panel-header">
               <span class="dock-panel-title">Terminal</span>
               <div class="dock-panel-actions">
@@ -447,7 +453,7 @@ export function renderMainShell(options: MainShellRenderOptions): any {
         </div>
         <div class="editor-splitter" onMouseDown=${handleEditorSplitterMouseDown} onTouchStart=${handleEditorSplitterTouchStart}></div>
       `}
-      ${!chatOnlyMode && html`
+      ${!chatOnlyMode && workspaceAvailable && html`
         <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
         <button
           class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}
@@ -465,27 +471,29 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           visible=${workspaceOpen}
           active=${workspaceOpen || editorOpen}
           onOpenEditor=${openEditor}
-          onOpenTerminalTab=${openTerminalTab}
-          onOpenVncTab=${openVncTab}
+          onOpenTerminalTab=${terminalTabOpener}
+          onOpenVncTab=${vncTabOpener}
         />
       `}
       <${TimelineMenu}
         workspaceOpen=${workspaceOpen}
+        workspaceAvailable=${workspaceAvailable}
         toggleWorkspace=${toggleWorkspace}
         chatOnlyMode=${chatOnlyMode}
         openEditor=${openEditor}
-        onOpenTerminalTab=${openTerminalTab}
-        onOpenVncTab=${openVncTab}
+        onOpenTerminalTab=${terminalTabOpener}
+        onOpenVncTab=${vncTabOpener}
       />
       <${TimelineQuickActions}
         activeChatAgents=${activeChatAgents}
         currentChatJid=${currentChatJid}
         workspaceOpen=${workspaceOpen}
+        workspaceAvailable=${workspaceAvailable}
         chatOnlyMode=${chatOnlyMode}
         onSwitchChat=${handleBranchPickerChange}
         onToggleWorkspace=${toggleWorkspace}
-        onOpenTerminalTab=${openTerminalTab}
-        onOpenVncTab=${openVncTab}
+        onOpenTerminalTab=${terminalTabOpener}
+        onOpenVncTab=${vncTabOpener}
         onPrefillCompose=${requestComposePrefill}
       />
       <div class="container">
@@ -601,8 +609,6 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           onSwitchChat=${handleBranchPickerChange}
           onRenameSession=${handleRenameCurrentBranch}
           isRenameSessionInProgress=${isRenamingBranch}
-          onCreateSession=${handleCreateSessionFromCompose}
-          onCreateRootSession=${handleCreateRootSessionFromCompose}
           onDeleteSession=${handlePruneCurrentBranch}
           onPurgeArchivedSession=${handlePurgeArchivedBranch}
           onRestoreSession=${handleRestoreBranch}
@@ -616,6 +622,7 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           onMoveQueuedFollowup=${handleMoveQueuedFollowup}
           onSubmitIntercept=${handleBtwIntercept}
           onMessageResponse=${handleMessageResponse}
+          onAbortAgent=${handleAbortAgent}
           onSubmitError=${handleComposeSubmitError}
           isAgentActive=${isComposeBoxAgentActive}
           activeChatAgents=${activeChatAgents}

@@ -14,4 +14,14 @@ export function resolveWorkspacePath(raw: string): string {
   return normalized.replace(/\/+/g, "/");
 }
 
+/** Strip /workspace prefix for Web UI relative paths. */
+export function workspaceRelativePath(absPath: string): string {
+  const normalized = absPath.replace(/\/+/g, "/");
+  if (normalized === WORKSPACE_ROOT) return ".";
+  if (normalized.startsWith(`${WORKSPACE_ROOT}/`)) {
+    return normalized.slice(WORKSPACE_ROOT.length + 1);
+  }
+  return normalized;
+}
+
 export { WORKSPACE_ROOT };

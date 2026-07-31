@@ -13,12 +13,16 @@ import {
     persistPwaDisplayScalePercent,
     readStoredPwaDisplayScalePercent,
 } from '../ui/pwa-display-scale.js';
-import { getRecentFiles } from '../ui/recent-files.js';
+import { computeAnchoredDropdownPosition } from '../ui/anchored-dropdown-position.js';
 import { LanguageSwitcher } from './language-switcher.js';
 import { useTranslation } from '../utils/i18n.js';
 
+const TIMELINE_MENU_WIDTH = 280;
+const TIMELINE_MENU_MAX_HEIGHT = 420;
+
 export function TimelineMenu({
     workspaceOpen,
+    workspaceAvailable = true,
     toggleWorkspace,
     chatOnlyMode,
     openEditor,
@@ -33,6 +37,7 @@ export function TimelineMenu({
         try { return localStorage.getItem('workspaceShowHidden') === 'true'; } catch { return false; }
     });
     const [pos, setPos] = useState({ top: 8, right: 8 });
+    const [dropdownPos, setDropdownPos] = useState(null);
 
     const getSafeAreaTop = () => {
         if (typeof document === 'undefined') return 0;
@@ -56,34 +61,72 @@ export function TimelineMenu({
         return () => { host.remove(); portalRef.current = null; };
     }, []);
 
-    useEffect(() => {
-        const update = () => {
-            const safeTop = getSafeAreaTop();
-            const topOffset = safeTop > 0 ? safeTop + 4 : 8;
-            const viewportWidth = window.innerWidth || 0;
-            if (workspaceOpen) {
-                const sidebar = document.querySelector('.workspace-sidebar');
-                if (sidebar) {
-                    const r = sidebar.getBoundingClientRect();
-                    setPos({ top: r.top + topOffset, right: Math.max(8, viewportWidth - r.right + 8) });
-                    return;
-                }
-            }
-            const container = document.querySelector('.container');
-            if (container) {
-                const r = container.getBoundingClientRect();
+    const updateButtonPosition = useCallback(() => {
+        const safeTop = getSafeAreaTop();
+        const topOffset = safeTop > 0 ? safeTop + 4 : 8;
+        const viewportWidth = window.innerWidth || 0;
+        if (workspaceOpen) {
+            const sidebar = document.querySelector('.workspace-sidebar');
+            if (sidebar) {
+                const r = sidebar.getBoundingClientRect();
                 setPos({ top: r.top + topOffset, right: Math.max(8, viewportWidth - r.right + 8) });
                 return;
             }
-            setPos({ top: topOffset, right: 8 });
-        };
-        update();
-        const observer = new ResizeObserver(update);
-        const sidebar = document.querySelector('.workspace-sidebar');
-        if (sidebar) observer.observe(sidebar);
-        window.addEventListener('resize', update);
-        return () => { observer.disconnect(); window.removeEventListener('resize', update); };
+        }
+        const container = document.querySelector('.container');
+        if (container) {
+            const r = container.getBoundingClientRect();
+            setPos({ top: r.top + topOffset, right: Math.max(8, viewportWidth - r.right + 8) });
+            return;
+        }
+        setPos({ top: topOffset, right: 8 });
     }, [workspaceOpen]);
+
+    const updateDropdownPosition = useCallback(() => {
+        const button = btnRef.current;
+        if (!button) {
+            setDropdownPos(null);
+            return;
+        }
+        const rect = button.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || 0;
+        const viewportHeight = window.innerHeight || 0;
+        const menuMaxHeight = Math.min(TIMELINE_MENU_MAX_HEIGHT, viewportHeight - 16);
+        const container = document.querySelector('.container');
+        const clampRect = container ? container.getBoundingClientRect() : null;
+        setDropdownPos(computeAnchoredDropdownPosition(rect, {
+            menuWidth: TIMELINE_MENU_WIDTH,
+            menuMaxHeight,
+            viewportWidth,
+            viewportHeight,
+            align: 'right',
+            clampRect,
+        }));
+    }, []);
+
+    useEffect(() => {
+        updateButtonPosition();
+        const observer = new ResizeObserver(updateButtonPosition);
+        const container = document.querySelector('.container');
+        if (container) observer.observe(container);
+        window.addEventListener('resize', updateButtonPosition);
+        return () => { observer.disconnect(); window.removeEventListener('resize', updateButtonPosition); };
+    }, [updateButtonPosition]);
+
+    useLayoutEffect(() => {
+        if (!open) {
+            setDropdownPos(null);
+            return undefined;
+        }
+        updateDropdownPosition();
+        const handleViewportChange = () => updateDropdownPosition();
+        window.addEventListener('resize', handleViewportChange);
+        window.addEventListener('scroll', handleViewportChange, true);
+        return () => {
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('scroll', handleViewportChange, true);
+        };
+    }, [open, updateDropdownPosition]);
 
     useEffect(() => {
         if (portalRef.current)
@@ -181,8 +224,14 @@ export function TimelineMenu({
                 <line x1="4" y1="17" x2="20" y2="17" />
             </svg>
         </button>
-        ${open && html`
-            <div class="workspace-menu-dropdown timeline-menu-dropdown" ref=${menuRef} role="menu">
+        ${open && dropdownPos && html`
+            <div
+                class="workspace-menu-dropdown timeline-menu-dropdown timeline-menu-dropdown-fixed"
+                ref=${menuRef}
+                role="menu"
+                style=${{ top: `${dropdownPos.top}px`, left: `${dropdownPos.left}px` }}
+            >
+                ${workspaceAvailable && html`
                 <button class="workspace-menu-item" role="menuitem" onClick=${() => run(toggleWorkspace)}>
                     ${workspaceOpen ? t('menu.hideWorkspace') : t('menu.showWorkspace')}
                 </button>
@@ -190,6 +239,7 @@ export function TimelineMenu({
                     <button class="workspace-menu-item" role="menuitem" onClick=${() => run(() => { toggleWorkspace(); })}>
                         ${t('menu.openExplorer')}
                     </button>
+                `}
                 `}
                 <button class=${`workspace-menu-item${chatOnlyMode ? ' active' : ''}`} role="menuitem" onClick=${() => run(toggleChatOnly)}>
                     ${chatOnlyMode ? t('menu.exitChatOnly') : t('menu.chatOnly')}
@@ -199,22 +249,9 @@ export function TimelineMenu({
                 ${onOpenTerminalTab && html`<button class="workspace-menu-item" role="menuitem" onClick=${() => run(onOpenTerminalTab)}>${t('menu.openTerminal')}</button>`}
                 ${onOpenVncTab && html`<button class="workspace-menu-item" role="menuitem" onClick=${() => run(onOpenVncTab)}>${t('menu.openVnc')}</button>`}
 
+                ${workspaceAvailable && html`
                 <div class="workspace-menu-separator"></div>
                 <button class="workspace-menu-item" role="menuitem" disabled=${!workspaceOpen} onClick=${() => run(() => window.dispatchEvent(new CustomEvent('piclaw:workspace-action', { detail: { action: 'new-file' } })))}>${t('menu.newFile')}</button>
-                ${(() => {
-                    const recent = getRecentFiles();
-                    if (recent.length === 0) return null;
-                    return html`
-                        <div class="workspace-menu-separator"></div>
-                        <div class="workspace-menu-submenu-label">${t('menu.openRecent')}</div>
-                        ${recent.map((path) => {
-                            const label = path.split('/').pop() || path;
-                            return html`
-                                <button class="workspace-menu-item workspace-menu-recent-item" role="menuitem" title=${path} onClick=${() => run(() => openEditor?.(path))}>${label}</button>
-                            `;
-                        })}
-                    `;
-                })()}
                 <div class="workspace-menu-separator"></div>
                 <button class="workspace-menu-item" role="menuitem" disabled=${!workspaceOpen} onClick=${() => run(() => window.dispatchEvent(new CustomEvent('piclaw:workspace-action', { detail: { action: 'refresh' } })))}>${t('menu.refreshTree')}</button>
                 <button class="workspace-menu-item" role="menuitem" disabled=${!workspaceOpen} onClick=${() => run(() => window.dispatchEvent(new CustomEvent('piclaw:workspace-action', { detail: { action: 'reindex' } })))}>${t('menu.reindex')}</button>
@@ -248,6 +285,7 @@ export function TimelineMenu({
                         <span aria-hidden="true">%</span>
                     </div>
                 </div>
+                `}
                 <button class="workspace-menu-item" role="menuitem" onClick=${() => run(() => window.dispatchEvent(new CustomEvent('piclaw:open-settings')))}>${t('menu.settings')}</button>
                 <div class="workspace-menu-separator"></div>
                 <div class="workspace-menu-language" role="none">

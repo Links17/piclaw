@@ -1163,22 +1163,3 @@
     height: 28px;
 }
 
-
-/* Recent files submenu */
-.workspace-menu-submenu-label {
-    padding: 6px 10px 2px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    user-select: none;
-}
-
-.workspace-menu-recent-item {
-    padding-left: 18px !important;
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}

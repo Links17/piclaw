@@ -86,6 +86,7 @@ export async function respondToExtensionUiRequest(
 export async function handleOpenWorkspaceFileBrowserRequest(event: CustomEvent, deps: {
   currentChatJid: string;
   openEditor: (path: string) => void;
+  revealWorkspacePanel?: () => void;
   popOutPane: (path: string, label?: string | null) => Promise<boolean> | boolean;
   showIntentToast?: (title: string, detail?: string | null, kind?: string, durationMs?: number) => void;
   windowObject?: any;
@@ -145,6 +146,7 @@ export async function handleOpenWorkspaceFileBrowserRequest(event: CustomEvent, 
     return true;
   }
 
+  deps.revealWorkspacePanel?.();
   deps.openEditor(request.path);
   await respond(request.requestId, {
     ok: true,

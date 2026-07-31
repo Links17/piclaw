@@ -27,6 +27,7 @@ export interface SessionRow {
   user_id: string;
   title: string;
   sandbox_id: string | null;
+  workspace_volume_id: string | null;
   archived_at: string | null;
 }
 
@@ -67,11 +68,11 @@ export async function listSessions(
   const includeArchived = Boolean(options.includeArchived);
   const rows = includeArchived
     ? await sql`
-        SELECT id, user_id, title, sandbox_id, archived_at
+        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at
         FROM sessions WHERE user_id = ${userId}
         ORDER BY updated_at DESC`
     : await sql`
-        SELECT id, user_id, title, sandbox_id, archived_at
+        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at
         FROM sessions WHERE user_id = ${userId} AND archived_at IS NULL
         ORDER BY updated_at DESC`;
   return rows as SessionRow[];
@@ -79,13 +80,13 @@ export async function listSessions(
 
 export async function getSession(id: string): Promise<SessionRow | null> {
   const rows = await sql`
-    SELECT id, user_id, title, sandbox_id, archived_at FROM sessions WHERE id = ${id}`;
+    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at FROM sessions WHERE id = ${id}`;
   return (rows[0] as SessionRow) ?? null;
 }
 
 export async function getSessionForUser(id: string, userId: string): Promise<SessionRow | null> {
   const rows = await sql`
-    SELECT id, user_id, title, sandbox_id, archived_at FROM sessions
+    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at FROM sessions
     WHERE id = ${id} AND user_id = ${userId}`;
   return (rows[0] as SessionRow) ?? null;
 }
@@ -99,7 +100,7 @@ export async function archiveSession(id: string, userId = DEFAULT_USER_ID): Prom
     UPDATE sessions
     SET archived_at = now(), updated_at = now()
     WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
   return rows[0] as SessionRow;
 }
 
@@ -118,7 +119,7 @@ export async function restoreSession(
         title = COALESCE(${nextTitle}, title),
         updated_at = now()
     WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
   return rows[0] as SessionRow;
 }
 
@@ -137,7 +138,7 @@ export async function renameSessionTitle(
     UPDATE sessions
     SET title = ${nextTitle}, updated_at = now()
     WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
   return rows[0] as SessionRow;
 }
 
@@ -159,7 +160,7 @@ export async function renameSessionTitleIfTemporary(
     WHERE id = ${id}
       AND user_id = ${userId}
       AND title IN (${UNTITLED_SESSION_TITLE}, 'Chat')
-    RETURNING id, user_id, title, sandbox_id, archived_at`;
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at`;
   return (rows[0] as SessionRow) ?? null;
 }
 
@@ -193,6 +194,12 @@ export async function purgeSession(
 export async function setSandboxId(sessionId: string, sandboxId: string): Promise<void> {
   await sql`
     UPDATE sessions SET sandbox_id = ${sandboxId}, sandbox_paused_at = NULL, updated_at = now()
+    WHERE id = ${sessionId}`;
+}
+
+export async function setWorkspaceVolumeId(sessionId: string, volumeId: string): Promise<void> {
+  await sql`
+    UPDATE sessions SET workspace_volume_id = ${volumeId}, updated_at = now()
     WHERE id = ${sessionId}`;
 }
 

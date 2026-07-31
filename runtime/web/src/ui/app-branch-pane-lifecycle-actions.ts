@@ -570,6 +570,7 @@ export function applyStoredPaneLayoutAction(options: ApplyStoredPaneLayoutAction
 
 export interface UseBranchPaneLifecycleOptions {
   setWorkspaceOpen: StateSetter<boolean>;
+  workspaceAvailable?: boolean;
   currentChatJid: string;
   chatOnlyMode?: boolean;
   navigate: (url: string, options?: Record<string, unknown>) => void;
@@ -707,8 +708,9 @@ export function useBranchPaneLifecycle(options: UseBranchPaneLifecycleOptions) {
   }, [setActiveChatAgents, setCurrentChatBranches]);
 
   const toggleWorkspace = useCallback(() => {
+    if (options.workspaceAvailable === false) return;
     toggleWorkspaceVisibility(setWorkspaceOpen);
-  }, [setWorkspaceOpen]);
+  }, [options.workspaceAvailable, setWorkspaceOpen]);
 
   const handleBranchPickerChange = useCallback((nextChatJid: unknown) => {
     handleBranchPickerChangeAction({

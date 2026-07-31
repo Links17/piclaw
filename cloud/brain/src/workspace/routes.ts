@@ -1,6 +1,8 @@
 /**
  * Read-only /workspace/* routes for cloud brain Web UI.
  */
+import * as store from "@piclaw-cloud/store";
+import { chatJidToSessionId } from "../web-adapter.ts";
 import { getWorkspaceFilePreview, getWorkspaceRawFile, getWorkspaceTree } from "./sandbox-tree.ts";
 
 function json(body: unknown, status = 200): Response {
@@ -80,7 +82,18 @@ export async function handleWorkspaceRoutes(req: Request, pathname: string): Pro
   }
 
   if (req.method === "GET" && pathname === "/workspace/index-status") {
-    return json({ state: "ready", indexed_file_count: 0, roots: ["workspace"] });
+    const chatJid = chatJidFromUrl(url);
+    let hasSandbox = false;
+    if (chatJid) {
+      const session = await store.getSession(chatJidToSessionId(chatJid));
+      hasSandbox = Boolean(typeof session?.sandbox_id === "string" && session.sandbox_id.trim());
+    }
+    return json({
+      state: hasSandbox ? "ready" : "unavailable",
+      has_sandbox: hasSandbox,
+      indexed_file_count: 0,
+      roots: ["workspace"],
+    });
   }
 
   if (req.method === "GET" && pathname === "/workspace/branch") {

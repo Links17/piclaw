@@ -270,6 +270,18 @@ export async function steerSubagentForChat(chatJid: string, runId: string, messa
   return { success: !result.isError, ...(result.isError ? { error: result.output } : { data: { ok: true } }) };
 }
 
+export async function abortAgentRunForChat(chatJid: string) {
+  const sessionId = await ensureChatSession(chatJid);
+  await abortSessionTurn(sessionId);
+  return {
+    ok: true,
+    status: "ok",
+    ui_only: true,
+    outcome: "aborted",
+    command: { status: "success", message: "Turn aborted" },
+  };
+}
+
 export async function stopSubagentForChat(chatJid: string, runId: string) {
   const sessionId = await ensureChatSession(chatJid);
   const { stopSubagent } = await import("./subagents/manager.ts");
@@ -340,6 +352,7 @@ export async function listSessions(userId?: string, options?: store.ListSessions
 export function sessionToBranchChat(session: {
   id: string;
   title: string;
+  sandbox_id?: string | null;
   archived_at?: string | null;
 }) {
   const title = session.title?.trim() || session.id;
@@ -348,6 +361,7 @@ export function sessionToBranchChat(session: {
     root_chat_jid: session.id,
     agent_name: title,
     title,
+    sandbox_id: session.sandbox_id ?? null,
     is_root: true,
     archived_at: session.archived_at ?? null,
   };

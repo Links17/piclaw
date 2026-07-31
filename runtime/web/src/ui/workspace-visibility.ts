@@ -1,3 +1,5 @@
+import { isCloudWebBuild } from './chat-jid.js';
+
 export const LEGACY_WORKSPACE_OPEN_STORAGE_KEY = 'workspaceOpen';
 export const DESKTOP_WORKSPACE_OPEN_STORAGE_KEY = 'workspaceOpen.desktop';
 export const NARROW_WORKSPACE_OPEN_STORAGE_KEY = 'workspaceOpen.narrow';
@@ -77,4 +79,74 @@ export function persistWorkspaceOpenPreference(
   } = options;
   const targetBucket = bucket || resolveWorkspaceLayoutBucket(runtime);
   writeRuntimeStorageBoolean(runtime, getWorkspaceOpenStorageKey(targetBucket), Boolean(workspaceOpen));
+}
+
+/** Cloud web only exposes workspace UI once the session has a sandbox binding. */
+export function sessionHasWorkspace(
+  chat: { sandbox_id?: string | null } | null | undefined,
+  options: { cloudBuild?: boolean } = {},
+): boolean {
+  const cloudBuild = options.cloudBuild ?? isCloudWebBuild();
+  if (!cloudBuild) return true;
+  const sandboxId = typeof chat?.sandbox_id === 'string' ? chat.sandbox_id.trim() : '';
+  return sandboxId.length > 0;
+}
+
+/** Cloud web hides terminal/VNC entry points; local runtime keeps them. */
+export function remoteAccessTabsAvailable(options: { cloudBuild?: boolean } = {}): boolean {
+  const cloudBuild = options.cloudBuild ?? isCloudWebBuild();
+  return !cloudBuild;
+}
+
+/** Normalize sandbox absolute paths to workspace-relative editor paths. */
+export function normalizeSandboxWorkspacePath(raw: unknown): string | null {
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/workspace/')) return trimmed.slice('/workspace/'.length);
+  if (trimmed === '/workspace' || trimmed === '.') return null;
+  if (trimmed.startsWith('/') || trimmed.includes('://')) return null;
+  if (trimmed === '..' || trimmed.startsWith('../')) return null;
+  return trimmed;
+}
+
+export function shouldAutoRevealWorkspaceForSandboxBinding(
+  previousSandboxId: string | null | undefined,
+  nextSandboxId: string | null | undefined,
+): boolean {
+  const prev = typeof previousSandboxId === 'string' ? previousSandboxId.trim() : '';
+  const next = typeof nextSandboxId === 'string' ? nextSandboxId.trim() : '';
+  return Boolean(next) && next !== prev;
+}
+
+export function resolveWorkspaceAvailable(
+  chat: { sandbox_id?: string | null } | null | undefined,
+  options: { cloudBuild?: boolean; probeAvailable?: boolean } = {},
+): boolean {
+  if (sessionHasWorkspace(chat, options)) return true;
+  const cloudBuild = options.cloudBuild ?? isCloudWebBuild();
+  if (!cloudBuild) return true;
+  return Boolean(options.probeAvailable);
+}
+
+export function shouldAutoRevealWorkspaceOnAvailabilityChange(
+  previousAvailable: boolean,
+  nextAvailable: boolean,
+): boolean {
+  return !previousAvailable && nextAvailable;
+}
+
+export function inferWorkspaceAvailableFromIndexStatus(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const record = payload as Record<string, unknown>;
+  return typeof record.has_sandbox === 'boolean' ? record.has_sandbox : false;
+}
+
+export function createRevealWorkspacePanelAction(options: {
+  setWorkspaceOpen: (open: boolean) => void;
+  setWorkspaceProbeAvailable?: (available: boolean) => void;
+}): () => void {
+  return () => {
+    options.setWorkspaceProbeAvailable?.(true);
+    options.setWorkspaceOpen(true);
+  };
 }

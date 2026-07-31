@@ -5,6 +5,7 @@ import * as store from "@piclaw-cloud/store";
 import { config } from "../config.ts";
 import { isLlmMockEnabled } from "../llm.ts";
 import { publish } from "../events.ts";
+import { publishWorkspaceUpdates } from "../workspace/publish.ts";
 import { runBrainCodingLoop } from "./coding-loop.ts";
 import { allocateSubagentRunId, normalizeSubagentRunId } from "./run-id.ts";
 import { runSandboxPiWorker } from "./sandbox-worker.ts";
@@ -197,6 +198,10 @@ export async function runCodingSubagent(
     artifacts: outcome.artifacts,
     replica: config.replicaId,
   });
+
+  if (outcome.status === "completed" && outcome.artifacts.length > 0) {
+    await publishWorkspaceUpdates(sessionId, outcome.artifacts);
+  }
 
   return outcome;
 }

@@ -37,6 +37,7 @@ export type InternalSessionEvent =
   | { type: "message"; id: number; role: string; content: string; recovery?: boolean }
   | { type: "turn_started"; messageId: number; replica: string }
   | { type: "turn_done"; messageId: number; replica: string; dbRoundtrips: number; durationMs: number }
+  | { type: "turn_aborted"; messageId?: number; replica: string }
   | { type: "turn_failed"; messageId: number; error: string; replica: string }
   | { type: "followup_queued"; content: string }
   | { type: "followup_consumed"; content: string }
@@ -53,7 +54,8 @@ export type InternalSessionEvent =
   | { type: "subagent_tool_start"; runId: string; name: string; toolCallId: string; replica: string }
   | { type: "subagent_tool_result"; runId: string; name: string; toolCallId: string; isError: boolean; replica: string }
   | { type: "subagent_steered"; runId: string; message: string; replica: string }
-  | { type: "subagent_done"; runId: string; status: string; summary: string; artifacts: string[]; replica: string };
+  | { type: "subagent_done"; runId: string; status: string; summary: string; artifacts: string[]; replica: string }
+  | { type: "workspace_update"; path: string; replica: string };
 
 function scoped(scope: SseScope, data: Record<string, unknown>): Record<string, unknown> {
   const payload: Record<string, unknown> = { ...data, chat_jid: scope.chatJid };
@@ -91,7 +93,12 @@ export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): 
       );
     case "turn_done":
       return agentStatusEnvelope(scope, "done", "Idle");
+    case "turn_aborted":
+      return agentStatusEnvelope(scope, "done", "Stopped");
     case "turn_failed":
+      if (event.error === "Turn aborted by user") {
+        return agentStatusEnvelope(scope, "done", "Stopped");
+      }
       return agentStatusEnvelope(scope, "error", event.error, { detail: event.error });
     case "followup_queued":
       return {
@@ -193,6 +200,13 @@ export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): 
           name: event.name,
           tool_call_id: event.toolCallId,
           is_error: event.isError,
+        }),
+      };
+    case "workspace_update":
+      return {
+        event: "workspace_update",
+        data: scoped(scope, {
+          updates: [{ path: event.path || ".", truncated: true }],
         }),
       };
     default:

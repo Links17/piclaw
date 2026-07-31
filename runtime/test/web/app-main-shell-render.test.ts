@@ -213,7 +213,6 @@ function createMainShellRenderOptions(overrides: Record<string, unknown> = {}) {
     removeMessageRef: noop,
     clearMessageRefs: noop,
     setMessageRefsFromCompose: noop,
-    handleCreateSessionFromCompose: noop,
     handleCreateRootSessionFromCompose: noop,
     handleRestoreBranch: noop,
     attachActiveEditorFile: noop,

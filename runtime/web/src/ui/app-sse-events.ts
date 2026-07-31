@@ -24,6 +24,8 @@ import {
   shouldMutateInteractionTimeline,
 } from './app-realtime-timeline.js';
 import { appendFollowupQueueItem, removeFollowupQueueRow } from './app-followup-queue.js';
+import { normalizeSandboxWorkspacePath } from './workspace-visibility.js';
+import { buildWorkspaceUpdateDetailFromPaths, dispatchWorkspaceUpdateEvent } from './workspace-update-dispatch.js';
 import { resolveFollowupQueueRemovalPlan } from './app-followup-actions.js';
 import {
   applyStatusPanelWidgetEvent,
@@ -89,6 +91,7 @@ export interface HandleAppSseEventDependencies {
   loadMoreRef: RefBox<((options?: Record<string, unknown>) => void) | null>;
   lastAgentResponseRef: RefBox<{ post: any; turnId: string | null } | null>;
   wasAgentActiveRef: RefBox<boolean>;
+  isAgentRunningRef: RefBox<boolean>;
 
   setActiveTurn: (turnId: string | null | undefined) => void;
   applyLiveGeneratedWidgetUpdate: (payload: any, fallbackStatus?: string) => void;
@@ -126,6 +129,7 @@ export interface HandleAppSseEventDependencies {
   setPosts: StateSetter<any[] | null>;
   preserveTimelineScrollTop: (mutate: () => void) => void;
   openEditor?: (path: string, options?: { label?: string }) => void;
+  revealWorkspacePanel?: () => void;
   setAgentQuestion?: StateSetter<any>;
   setFleetRuns?: StateSetter<any[]>;
 }
@@ -163,6 +167,7 @@ export function handleAppSseEvent(
     loadMoreRef,
     lastAgentResponseRef,
     wasAgentActiveRef,
+    isAgentRunningRef,
 
     setActiveTurn,
     applyLiveGeneratedWidgetUpdate,
@@ -200,6 +205,7 @@ export function handleAppSseEvent(
     setPosts,
     preserveTimelineScrollTop,
     openEditor,
+    revealWorkspacePanel,
     setAgentQuestion,
     setFleetRuns,
   } = deps;
@@ -232,6 +238,7 @@ export function handleAppSseEvent(
       return;
     }
     if (path && typeof openEditor === 'function') {
+      revealWorkspacePanel?.();
       openEditor(path, label ? { label } : undefined);
     }
     return;
@@ -374,6 +381,7 @@ export function handleAppSseEvent(
         if (isMainTimelineView(viewStateRef.current)) {
           void refreshTimeline();
         }
+        revealWorkspacePanel?.();
       }
       void refreshContextUsage();
       wasAgentActiveRef.current = false;
@@ -480,6 +488,9 @@ export function handleAppSseEvent(
     if (!isCurrentChatEvent) return;
     setCloudAgentQuestion(null);
     setAgentQuestion?.(null);
+    clearAgentRunState();
+    setAgentDraft({ text: '', totalLines: 0 });
+    setAgentStatus(null);
     return;
   }
 
@@ -499,6 +510,17 @@ export function handleAppSseEvent(
     upsertCloudFleetRun(update);
     if (update.summary && ['completed', 'failed', 'timed_out', 'stopped'].includes(update.status)) {
       appendLiveSubagentMessage(runId, { role: 'assistant', content: update.summary });
+    }
+    if (['completed', 'done'].includes(String(update.status || '').trim().toLowerCase())) {
+      revealWorkspacePanel?.();
+      const artifacts = Array.isArray(data.artifacts) ? data.artifacts : [];
+      if (artifacts.length > 0) {
+        dispatchWorkspaceUpdateEvent(buildWorkspaceUpdateDetailFromPaths(artifacts));
+      }
+      const firstArtifact = artifacts.map((entry) => normalizeSandboxWorkspacePath(entry)).find(Boolean);
+      if (firstArtifact && typeof openEditor === 'function') {
+        openEditor(firstArtifact);
+      }
     }
     return;
   }
@@ -534,6 +556,7 @@ export function handleAppSseEvent(
   if (eventType === 'agent_draft_delta') {
     if (!isCurrentChatEvent) return;
     if (previewResyncPendingRef.current) return;
+    if (!isAgentRunningRef.current) return;
     if (shouldIgnoreMismatchedTurn(turnId, currentTurnIdRef.current)) {
       return;
     }
@@ -651,6 +674,8 @@ export function handleAppSseEvent(
   }
 
   if (eventType === 'workspace_update') {
+    void refreshActiveChatAgents();
+    revealWorkspacePanel?.();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workspace-update', { detail: data }));
     }

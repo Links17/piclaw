@@ -34,6 +34,13 @@ interface ComposeFollowupActionOptionsInput {
   refreshCurrentChatBranches: () => Promise<void>;
   refreshContextUsage: () => Promise<void>;
   refreshAutoresearchStatus: () => Promise<void>;
+  clearAgentRunState: () => void;
+  setAgentDraft: StateSetter<any>;
+  setAgentStatus: StateSetter<any>;
+  setAgentPlan: StateSetter<any>;
+  setAgentThought: StateSetter<any>;
+  clearCloudAgentQuestion?: () => void;
+  wasAgentActiveRef: RefBox<boolean>;
 }
 
 export function composeFollowupActionOptions(input: ComposeFollowupActionOptionsInput) {
@@ -51,6 +58,13 @@ export function composeFollowupActionOptions(input: ComposeFollowupActionOptions
     refreshCurrentChatBranches: input.refreshCurrentChatBranches,
     refreshContextUsage: input.refreshContextUsage,
     refreshAutoresearchStatus: input.refreshAutoresearchStatus,
+    clearAgentRunState: input.clearAgentRunState,
+    setAgentDraft: input.setAgentDraft,
+    setAgentStatus: input.setAgentStatus,
+    setAgentPlan: input.setAgentPlan,
+    setAgentThought: input.setAgentThought,
+    clearCloudAgentQuestion: input.clearCloudAgentQuestion,
+    wasAgentActiveRef: input.wasAgentActiveRef,
   };
 }
 
@@ -131,6 +145,7 @@ interface ComposeBranchPaneActionOptionsInput {
   chatOnlyMode: boolean;
   navigate: (url: string, options?: Record<string, unknown>) => void;
   setWorkspaceOpen: StateSetter<boolean>;
+  workspaceAvailable?: boolean;
   currentBranchRecord: any;
   renameBranchInFlightRef: RefBox<boolean>;
   renameBranchLockUntilRef: RefBox<number>;
@@ -184,6 +199,7 @@ interface ComposeBranchPaneActionOptionsInput {
 export function composeBranchPaneActionOptions(input: ComposeBranchPaneActionOptionsInput) {
   return {
     setWorkspaceOpen: input.setWorkspaceOpen,
+    workspaceAvailable: input.workspaceAvailable,
     currentChatJid: input.currentChatJid,
     chatOnlyMode: input.chatOnlyMode,
     navigate: input.navigate,

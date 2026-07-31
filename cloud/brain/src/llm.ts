@@ -10,6 +10,12 @@ import {
 } from "./llm/stream-parser.ts";
 import type { OpenAiMessage } from "./llm/messages.ts";
 import { TOOL_DEFINITIONS, type ToolDefinition } from "./tools/schemas.ts";
+import { TurnAbortedError, isTurnAborted, throwIfAborted } from "./turn-abort.ts";
+
+export interface StreamCompletionOptions {
+  sessionId?: string;
+  signal?: AbortSignal;
+}
 
 export interface LlmUsage {
   inputTokens: number | null;
@@ -46,15 +52,16 @@ export async function streamCompletionRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
   tools: ToolDefinition[] = TOOL_DEFINITIONS,
+  options: StreamCompletionOptions = {},
 ): Promise<CompletionRound> {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const prompt = lastUser && "content" in lastUser ? String(lastUser.content ?? "") : "";
   const isMockPrefix = prompt.startsWith("mock-tools:") || prompt.startsWith("mock-coding:");
   if (isMockPrefix && isLlmMockEnabled()) {
-    return streamMockRound(messages, onDelta, prompt);
+    return streamMockRound(messages, onDelta, prompt, options);
   }
   if (isOpenAiConfigured()) {
-    return streamOpenAiRound(messages, onDelta, tools);
+    return streamOpenAiRound(messages, onDelta, tools, options);
   }
   throw new LlmNotConfiguredError();
 }
@@ -72,20 +79,37 @@ async function streamMockRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
   prompt: string,
+  options: StreamCompletionOptions = {},
 ): Promise<CompletionRound> {
+  throwIfAborted(options.sessionId ?? "", options.signal);
   if (prompt.startsWith("mock-tools:")) {
-    return mockToolsRound(messages, onDelta, prompt);
+    return mockToolsRound(messages, onDelta, prompt, options);
   }
   if (prompt.startsWith("mock-coding:")) {
-    return mockCodingRound(messages, onDelta, prompt);
+    return mockCodingRound(messages, onDelta, prompt, options);
   }
   throw new Error(`mock prefix required when CLOUD_LLM_MOCK=1 (got: ${prompt.slice(0, 40)})`);
+}
+
+async function streamMockTextWithAbortCheck(
+  text: string,
+  onDelta: (text: string) => Promise<void>,
+  options: StreamCompletionOptions = {},
+): Promise<void> {
+  for (const char of text) {
+    throwIfAborted(options.sessionId ?? "", options.signal);
+    await onDelta(char);
+    if (text.length > 32) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
 }
 
 async function mockToolsRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
   prompt: string,
+  options: StreamCompletionOptions = {},
 ): Promise<CompletionRound> {
   const hasToolResults = messages.some((m) => m.role === "tool");
   const hasAssistantTools = messages.some(
@@ -93,6 +117,16 @@ async function mockToolsRound(
   );
 
   if (!hasAssistantTools) {
+    if (prompt.includes("medium busy turn")) {
+      const text = "Mock busy turn streaming output for abort testing.";
+      await streamMockTextWithAbortCheck(text, onDelta, options);
+      return {
+        text,
+        toolCalls: [],
+        finishReason: "stop",
+        usage: { inputTokens: 1, cachedTokens: 0, outputTokens: text.length },
+      };
+    }
     if (prompt.includes("question")) {
       return {
         text: "",
@@ -182,7 +216,7 @@ async function mockToolsRound(
       : prompt.includes("edit")
         ? "Updated the demo to hello agent."
         : "Created the hello world demo.";
-    await onDelta(text);
+    await streamMockTextWithAbortCheck(text, onDelta, options);
     return {
       text,
       toolCalls: [],
@@ -198,6 +232,7 @@ async function mockCodingRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
   prompt: string,
+  options: StreamCompletionOptions = {},
 ): Promise<CompletionRound> {
   const hasToolResults = messages.some((m) => m.role === "tool");
   const hasAssistantTools = messages.some(
@@ -244,7 +279,7 @@ async function mockCodingRound(
     const text = prompt.includes("edit")
       ? "Updated demo.ino to hello agent."
       : "Created demo.ino with hello world sketch.";
-    await onDelta(text);
+    await streamMockTextWithAbortCheck(text, onDelta, options);
     return {
       text,
       toolCalls: [],
@@ -260,21 +295,32 @@ async function streamOpenAiRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
   tools: ToolDefinition[] = TOOL_DEFINITIONS,
+  options: StreamCompletionOptions = {},
 ): Promise<CompletionRound> {
-  const response = await fetch(`${config.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.openaiApiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.openaiModel,
-      messages,
-      ...(tools.length > 0 ? { tools, tool_choice: "auto" as const } : {}),
-      stream: true,
-      stream_options: { include_usage: true },
-    }),
-  });
+  throwIfAborted(options.sessionId ?? "", options.signal);
+  let response: Response;
+  try {
+    response = await fetch(`${config.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.openaiApiKey}`,
+      },
+      signal: options.signal,
+      body: JSON.stringify({
+        model: config.openaiModel,
+        messages,
+        ...(tools.length > 0 ? { tools, tool_choice: "auto" as const } : {}),
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+    });
+  } catch (error) {
+    if (options.signal?.aborted || isTurnAborted(options.sessionId ?? "")) {
+      throw new TurnAbortedError();
+    }
+    throw error;
+  }
   if (!response.ok || !response.body) {
     throw new Error(`LLM HTTP ${response.status}: ${await response.text().catch(() => "")}`);
   }
@@ -286,6 +332,7 @@ async function streamOpenAiRound(
   const usage: LlmUsage = { inputTokens: null, cachedTokens: null, outputTokens: null };
 
   while (true) {
+    throwIfAborted(options.sessionId ?? "", options.signal);
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -315,7 +362,10 @@ async function streamOpenAiRound(
         continue;
       }
       const { textDelta } = applyStreamChunk(acc, payload);
-      if (textDelta) await onDelta(textDelta);
+      if (textDelta) {
+        throwIfAborted(options.sessionId ?? "", options.signal);
+        await onDelta(textDelta);
+      }
       if (payload?.usage) {
         usage.inputTokens = (payload.usage.prompt_tokens as number) ?? null;
         usage.outputTokens = (payload.usage.completion_tokens as number) ?? null;

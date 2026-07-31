@@ -1,9 +1,12 @@
-import { useMemo, useRef, useState } from '../vendor/preact-htm.js';
+import { useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
 import {
   readStoredWorkspaceOpenPreference,
+  resolveWorkspaceAvailable,
+  sessionHasWorkspace,
 } from './workspace-visibility.js';
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
-import { legacyDefaultChatJid } from './chat-jid.js';
+import { isCloudWebBuild, legacyDefaultChatJid } from './chat-jid.js';
+import { probeSessionWorkspaceAvailability } from '../api.js';
 import { useNotifications } from './use-notifications.js';
 import { isStandaloneWebAppMode } from './chat-window.js';
 import { getBranchHandleDraftState } from './branch-lifecycle.js';
@@ -99,6 +102,28 @@ export function useMainAppSurfaceState(options: {
   const currentRootChatJid = useMemo(
     () => resolveStableRootChatJid(currentChatJid, currentBranchRecord),
     [currentBranchRecord, currentChatJid],
+  );
+  const [workspaceProbeAvailable, setWorkspaceProbeAvailable] = useState(false);
+
+  useEffect(() => {
+    setWorkspaceProbeAvailable(false);
+    if (!isCloudWebBuild()) return undefined;
+    if (sessionHasWorkspace(currentBranchRecord)) return undefined;
+    const chatJid = typeof currentChatJid === 'string' ? currentChatJid.trim() : '';
+    if (!chatJid) return undefined;
+
+    let cancelled = false;
+    void probeSessionWorkspaceAvailability(chatJid).then((available) => {
+      if (!cancelled && available) setWorkspaceProbeAvailable(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentChatJid, currentBranchRecord?.sandbox_id]);
+
+  const workspaceAvailable = useMemo(
+    () => resolveWorkspaceAvailable(currentBranchRecord, { probeAvailable: workspaceProbeAvailable }),
+    [currentBranchRecord, workspaceProbeAvailable],
   );
   const activeSearchScopeLabel = describeSearchScope(searchScope);
   const [branchLoaderState, setBranchLoaderState] = useState(() => createBranchLoaderState(branchLoaderMode));
@@ -235,6 +260,9 @@ export function useMainAppSurfaceState(options: {
     dismissedLiveWidgetKeysRef,
     currentBranchRecord,
     currentRootChatJid,
+    workspaceAvailable,
+    workspaceProbeAvailable,
+    setWorkspaceProbeAvailable,
     activeSearchScopeLabel,
     branchLoaderState,
     setBranchLoaderState,

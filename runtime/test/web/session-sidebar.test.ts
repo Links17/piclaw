@@ -70,11 +70,24 @@ describe('session sidebar css', () => {
     path.join(import.meta.dir, '../../web/static/classic/css/session-sidebar.css'),
     'utf8',
   );
+  const editorCss = readFileSync(
+    path.join(import.meta.dir, '../../web/static/classic/css/editor.css'),
+    'utf8',
+  );
 
   test('uses row layout with trailing menu button', () => {
     expect(css).toContain('.session-sidebar-item-row');
     expect(css).toContain('.session-sidebar-item-menu');
     expect(css).not.toContain('.session-sidebar-footer');
+  });
+
+  test('workspace collapsed keeps session rail left-aligned', () => {
+    expect(editorCss).toContain(
+      '.app-shell.workspace-collapsed:has(.session-sidebar, .session-sidebar-collapsed) .container',
+    );
+    expect(editorCss).not.toMatch(
+      /\.app-shell\.workspace-collapsed:not\([^)]+\)\s*\{\s*justify-content:\s*center;/,
+    );
   });
 });
 

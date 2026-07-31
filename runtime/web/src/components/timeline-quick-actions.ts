@@ -62,6 +62,7 @@ function toggleChatOnlyMode(chatOnlyMode) {
 }
 
 function buildWorkspaceCommands(options) {
+    if (!options.workspaceAvailable) return [];
     const commands = [];
     const byId = new Map(WORKSPACE_QUICK_ACTIONS_CATALOG.map((entry) => [entry.id, entry]));
     const add = (id, overrides = {}) => {
@@ -127,6 +128,7 @@ export function TimelineQuickActions({
     activeChatAgents = [],
     currentChatJid = 'web:default',
     workspaceOpen = false,
+    workspaceAvailable = true,
     chatOnlyMode = false,
     onSwitchChat,
     onToggleWorkspace,
@@ -172,11 +174,12 @@ export function TimelineQuickActions({
     }, [currentChatJid]);
 
     const workspaceCommands = useMemo(() => buildWorkspaceCommands({
+        workspaceAvailable,
         workspaceOpen,
         chatOnlyMode,
         onOpenTerminalTab,
         onOpenVncTab,
-    }), [chatOnlyMode, onOpenTerminalTab, onOpenVncTab, workspaceOpen]);
+    }), [workspaceAvailable, chatOnlyMode, onOpenTerminalTab, onOpenVncTab, workspaceOpen]);
 
     const items = useMemo(() => buildTimelineQuickActionItems({
         agents: activeChatAgents,

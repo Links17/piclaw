@@ -47,9 +47,6 @@ type MessageKey =
   | 'compose.scopeAll'
   | 'compose.filterImages'
   | 'compose.filterAttachments'
-  | 'compose.search'
-  | 'compose.closeSearch'
-  | 'compose.shareLocation'
   | 'compose.attachFile'
   | 'compose.queueControls'
   | 'compose.moveUp'
@@ -685,9 +682,6 @@ const EN: Record<MessageKey, string> = {
   'compose.scopeAll': 'All chats',
   'compose.filterImages': 'Images',
   'compose.filterAttachments': 'Attachments',
-  'compose.search': 'Search',
-  'compose.closeSearch': 'Close search',
-  'compose.shareLocation': 'Share location',
   'compose.attachFile': 'Attach file',
   'compose.queueControls': 'Queued follow-up controls',
   'compose.moveUp': 'Move up',
@@ -1316,9 +1310,6 @@ const ZH_CN: Partial<Record<MessageKey, string>> = {
   'compose.scopeAll': '所有聊天',
   'compose.filterImages': '图片',
   'compose.filterAttachments': '附件',
-  'compose.search': '搜索',
-  'compose.closeSearch': '关闭搜索',
-  'compose.shareLocation': '分享位置',
   'compose.attachFile': '附加文件',
   'compose.queueControls': '排队后续消息控制',
   'compose.moveUp': '上移',
@@ -1947,9 +1938,6 @@ const JA: Partial<Record<MessageKey, string>> = {
   'compose.scopeAll': 'すべてのチャット',
   'compose.filterImages': '画像',
   'compose.filterAttachments': '添付',
-  'compose.search': '検索',
-  'compose.closeSearch': '検索を閉じる',
-  'compose.shareLocation': '位置を共有',
   'compose.attachFile': 'ファイルを添付',
   'compose.queueControls': 'キュー済みフォローアップの操作',
   'compose.moveUp': '上に移動',

@@ -15,6 +15,7 @@ import { handleWorkspaceRoutes } from "./workspace/routes.ts";
 import {
   agentResponseSsePayload,
   answerAgentQuestion,
+  abortAgentRunForChat,
   chatJidToSessionId,
   createRootChatSession,
   createTerminalHandoff,
@@ -133,7 +134,7 @@ function sseResponse(sessionId: string, chatJid?: string): Response {
           send(envelope.event, envelope.data);
         }
 
-        if (event.type === "turn_done" || event.type === "turn_failed") {
+        if (event.type === "turn_done" || event.type === "turn_failed" || event.type === "turn_aborted") {
           activeTurnId = null;
         }
       });
@@ -410,6 +411,14 @@ export function startServer(): ReturnType<typeof Bun.serve> {
 
         if (req.method === "POST" && url.pathname === "/terminal/handoff") {
           return respond(json(createTerminalHandoff()));
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/runs/abort") {
+          return withAuth(req, async () => {
+            const chatJid = readRequestChatJid(url);
+            if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
+            return respond(json(await abortAgentRunForChat(chatJid)));
+          });
         }
 
         if (req.method === "POST" && parts[0] === "agent" && parts[1] && parts[2] === "message") {

@@ -25,6 +25,7 @@ import {
     renderResolvedAppShell,
 } from './ui/app-shell-render-router.js';
 import { formatBranchPickerLabel } from './ui/branch-lifecycle.js';
+import { createRevealWorkspacePanelAction } from './ui/workspace-visibility.js';
 import {
     getCurrentAppAssetVersion,
     getRenameBranchFormLock,
@@ -246,6 +247,8 @@ function MainApp({ locationParams, navigate }) {
             appShellRef: surface.appShellRef,
             setIsWebAppMode: surface.setIsWebAppMode,
             workspaceOpen: surface.workspaceOpen,
+            workspaceAvailable: surface.workspaceAvailable,
+            currentBranchSandboxId: surface.currentBranchRecord?.sandbox_id ?? null,
             setWorkspaceOpen: surface.setWorkspaceOpen,
             btwSession: surface.btwSession,
             agents: surface.agents,
@@ -433,7 +436,9 @@ function MainApp({ locationParams, navigate }) {
             notificationsEnabled: surface.notificationsEnabled,
             notificationPermission: surface.notificationPermission,
             workspaceOpen: surface.workspaceOpen,
+            workspaceAvailable: surface.workspaceAvailable,
             setWorkspaceOpen: surface.setWorkspaceOpen,
+            setWorkspaceProbeAvailable: surface.setWorkspaceProbeAvailable,
             userProfile: surface.userProfile,
             agents: surface.agents,
             removingPostIds: surface.removingPostIds,
@@ -510,6 +515,7 @@ function MainApp({ locationParams, navigate }) {
             setRemovingPostIds: surface.setRemovingPostIds,
             setBtwSession: surface.setBtwSession,
             setWorkspaceOpen: surface.setWorkspaceOpen,
+            setWorkspaceProbeAvailable: surface.setWorkspaceProbeAvailable,
             setRenameBranchNameDraft: surface.setRenameBranchNameDraft,
             setIsRenameBranchFormOpen: surface.setIsRenameBranchFormOpen,
             setRenameBranchFormTarget: surface.setRenameBranchFormTarget,
@@ -606,6 +612,10 @@ function MainApp({ locationParams, navigate }) {
             void handleOpenWorkspaceFileBrowserRequest(event as CustomEvent, {
                 currentChatJid,
                 openEditor: pane.editorState.openEditor,
+                revealWorkspacePanel: createRevealWorkspacePanelAction({
+                    setWorkspaceOpen: surface.setWorkspaceOpen,
+                    setWorkspaceProbeAvailable: surface.setWorkspaceProbeAvailable,
+                }),
                 popOutPane: branchPaneActions.handlePopOutPane,
                 showIntentToast: interaction.composeReferenceActions.showIntentToast,
             });
@@ -614,7 +624,7 @@ function MainApp({ locationParams, navigate }) {
         return () => {
             window.removeEventListener('piclaw-extension-ui:request', handleExtensionUiRequest as EventListener);
         };
-    }, [branchPaneActions.handlePopOutPane, currentChatJid, interaction.composeReferenceActions.showIntentToast, pane.editorState.openEditor]);
+    }, [branchPaneActions.handlePopOutPane, currentChatJid, interaction.composeReferenceActions.showIntentToast, pane.editorState.openEditor, surface.setWorkspaceOpen, surface.setWorkspaceProbeAvailable]);
 
     return renderResolvedAppShell(composeRenderedMainAppOptions({
         routeState: {

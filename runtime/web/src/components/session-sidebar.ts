@@ -110,7 +110,6 @@ export function SessionSidebar({
   activeChatAgents = [],
   currentChatJid = null,
   onSwitchChat,
-  onCreateSession,
   onCreateRootSession,
   onRenameSession,
   onDeleteSession,
@@ -121,7 +120,6 @@ export function SessionSidebar({
   activeChatAgents?: any[];
   currentChatJid?: string | null;
   onSwitchChat?: (chatJid: string) => void;
-  onCreateSession?: () => void;
   onCreateRootSession?: () => void;
   onRenameSession?: (chatJid: string) => void;
   onDeleteSession?: (chatJid: string, options?: { confirmed?: boolean }) => Promise<boolean | void>;
@@ -184,11 +182,8 @@ export function SessionSidebar({
       <div class="session-sidebar-header">
         <span class="session-sidebar-title">Sessions</span>
         <div class="session-sidebar-header-actions">
-          ${onCreateSession && html`
-            <button type="button" class="session-sidebar-icon-btn" onClick=${onCreateSession} title="New session">+</button>
-          `}
           ${onCreateRootSession && html`
-            <button type="button" class="session-sidebar-icon-btn" onClick=${onCreateRootSession} title="New root session">⊕</button>
+            <button type="button" class="session-sidebar-icon-btn" onClick=${onCreateRootSession} title="New session" aria-label="New session">+</button>
           `}
           <button type="button" class="session-sidebar-icon-btn" onClick=${onToggleCollapsed} title="Hide sessions" aria-label="Hide sessions">×</button>
         </div>

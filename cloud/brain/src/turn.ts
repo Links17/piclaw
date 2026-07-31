@@ -21,13 +21,16 @@ import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuest
 import { getPendingQuestion } from "./question/state.ts";
 import { buildSkillsPromptSection } from "./skills/registry.ts";
 import { scheduleSessionTitleGeneration } from "./session-title.ts";
+import { stopAllRunningSubagents } from "./subagents/manager.ts";
 import {
   TurnAbortedError,
   assertTurnNotAborted,
   beginTurnAbortScope,
   clearTurnAbortScope,
+  getTurnAbortSignal,
   isTurnAborted,
   signalTurnAbort,
+  throwIfAborted,
 } from "./turn-abort.ts";
 
 export type TurnOutcome = "ran" | "queued" | "answered" | "aborted";
@@ -61,6 +64,15 @@ export async function abortSessionTurn(sessionId: string): Promise<{ ok: boolean
   } else {
     await publishQuestionCleared(sessionId);
   }
+  await stopAllRunningSubagents(sessionId);
+  trackTurnFinished(sessionId);
+  const cursor = await store.getCursor(sessionId);
+  const inflightId = cursor?.inflight_message_id == null ? undefined : Number(cursor.inflight_message_id);
+  await publish(sessionId, {
+    type: "turn_aborted",
+    ...(inflightId != null && Number.isFinite(inflightId) ? { messageId: inflightId } : {}),
+    replica: config.replicaId,
+  });
   return { ok: true, aborted: true };
 }
 
@@ -196,7 +208,12 @@ async function runToolLoop(
 
   for (let round = 0; round < config.maxToolRounds; round += 1) {
     assertTurnNotAborted(sessionId);
-    const result = await streamCompletionRound(messages, onDelta, turnContext.tools);
+    const result = await streamCompletionRound(
+      messages,
+      onDelta,
+      turnContext.tools,
+      { sessionId, signal: getTurnAbortSignal(sessionId) },
+    );
     totalUsage = mergeUsage(totalUsage, result.usage);
 
     if (result.toolCalls.length === 0) {
@@ -351,13 +368,16 @@ async function runTurnLocked(
     });
     trackTurnFinished(sessionId);
   } catch (error) {
+    if (error instanceof TurnAbortedError) {
+      await store.endTurn(sessionId, messageId, counter);
+      trackTurnFinished(sessionId);
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     await store.endTurnWithError(sessionId, messageId, message, counter);
     trackTurnFinished(sessionId);
     await publish(sessionId, { type: "turn_failed", messageId, error: message, replica: config.replicaId });
-    if (!(error instanceof TurnAbortedError)) {
-      throw error;
-    }
+    throw error;
   } finally {
     clearTurnAbortScope(sessionId);
   }

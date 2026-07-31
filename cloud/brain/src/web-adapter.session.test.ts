@@ -12,5 +12,15 @@ describe("session lifecycle helpers", () => {
     const branch = sessionToBranchChat({ id: "web:test", title: UNTITLED_SESSION_TITLE });
     expect(branch.agent_name).toBe("New chat");
     expect(branch.chat_jid).toBe("web:test");
+    expect(branch.sandbox_id).toBeNull();
+  });
+
+  test("sessionToBranchChat exposes sandbox_id when present", () => {
+    const branch = sessionToBranchChat({
+      id: "web:test",
+      title: "Project",
+      sandbox_id: "sbx-abc",
+    });
+    expect(branch.sandbox_id).toBe("sbx-abc");
   });
 });

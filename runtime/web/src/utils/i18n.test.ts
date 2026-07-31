@@ -113,7 +113,7 @@ test('settings dialog keys are translated across peer locales', () => {
 });
 
 test('compose and workspace keys are translated across peer locales', () => {
-  expect(translate('compose.shareLocation', undefined, 'zh-CN')).toBe('分享位置');
+  expect(translate('compose.attachFile', undefined, 'zh-CN')).toBe('附加文件');
   expect(translate('compose.attachFile', undefined, 'ja')).toBe('ファイルを添付');
   expect(translate('workspace.uploadFiles', undefined, 'zh-CN')).toBe('上传文件');
   expect(translate('workspace.deleteSelectedFile', undefined, 'ja')).toBe('選択したファイルを削除');

@@ -10,7 +10,6 @@
 
 import { useState, useCallback, useRef, useEffect } from '../vendor/preact-htm.js';
 import { paneRegistry, tabStore } from '../panes/index.js';
-import { addRecentFile } from './recent-files.js';
 
 function renamePaneOverrides(previous, oldPath, newPath, type) {
     if (!(previous instanceof Map) || previous.size === 0 || !oldPath || !newPath) return previous;
@@ -154,7 +153,6 @@ export function useEditorState({ onTabClosed } = {}) {
         const viewState = options?.viewState && typeof options.viewState === 'object' ? options.viewState : null;
         const diffMode = options?.diffMode === 'saved' ? 'saved' : null;
         tabStore.open(path, label);
-        addRecentFile(path);
         if (viewState) {
             tabStore.saveViewState(path, viewState);
         }

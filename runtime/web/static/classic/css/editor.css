@@ -1362,7 +1362,15 @@ html[data-iphone-standalone-compose-inset="1"] .container {
         margin: 0 auto;
     }
 
-    .app-shell.workspace-collapsed:not(.editor-open):not(.chat-only):not(.pane-popout) {
+    /* Keep session rail + chat pinned left; legacy centering only without session sidebar. */
+    .app-shell.workspace-collapsed:has(.session-sidebar, .session-sidebar-collapsed) .container {
+        flex: 1 1 0;
+        max-width: none;
+        min-width: var(--chat-pane-min-width, 10vw);
+        margin: 0;
+    }
+
+    .app-shell.workspace-collapsed:not(.editor-open):not(.chat-only):not(.pane-popout):not(:has(.session-sidebar, .session-sidebar-collapsed)) {
         justify-content: center;
     }
 
@@ -1370,6 +1378,12 @@ html[data-iphone-standalone-compose-inset="1"] .container {
         flex: 0 1 auto;
         width: min(100%, var(--chat-max-width, 900px));
         margin: 0;
+    }
+
+    .app-shell.workspace-collapsed:not(.editor-open):not(.chat-only):not(.pane-popout):has(.session-sidebar, .session-sidebar-collapsed) > .container {
+        flex: 1 1 0;
+        width: auto;
+        max-width: none;
     }
 
     .container {

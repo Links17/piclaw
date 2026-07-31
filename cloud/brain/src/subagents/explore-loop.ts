@@ -9,6 +9,7 @@ import { type OpenAiMessage, type OpenAiToolCall } from "../llm/messages.ts";
 import { dispatchTool } from "../tools/dispatcher.ts";
 import { getToolDefinitionsForMode } from "../tools/schemas.ts";
 import { pollSteerMessage } from "./channels.ts";
+import { assertTurnNotAborted, getTurnAbortSignal } from "../turn-abort.ts";
 
 const READONLY_TOOLS = getToolDefinitionsForMode("plan");
 
@@ -31,20 +32,24 @@ function mergeUsage(total: LlmUsage, round: LlmUsage): LlmUsage {
 async function streamReadonlyRound(
   messages: OpenAiMessage[],
   onDelta: (text: string) => Promise<void>,
+  sessionId: string,
 ): Promise<Awaited<ReturnType<typeof streamCompletionRound>>> {
+  const signal = getTurnAbortSignal(sessionId);
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const prompt = lastUser && "content" in lastUser ? String(lastUser.content ?? "") : "";
   const isMockPrefix = prompt.startsWith("mock-coding:") || prompt.startsWith("mock-tools:");
   if (isMockPrefix) {
-    return streamCompletionRound(messages, onDelta);
+    return streamCompletionRound(messages, onDelta, READONLY_TOOLS, { sessionId, signal });
   }
   if (config.openaiBaseUrl && config.openaiApiKey) {
+    assertTurnNotAborted(sessionId);
     const response = await fetch(`${config.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.openaiApiKey}`,
       },
+      signal,
       body: JSON.stringify({
         model: config.openaiModel,
         messages,
@@ -114,6 +119,7 @@ export async function runExploreLoop(
   let summary = "";
 
   for (let round = 0; round < maxTurns; round += 1) {
+    assertTurnNotAborted(sessionId);
     const steer = await pollSteerMessage(runId);
     if (steer) {
       messages.push({ role: "user", content: `[steer] ${steer}` });
@@ -128,7 +134,7 @@ export async function runExploreLoop(
     const result = await streamReadonlyRound(messages, async (delta) => {
       summary += delta;
       await publish(sessionId, { type: "subagent_delta", runId, text: delta, replica: config.replicaId });
-    });
+    }, sessionId);
     totalUsage = mergeUsage(totalUsage, result.usage);
 
     if (result.toolCalls.length === 0) {

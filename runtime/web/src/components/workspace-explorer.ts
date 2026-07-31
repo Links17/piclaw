@@ -34,6 +34,7 @@ import {
     readWorkspaceClientSettings,
 } from '../ui/workspace-settings.js';
 import { hasSpecializedWorkspaceTab, shouldAutoOpenWorkspaceFile } from '../ui/workspace-auto-open.js';
+import { applyTruncatedWorkspaceReloads } from '../ui/workspace-explorer-reload.js';
 import {
     MAX_PWA_DISPLAY_SCALE_PERCENT,
     MIN_PWA_DISPLAY_SCALE_PERCENT,
@@ -43,7 +44,6 @@ import {
     persistPwaDisplayScalePercent,
     readStoredPwaDisplayScalePercent,
 } from '../ui/pwa-display-scale.js';
-import { getRecentFiles } from '../ui/recent-files.js';
 
 const isHiddenNode = (node) => {
     if (!node || !node.name) return false;
@@ -1341,16 +1341,13 @@ export function WorkspaceExplorer({
                 return next;
             });
 
-            for (const update of updates) {
-                if (!update?.truncated) continue;
-                const path = update.path || '.';
-                if (path === '.') {
+            applyTruncatedWorkspaceReloads(updates, {
+                loadTree: () => loadTreeFnRef.current?.(),
+                loadSubtree: (path) => loadSubtreeRef.current?.(path),
+                clearRootSignature: () => {
                     lastSigRef.current = '';
-                    loadTreeFnRef.current?.();
-                } else {
-                    loadSubtreeRef.current?.(path);
-                }
-            }
+                },
+            });
 
             const selected = selectedPathRef.current;
             const shouldRefreshStarburst = Boolean(selected) && updates.some((update) => {
@@ -2711,20 +2708,6 @@ export function WorkspaceExplorer({
                 >
                     <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuCreateFile} disabled=${uploading}>${t('workspace.newFile')}</button>
                     <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuUploadFiles} disabled=${uploading}>${t('workspace.uploadFiles')}</button>
-                    ${(() => {
-                        const recent = getRecentFiles();
-                        if (recent.length === 0) return null;
-                        return html`
-                            <div class="workspace-menu-separator"></div>
-                            <div class="workspace-menu-submenu-label">${t('menu.openRecent')}</div>
-                            ${recent.map((path) => {
-                                const label = path.split('/').pop() || path;
-                                return html`
-                                    <button class="workspace-menu-item workspace-menu-recent-item" role="menuitem" title=${path} onClick=${() => runMenuAction(() => onOpenEditorRef.current?.(path))}>${label}</button>
-                                `;
-                            })}
-                        `;
-                    })()}
                     <div class="workspace-menu-separator"></div>
                     <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuRefresh}>${t('menu.refreshTree')}</button>
                     <button class="workspace-menu-item" role="menuitem" onClick=${() => runMenuAction(() => handleWorkspaceReindex())} disabled=${workspaceReindexing}>
@@ -2789,8 +2772,6 @@ export function WorkspaceExplorer({
                     ${selectedCanDelete && html`
                         <button class="workspace-menu-item danger" role="menuitem" onClick=${handleMenuDelete}>${t('workspace.deleteSelectedFile')}</button>
                     `}
-                    <div class="workspace-menu-separator"></div>
-                    <button class="workspace-menu-item" role="menuitem" onClick=${() => { setHeaderMenuOpen(false); window.dispatchEvent(new CustomEvent('piclaw:open-settings', { detail: { section: 'workspace' } })); }}>${t('menu.settings')}</button>
                     <div class="workspace-menu-separator"></div>
                     <div class="workspace-menu-language" role="none">
                         <${LanguageSwitcher} variant="menu" />

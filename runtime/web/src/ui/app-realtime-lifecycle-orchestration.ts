@@ -44,6 +44,7 @@ interface UseRealtimeLifecycleOrchestrationOptions {
   loadMoreRef: RefBox<((options?: Record<string, unknown>) => void) | null>;
   lastAgentResponseRef: RefBox<any>;
   wasAgentActiveRef: RefBox<boolean>;
+  isAgentRunningRef: RefBox<boolean>;
   setActiveTurn: (turnId: string | null | undefined) => void;
   applyLiveGeneratedWidgetUpdate: (data: any, fallbackStatus?: string) => void;
   setFloatingWidget: (next: any) => void;
@@ -80,6 +81,7 @@ interface UseRealtimeLifecycleOrchestrationOptions {
   setPosts: (next: any) => void;
   preserveTimelineScrollTop: (mutate: () => void) => void;
   openEditor?: (path: string, options?: { label?: string }) => void;
+  revealWorkspacePanel?: () => void;
 
   // test-api + reset
   finalizeStalledResponse: () => void;
@@ -122,6 +124,7 @@ export function useRealtimeLifecycleOrchestration(options: UseRealtimeLifecycleO
     loadMoreRef,
     lastAgentResponseRef,
     wasAgentActiveRef,
+    isAgentRunningRef,
     setActiveTurn,
     applyLiveGeneratedWidgetUpdate,
     setFloatingWidget,
@@ -158,6 +161,7 @@ export function useRealtimeLifecycleOrchestration(options: UseRealtimeLifecycleO
     setPosts,
     preserveTimelineScrollTop,
     openEditor,
+    revealWorkspacePanel,
     finalizeStalledResponse,
 
     connectionStatus,
@@ -191,6 +195,7 @@ export function useRealtimeLifecycleOrchestration(options: UseRealtimeLifecycleO
       loadMoreRef,
       lastAgentResponseRef,
       wasAgentActiveRef,
+      isAgentRunningRef,
       setActiveTurn,
       applyLiveGeneratedWidgetUpdate,
       setFloatingWidget,
@@ -227,6 +232,7 @@ export function useRealtimeLifecycleOrchestration(options: UseRealtimeLifecycleO
       setPosts,
       preserveTimelineScrollTop,
       openEditor,
+      revealWorkspacePanel,
     });
   }, [
     activeChatJidRef,
@@ -246,6 +252,7 @@ export function useRealtimeLifecycleOrchestration(options: UseRealtimeLifecycleO
     getAgentStatus,
     handleUiVersionDrift,
     hasMoreRef,
+    isAgentRunningRef,
     lastAgentResponseRef,
     loadMoreRef,
     noteAgentActivity,
@@ -288,6 +295,7 @@ export function useRealtimeLifecycleOrchestration(options: UseRealtimeLifecycleO
     viewStateRef,
     wasAgentActiveRef,
     openEditor,
+    revealWorkspacePanel,
   ]);
 
   useEffect(() => {

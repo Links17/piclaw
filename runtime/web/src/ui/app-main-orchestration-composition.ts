@@ -1,6 +1,8 @@
 import { useTimelineViewActions } from './app-timeline-view-actions.js';
 import { useMainAppLifecycleComposition } from './app-main-lifecycle-composition.js';
 import { useMainAppActionComposition } from './app-main-action-composition.js';
+import { clearCloudAgentQuestion } from './use-cloud-agent-question.js';
+import { createRevealWorkspacePanelAction } from './workspace-visibility.js';
 
 interface UseMainAppOrchestrationCompositionOptions {
   routeState: {
@@ -35,6 +37,7 @@ interface UseMainAppOrchestrationCompositionOptions {
     notificationsEnabled: boolean;
     notificationPermission: string;
     workspaceOpen: boolean;
+    workspaceAvailable?: boolean;
     setWorkspaceOpen: (next: boolean | ((prev: boolean) => boolean)) => void;
     userProfile: any;
     agents: Record<string, unknown>;
@@ -190,6 +193,11 @@ export function composeMainAppLifecycleCompositionOptions(options: UseMainAppOrc
     showIntentToast,
     removeStalledPost: interaction.recoveryCallbacks.removeStalledPost,
     preserveTimelineScrollTop: timeline.preserveTimelineScrollTop,
+    openEditor: services.openEditor,
+    revealWorkspacePanel: createRevealWorkspacePanelAction({
+      setWorkspaceOpen: setters.setWorkspaceOpen,
+      setWorkspaceProbeAvailable: setters.setWorkspaceProbeAvailable,
+    }),
     // Wrap finalizeStalledResponse to also clear transient extension working
     // state (working message + indicator) which the stall finalizer doesn't
     // reach through the normal SSE done/error path.
@@ -264,6 +272,13 @@ export function useMainAppOrchestrationComposition(options: UseMainAppOrchestrat
     refreshCurrentChatBranches: agentStatusLifecycleBundle.chatRefreshLifecycle.refreshCurrentChatBranches,
     refreshContextUsage: agentStatusLifecycleBundle.agentStatusLifecycle.refreshContextUsage,
     refreshAutoresearchStatus: agentStatusLifecycleBundle.agentStatusLifecycle.refreshAutoresearchStatus,
+    clearAgentRunState: interaction.clearAgentRunState,
+    setAgentDraft: setters.setAgentDraft,
+    setAgentStatus: setters.setAgentStatus,
+    setAgentPlan: setters.setAgentPlan,
+    setAgentThought: setters.setAgentThought,
+    clearCloudAgentQuestion,
+    wasAgentActiveRef: refs.wasAgentActiveRef,
     currentRootChatJid: routeState.currentRootChatJid,
     isComposeBoxAgentActive,
     setPendingExtensionPanelActions: setters.setPendingExtensionPanelActions,
@@ -294,6 +309,7 @@ export function useMainAppOrchestrationComposition(options: UseMainAppOrchestrat
     chatOnlyMode: routeState.chatOnlyMode,
     navigate: routeState.navigate,
     setWorkspaceOpen: shellState.setWorkspaceOpen,
+    workspaceAvailable: shellState.workspaceAvailable,
     currentBranchRecord: shellState.currentBranchRecord,
     renameBranchInFlightRef: refs.renameBranchInFlightRef,
     renameBranchLockUntilRef: refs.renameBranchLockUntilRef,
