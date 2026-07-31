@@ -1,7 +1,7 @@
 const NOTIFICATION_SOURCE_LABELS_ENABLED = "__PICLAW_NOTIFICATION_SOURCE_LABELS_FLAG__" === "1";
 
 function formatNotificationTitle(title, sourceLabel) {
-  const normalizedTitle = String(title || '').trim() || 'PiClaw';
+  const normalizedTitle = String(title || '').trim() || 'Seeed';
   const normalizedSource = NOTIFICATION_SOURCE_LABELS_ENABLED ? String(sourceLabel || '').trim() : '';
   return normalizedSource ? `${normalizedTitle} [${normalizedSource}]` : normalizedTitle;
 }
@@ -54,7 +54,7 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('push', (event) => {
   const defaultNotification = {
-    title: 'PiClaw',
+    title: 'Seeed',
     body: 'You have a new update.',
     tag: 'piclaw',
     url: '/',

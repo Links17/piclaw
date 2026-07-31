@@ -97,17 +97,17 @@ test('renameCurrentBranch validates, renames, and updates shared locks', async (
   expect(formLock.cooldownUntil).toBe(1050);
 });
 
-test('pruneCurrentBranch archives non-default root sessions, blocks the default root, and navigates on success', async () => {
+test('pruneCurrentBranch archives root sessions including legacy default and navigates on success', async () => {
   const toasts: Array<[string, string, string, number]> = [];
   const navigateCalls: string[] = [];
 
-  const rejected = await pruneCurrentBranch({
+  const archivedDefault = await pruneCurrentBranch({
     hasWindow: true,
     currentChatJid: 'web:default',
     currentBranchRecord: { chat_jid: 'web:default', root_chat_jid: 'web:default', agent_name: 'default' },
     currentChatBranches: [],
-    activeChatAgents: [],
-    pruneChatBranch: async () => {},
+    activeChatAgents: [{ chat_jid: 'web:kept', root_chat_jid: 'web:kept', agent_name: 'kept' }],
+    pruneChatBranch: async (chatJid: string) => { expect(chatJid).toBe('web:default'); },
     refreshActiveChatAgents: async () => {},
     refreshCurrentChatBranches: async () => {},
     showIntentToast: (title: string, message: string, kind: string, timeout: number) => {
@@ -118,10 +118,12 @@ test('pruneCurrentBranch archives non-default root sessions, blocks the default 
     navigate: (url: string) => navigateCalls.push(url),
     confirm: () => true,
   });
-  expect(rejected).toBe(false);
-  expect(toasts[0]).toEqual(['Cannot archive session', 'The default chat session cannot be archived.', 'warning', 4000]);
+  expect(archivedDefault).toBe(true);
+  expect(toasts).toContainEqual(['Session archived', '@default — web:default has been archived.', 'info', 3000]);
+  expect(navigateCalls[navigateCalls.length - 1]).toContain('chat_jid=web%3Akept');
 
   toasts.length = 0;
+  navigateCalls.length = 0;
   const archivedRoot = await pruneCurrentBranch({
     hasWindow: true,
     currentChatJid: 'web:root',

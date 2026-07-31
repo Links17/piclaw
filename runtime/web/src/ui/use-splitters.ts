@@ -46,12 +46,12 @@ export function useSplitters({ appShellRef, sidebarWidthRef, editorWidthRef, doc
     let lastX = startX;
     const onMove = (me) => {
       lastX = me.clientX;
-      const w = clampSidebarWidth(startW + (me.clientX - startX), getViewportWidth(), editorWidthRef?.current || 0);
+      const w = clampSidebarWidth(startW + (startX - me.clientX), getViewportWidth(), editorWidthRef?.current || 0);
       shell.style.setProperty('--sidebar-width', `${w}px`);
       sidebarWidthRef.current = w;
     };
     const onUp = () => {
-      const w = clampSidebarWidth(startW + (lastX - startX), getViewportWidth(), editorWidthRef?.current || 0);
+      const w = clampSidebarWidth(startW + (startX - lastX), getViewportWidth(), editorWidthRef?.current || 0);
       sidebarWidthRef.current = w;
       splitter.classList.remove('dragging');
       shell.classList.remove('sidebar-resizing');
@@ -82,7 +82,7 @@ export function useSplitters({ appShellRef, sidebarWidthRef, editorWidthRef, doc
       const t = te.touches[0];
       if (!t) return;
       te.preventDefault();
-      const w = clampSidebarWidth(startW + (t.clientX - startX), getViewportWidth(), editorWidthRef?.current || 0);
+      const w = clampSidebarWidth(startW + (startX - t.clientX), getViewportWidth(), editorWidthRef?.current || 0);
       shell.style.setProperty('--sidebar-width', `${w}px`);
       sidebarWidthRef.current = w;
     };

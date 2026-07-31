@@ -2,7 +2,13 @@ import * as store from "@piclaw-cloud/store";
 import { config } from "../config.ts";
 import { QuotaExceededError } from "../quota.ts";
 import { cubeFetch } from "./auth.ts";
-import { connectSandbox, createSandbox, SandboxUnavailableError, type Sandbox } from "./client.ts";
+import {
+  connectSandbox,
+  createSandbox,
+  createWorkspaceVolume,
+  SandboxUnavailableError,
+  type Sandbox,
+} from "./client.ts";
 
 const live = new Map<string, Sandbox>();
 
@@ -29,13 +35,44 @@ async function assertSandboxQuota(sessionId: string): Promise<void> {
   }
 }
 
+async function ensureWorkspaceVolume(sessionId: string): Promise<string | undefined> {
+  const session = await store.getSession(sessionId);
+  if (!session) throw new Error(`unknown session ${sessionId}`);
+
+  const existing = typeof session.workspace_volume_id === "string"
+    ? session.workspace_volume_id.trim()
+    : "";
+  if (existing) return existing;
+
+  try {
+    const volumeId = await createWorkspaceVolume(sessionId);
+    await store.setWorkspaceVolumeId(sessionId, volumeId);
+    return volumeId;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[sandbox] workspace volume unavailable for ${sessionId}: ${detail}`);
+    return undefined;
+  }
+}
+
 async function clearStaleSandboxBinding(sessionId: string, staleSandboxId: string): Promise<void> {
   console.warn(`[sandbox] stale sandbox_id cleared for ${sessionId}: ${staleSandboxId.slice(0, 12)}…`);
   dropLiveSandbox(sessionId);
   await store.clearSandboxId(sessionId);
 }
 
-async function connectOrRecreate(sessionId: string, sandboxId: string): Promise<Sandbox> {
+async function recreateSandboxWithVolume(sessionId: string, volumeId?: string): Promise<Sandbox> {
+  const sbx = await createSandbox({ volumeId: volumeId ?? null });
+  await store.setSandboxId(sessionId, sbx.sandboxId);
+  live.set(sessionId, sbx);
+  return sbx;
+}
+
+async function connectOrRecreate(
+  sessionId: string,
+  sandboxId: string,
+  volumeId?: string,
+): Promise<Sandbox> {
   try {
     return await connectSandbox(sandboxId);
   } catch (error) {
@@ -43,11 +80,16 @@ async function connectOrRecreate(sessionId: string, sandboxId: string): Promise<
       error instanceof SandboxUnavailableError
       && (error.code === "not_found" || error.code === "resume_failed")
     ) {
+      const runningSubagents = await store.countRunningSubagents(sessionId);
+      if (runningSubagents > 0) {
+        throw new SandboxUnavailableError(
+          sandboxId,
+          "platform_error",
+          "sandbox unavailable while subagents are running; retry after they finish",
+        );
+      }
       await clearStaleSandboxBinding(sessionId, sandboxId);
-      const sbx = await createSandbox();
-      await store.setSandboxId(sessionId, sbx.sandboxId);
-      live.set(sessionId, sbx);
-      return sbx;
+      return recreateSandboxWithVolume(sessionId, volumeId);
     }
     throw error;
   }
@@ -65,9 +107,11 @@ export async function ensureSandbox(sessionId: string): Promise<Sandbox> {
   const session = await store.getSession(sessionId);
   if (!session) throw new Error(`unknown session ${sessionId}`);
 
+  const volumeId = await ensureWorkspaceVolume(sessionId);
+
   const sbx = session.sandbox_id
-    ? await connectOrRecreate(sessionId, session.sandbox_id)
-    : await createSandbox();
+    ? await connectOrRecreate(sessionId, session.sandbox_id, volumeId)
+    : await recreateSandboxWithVolume(sessionId, volumeId);
 
   if (!session.sandbox_id) {
     await store.setSandboxId(sessionId, sbx.sandboxId);

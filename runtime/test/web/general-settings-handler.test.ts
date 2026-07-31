@@ -77,7 +77,7 @@ test('saveGeneralSettings persists and applies general settings immediately', as
       user_avatar_background: null,
     });
 
-    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.piclaw', 'config.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(workspace.workspace, '.seeed', 'config.json'), 'utf8'));
     expect(persisted).toMatchObject({
       domains: {
         identity: {
@@ -143,7 +143,7 @@ test('getGeneralSettingsData exposes recovery defaults without writing configura
     const handler = await importFresh<typeof import('../../src/channels/web/handlers/general-settings.js')>(
       '../src/channels/web/handlers/general-settings.js',
     );
-    const configPath = join(workspace.workspace, '.piclaw', 'config.json');
+    const configPath = join(workspace.workspace, '.seeed', 'config.json');
     expect(existsSync(configPath)).toBe(false);
     expect(handler.getGeneralSettingsData()).toMatchObject({
       automaticRecoveryEnabled: true,
@@ -159,7 +159,7 @@ test('saveGeneralSettings rejects invalid recovery bounds without persisting the
     const handler = await importFresh<typeof import('../../src/channels/web/handlers/general-settings.js')>(
       '../src/channels/web/handlers/general-settings.js',
     );
-    const configPath = join(workspace.workspace, '.piclaw', 'config.json');
+    const configPath = join(workspace.workspace, '.seeed', 'config.json');
     await expect(handler.saveGeneralSettings({ automaticRecoveryMaxAttempts: -1 }))
       .rejects.toThrow('non-negative integer');
     await expect(handler.saveGeneralSettings({ automaticRecoveryMaxAttempts: 1.5 }))

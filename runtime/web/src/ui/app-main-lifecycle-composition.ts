@@ -279,6 +279,7 @@ interface ComposeRealtimeLifecycleOptionsInput {
   loadMoreRef: RefBox<((options?: Record<string, unknown>) => void) | null>;
   lastAgentResponseRef: RefBox<any>;
   wasAgentActiveRef: RefBox<boolean>;
+  isAgentRunningRef: RefBox<boolean>;
   setActiveTurn: (turnId: string | null | undefined) => void;
   applyLiveGeneratedWidgetUpdate: (data: any, fallbackStatus?: string) => void;
   setFloatingWidget: StateSetter<any>;
@@ -314,6 +315,8 @@ interface ComposeRealtimeLifecycleOptionsInput {
   removeStalledPost: () => void;
   setPosts: StateSetter<any[] | null>;
   preserveTimelineScrollTop: (mutate: () => void) => void;
+  openEditor?: (path: string, options?: { label?: string }) => void;
+  revealWorkspacePanel?: () => void;
   finalizeStalledResponse: () => void;
   connectionStatus: string;
   agentStatus: any;
@@ -351,6 +354,7 @@ export function composeRealtimeLifecycleOptions(input: ComposeRealtimeLifecycleO
     loadMoreRef: input.loadMoreRef,
     lastAgentResponseRef: input.lastAgentResponseRef,
     wasAgentActiveRef: input.wasAgentActiveRef,
+    isAgentRunningRef: input.isAgentRunningRef,
     setActiveTurn: input.setActiveTurn,
     applyLiveGeneratedWidgetUpdate: input.applyLiveGeneratedWidgetUpdate,
     setFloatingWidget: input.setFloatingWidget,
@@ -386,6 +390,8 @@ export function composeRealtimeLifecycleOptions(input: ComposeRealtimeLifecycleO
     removeStalledPost: input.removeStalledPost,
     setPosts: input.setPosts,
     preserveTimelineScrollTop: input.preserveTimelineScrollTop,
+    openEditor: input.openEditor,
+    revealWorkspacePanel: input.revealWorkspacePanel,
     finalizeStalledResponse: input.finalizeStalledResponse,
     connectionStatus: input.connectionStatus,
     agentStatus: input.agentStatus,

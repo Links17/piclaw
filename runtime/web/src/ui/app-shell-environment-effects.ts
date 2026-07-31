@@ -4,6 +4,8 @@ import {
   DESKTOP_WORKSPACE_LAYOUT_MEDIA_QUERY,
   persistWorkspaceOpenPreference,
   resolveWorkspaceLayoutBucket,
+  shouldAutoRevealWorkspaceForSandboxBinding,
+  shouldAutoRevealWorkspaceOnAvailabilityChange,
 } from './workspace-visibility.js';
 import { initTheme, reapplyStoredTheme } from './theme.js';
 import { useTimestampRefresh } from './app-helpers.js';
@@ -26,6 +28,8 @@ export interface UseAppShellEnvironmentEffectsOptions {
   appShellRef: RefBox<HTMLElement | null>;
   setIsWebAppMode: (next: boolean) => void;
   workspaceOpen: boolean;
+  workspaceAvailable?: boolean;
+  currentBranchSandboxId?: string | null;
   setWorkspaceOpen: (next: boolean) => void;
   btwSession: any;
   agents: Record<string, unknown> | null | undefined;
@@ -133,6 +137,8 @@ export function useAppShellEnvironmentEffects(options: UseAppShellEnvironmentEff
     appShellRef,
     setIsWebAppMode,
     workspaceOpen,
+    workspaceAvailable = true,
+    currentBranchSandboxId = null,
     setWorkspaceOpen,
     btwSession,
     agents,
@@ -176,12 +182,37 @@ export function useAppShellEnvironmentEffects(options: UseAppShellEnvironmentEff
   }, [appShellRef]);
 
   const workspaceLayoutBucketRef = useRef(resolveWorkspaceLayoutBucket());
+  const previousBranchSandboxIdRef = useRef<string | null>(null);
+  const previousWorkspaceAvailableRef = useRef(workspaceAvailable);
+
+  useEffect(() => {
+    const previousSandboxId = previousBranchSandboxIdRef.current;
+    const previousAvailable = previousWorkspaceAvailableRef.current;
+
+    if (shouldAutoRevealWorkspaceForSandboxBinding(previousSandboxId, currentBranchSandboxId)) {
+      setWorkspaceOpen(true);
+    }
+    if (shouldAutoRevealWorkspaceOnAvailabilityChange(previousAvailable, workspaceAvailable)) {
+      setWorkspaceOpen(true);
+    }
+
+    previousBranchSandboxIdRef.current = typeof currentBranchSandboxId === 'string'
+      ? currentBranchSandboxId.trim()
+      : '';
+    previousWorkspaceAvailableRef.current = workspaceAvailable;
+  }, [currentBranchSandboxId, workspaceAvailable, setWorkspaceOpen]);
 
   useEffect(() => {
     persistWorkspaceOpenPreference(workspaceOpen, {
       bucket: workspaceLayoutBucketRef.current,
     });
   }, [workspaceOpen]);
+
+  useEffect(() => {
+    if (!workspaceAvailable && workspaceOpen) {
+      setWorkspaceOpen(false);
+    }
+  }, [workspaceAvailable, workspaceOpen, setWorkspaceOpen]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return undefined;
@@ -230,7 +261,7 @@ export function useAppShellEnvironmentEffects(options: UseAppShellEnvironmentEff
   const applyBranding = useCallback((name: string, avatarUrl: string | null, avatarVersion: string | null = null) => {
     if (typeof document === 'undefined') return;
 
-    const title = (name || '').trim() || 'PiClaw';
+    const title = (name || '').trim() || 'Seeed';
     if (brandingRef.current.title !== title) {
       if (shouldApplyBrandingDocumentTitle({
         panePopoutMode,

@@ -47,7 +47,7 @@ export function getPanePopoutDocumentTitle(
   panePopoutPath: string | null | undefined,
 ): string {
   const title = getPanePopoutTitle(panePopoutLabel, activePaneTab, panePopoutPath);
-  return `${title} · PiClaw`;
+  return `${title} · Seeed`;
 }
 
 /** Determine whether the pane-popout chrome needs menu actions. */

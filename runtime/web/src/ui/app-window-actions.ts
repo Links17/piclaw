@@ -90,9 +90,8 @@ export async function createSessionFromCompose(options: CreateSessionFromCompose
 }
 
 export interface CreateRootSessionFromComposeOptions {
-  rootName: string;
   chatOnlyMode?: boolean;
-  createRootChatSession?: (agentName: string) => Promise<{ branch?: BranchRecord | null }>;
+  createRootChatSession?: () => Promise<{ branch?: BranchRecord | null }>;
   refreshActiveChatAgents?: () => Promise<unknown> | unknown;
   refreshCurrentChatBranches?: () => Promise<unknown> | unknown;
   showIntentToast?: ToastFn;
@@ -103,7 +102,6 @@ export interface CreateRootSessionFromComposeOptions {
 /** Create a clean root session family and navigate into it. */
 export async function createRootSessionFromCompose(options: CreateRootSessionFromComposeOptions): Promise<boolean> {
   const {
-    rootName,
     chatOnlyMode,
     createRootChatSession,
     refreshActiveChatAgents,
@@ -113,14 +111,11 @@ export async function createRootSessionFromCompose(options: CreateRootSessionFro
     baseHref,
   } = options;
 
-  const trimmed = String(rootName || '').trim();
-  if (!trimmed) return false;
-
   try {
     const createRoot = typeof createRootChatSession === 'function'
       ? createRootChatSession
       : defaultCreateRootChatSession;
-    const response = await createRoot(trimmed);
+    const response = await createRoot();
     const branch = response?.branch;
     const nextChatJid = typeof branch?.chat_jid === 'string' && branch.chat_jid.trim() ? branch.chat_jid.trim() : null;
     if (!nextChatJid) {
@@ -133,12 +128,12 @@ export async function createRootSessionFromCompose(options: CreateRootSessionFro
     ]);
 
     const label = branch?.agent_name ? `@${branch.agent_name}` : nextChatJid;
-    showIntentToast?.('Root session created', `Switched to ${label}.`, 'info', 2500);
+    showIntentToast?.('New session created', `Switched to ${label}.`, 'info', 2500);
     const url = buildChatWindowUrl(baseHref, nextChatJid, { chatOnly: chatOnlyMode });
     navigate?.(url);
     return true;
   } catch (error) {
-    showIntentToast?.('Could not create root session', describeBranchOpenError(error), 'warning', 5000);
+    showIntentToast?.('Could not create session', describeBranchOpenError(error), 'warning', 5000);
     return false;
   }
 }

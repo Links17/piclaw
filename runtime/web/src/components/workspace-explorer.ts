@@ -1,4 +1,5 @@
-import { html, useCallback, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
+import { html, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
+import { BodyPortal } from './body-portal.js';
 import { renderDisclosureTriangle } from '../ui/disclosure-triangle.js';
 import { useTranslation } from '../utils/i18n.js';
 import { LanguageSwitcher } from './language-switcher.js';
@@ -33,6 +34,7 @@ import {
     readWorkspaceClientSettings,
 } from '../ui/workspace-settings.js';
 import { hasSpecializedWorkspaceTab, shouldAutoOpenWorkspaceFile } from '../ui/workspace-auto-open.js';
+import { applyTruncatedWorkspaceReloads } from '../ui/workspace-explorer-reload.js';
 import {
     MAX_PWA_DISPLAY_SCALE_PERCENT,
     MIN_PWA_DISPLAY_SCALE_PERCENT,
@@ -42,7 +44,6 @@ import {
     persistPwaDisplayScalePercent,
     readStoredPwaDisplayScalePercent,
 } from '../ui/pwa-display-scale.js';
-import { getRecentFiles } from '../ui/recent-files.js';
 
 const isHiddenNode = (node) => {
     if (!node || !node.name) return false;
@@ -681,6 +682,7 @@ export function WorkspaceExplorer({
     const [pwaDisplayScalePercent, setPwaDisplayScalePercent] = useState(() => readStoredPwaDisplayScalePercent());
     const [pwaDisplayScaleDraft, setPwaDisplayScaleDraft] = useState(() => String(readStoredPwaDisplayScalePercent()));
     const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+    const [headerMenuPosition, setHeaderMenuPosition] = useState({ top: 0, left: 0 });
     const refreshIntervalMs = Math.max(15000, (Number(workspaceClientSettings?.refreshIntervalSec) || 60) * 1000);
     const folderPreviewDepth = Math.max(0, Number(workspaceClientSettings?.folderPreviewDepth) || 0);
 
@@ -1339,16 +1341,13 @@ export function WorkspaceExplorer({
                 return next;
             });
 
-            for (const update of updates) {
-                if (!update?.truncated) continue;
-                const path = update.path || '.';
-                if (path === '.') {
+            applyTruncatedWorkspaceReloads(updates, {
+                loadTree: () => loadTreeFnRef.current?.(),
+                loadSubtree: (path) => loadSubtreeRef.current?.(path),
+                clearRootSignature: () => {
                     lastSigRef.current = '';
-                    loadTreeFnRef.current?.();
-                } else {
-                    loadSubtreeRef.current?.(path);
-                }
-            }
+                },
+            });
 
             const selected = selectedPathRef.current;
             const shouldRefreshStarburst = Boolean(selected) && updates.some((update) => {
@@ -1554,6 +1553,38 @@ export function WorkspaceExplorer({
     const showWorkspaceIndexIndicator = workspaceIndexState !== 'ready';
 
     const closeHeaderMenu = useCallback(() => setHeaderMenuOpen(false), []);
+
+    const updateHeaderMenuPosition = useCallback(() => {
+        const button = headerMenuButtonRef.current;
+        if (!button) return;
+        const rect = button.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || 0;
+        const viewportHeight = window.innerHeight || 0;
+        const menuWidth = 280;
+        const menuMaxHeight = Math.min(420, viewportHeight - 16);
+        let left = rect.left;
+        let top = rect.bottom + 6;
+        if (left + menuWidth > viewportWidth - 8) {
+            left = Math.max(8, viewportWidth - menuWidth - 8);
+        }
+        if (top + menuMaxHeight > viewportHeight - 8) {
+            const flippedTop = rect.top - 6 - menuMaxHeight;
+            top = flippedTop >= 8 ? flippedTop : Math.max(8, viewportHeight - menuMaxHeight - 8);
+        }
+        setHeaderMenuPosition({ top, left });
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!headerMenuOpen) return undefined;
+        updateHeaderMenuPosition();
+        const handleViewportChange = () => updateHeaderMenuPosition();
+        window.addEventListener('resize', handleViewportChange);
+        window.addEventListener('scroll', handleViewportChange, true);
+        return () => {
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('scroll', handleViewportChange, true);
+        };
+    }, [headerMenuOpen, updateHeaderMenuPosition]);
 
     const handlePwaDisplayScaleInput = useCallback((event) => {
         setPwaDisplayScaleDraft(String(event?.currentTarget?.value ?? ''));
@@ -2402,96 +2433,6 @@ export function WorkspaceExplorer({
                                 <line x1="4" y1="17" x2="20" y2="17" />
                             </svg>
                         </button>
-                        ${headerMenuOpen && html`
-                            <div class="workspace-menu-dropdown" ref=${headerMenuRef} role="menu" aria-label="Workspace options">
-                                <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuCreateFile} disabled=${uploading}>${t('workspace.newFile')}</button>
-                                <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuUploadFiles} disabled=${uploading}>${t('workspace.uploadFiles')}</button>
-                                ${(() => {
-                                    const recent = getRecentFiles();
-                                    if (recent.length === 0) return null;
-                                    return html`
-                                        <div class="workspace-menu-separator"></div>
-                                        <div class="workspace-menu-submenu-label">${t('menu.openRecent')}</div>
-                                        ${recent.map((path) => {
-                                            const label = path.split('/').pop() || path;
-                                            return html`
-                                                <button class="workspace-menu-item workspace-menu-recent-item" role="menuitem" title=${path} onClick=${() => runMenuAction(() => onOpenEditorRef.current?.(path))}>${label}</button>
-                                            `;
-                                        })}
-                                    `;
-                                })()}
-                                <div class="workspace-menu-separator"></div>
-                                <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuRefresh}>${t('menu.refreshTree')}</button>
-                                <button class="workspace-menu-item" role="menuitem" onClick=${() => runMenuAction(() => handleWorkspaceReindex())} disabled=${workspaceReindexing}>
-                                    ${workspaceReindexing ? t('workspace.reindexing') : t('menu.reindex')}
-                                </button>
-                                <button class=${`workspace-menu-item${showHidden ? ' active' : ''}`} role="menuitem" onClick=${handleMenuToggleHidden}>
-                                    ${showHidden ? t('menu.hideHidden') : t('menu.showHidden')}
-                                </button>
-                                <div class="workspace-menu-scale-control" role="none">
-                                    <label for="workspace-pwa-display-scale">${t('menu.scale')}</label>
-                                    <div class="workspace-menu-scale-input-wrap">
-                                        <input
-                                            id="workspace-pwa-display-scale"
-                                            class="workspace-menu-scale-input"
-                                            type="number"
-                                            inputmode="numeric"
-                                            min=${MIN_PWA_DISPLAY_SCALE_PERCENT}
-                                            max=${MAX_PWA_DISPLAY_SCALE_PERCENT}
-                                            step=${PWA_DISPLAY_SCALE_STEP_PERCENT}
-                                            value=${pwaDisplayScaleDraft}
-                                            aria-label=${`PWA display scale percentage, currently ${pwaDisplayScalePercent}%`}
-                                            onClick=${(event) => event.stopPropagation()}
-                                            onInput=${handlePwaDisplayScaleInput}
-                                            onChange=${handlePwaDisplayScaleCommit}
-                                            onBlur=${handlePwaDisplayScaleCommit}
-                                            onKeyDown=${handlePwaDisplayScaleKeyDown}
-                                        />
-                                        <span aria-hidden="true">%</span>
-                                    </div>
-                                </div>
-
-                                ${(onOpenTerminalTab || onOpenVncTab) && html`<div class="workspace-menu-separator"></div>`}
-                                ${onOpenTerminalTab && html`
-                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenTerminalTab}>
-                                        ${t('menu.openTerminal')}
-                                    </button>
-                                `}
-                                ${onOpenVncTab && html`
-                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenVncTab}>
-                                        ${t('menu.openVnc')}
-                                    </button>
-                                `}
-                                <div class="workspace-menu-separator"></div>
-                                <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenSettings}>${t('menu.settings')}</button>
-
-                                ${selectedPath && html`<div class="workspace-menu-separator"></div>`}
-                                ${selectedHasOpenableTab && html`
-                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenTab}>${t('workspace.openInTab')}</button>
-                                `}
-                                ${selectedPath && !selectedIsDir && html`
-                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenEditor} disabled=${!canEdit}>${t('workspace.openInEditor')}</button>
-                                `}
-                                ${selectedCanRename && html`
-                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuRename}>${t('workspace.renameSelected')}</button>
-                                `}
-                                ${selectedCanDownload && html`
-                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuDownload}>${t('workspace.downloadSelectedFile')}</button>
-                                `}
-                                ${selectedFolderDownloadUrl && html`
-                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuDownloadFolder}>${t('workspace.downloadSelectedFolder')}</button>
-                                `}
-                                ${selectedCanDelete && html`
-                                    <button class="workspace-menu-item danger" role="menuitem" onClick=${handleMenuDelete}>${t('workspace.deleteSelectedFile')}</button>
-                                `}
-                                <div class="workspace-menu-separator"></div>
-                                <button class="workspace-menu-item" role="menuitem" onClick=${() => { setHeaderMenuOpen(false); window.dispatchEvent(new CustomEvent('piclaw:open-settings', { detail: { section: 'workspace' } })); }}>${t('menu.settings')}</button>
-                                <div class="workspace-menu-separator"></div>
-                                <div class="workspace-menu-language" role="none">
-                                    <${LanguageSwitcher} variant="menu" />
-                                </div>
-                            </div>
-                        `}
                     </div>
                     <span>${t('workspace.title')}</span>
                 </div>
@@ -2756,5 +2697,87 @@ export function WorkspaceExplorer({
                 <div class="workspace-drag-ghost" ref=${dragGhostRef}>${dragGhost.label}</div>
             `}
         </aside>
+        ${headerMenuOpen && html`
+            <${BodyPortal} className="workspace-menu-portal-host">
+                <div
+                    class="workspace-menu-dropdown workspace-menu-dropdown-portal"
+                    ref=${headerMenuRef}
+                    role="menu"
+                    aria-label="Workspace options"
+                    style=${{ top: `${headerMenuPosition.top}px`, left: `${headerMenuPosition.left}px` }}
+                >
+                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuCreateFile} disabled=${uploading}>${t('workspace.newFile')}</button>
+                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuUploadFiles} disabled=${uploading}>${t('workspace.uploadFiles')}</button>
+                    <div class="workspace-menu-separator"></div>
+                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuRefresh}>${t('menu.refreshTree')}</button>
+                    <button class="workspace-menu-item" role="menuitem" onClick=${() => runMenuAction(() => handleWorkspaceReindex())} disabled=${workspaceReindexing}>
+                        ${workspaceReindexing ? t('workspace.reindexing') : t('menu.reindex')}
+                    </button>
+                    <button class=${`workspace-menu-item${showHidden ? ' active' : ''}`} role="menuitem" onClick=${handleMenuToggleHidden}>
+                        ${showHidden ? t('menu.hideHidden') : t('menu.showHidden')}
+                    </button>
+                    <div class="workspace-menu-scale-control" role="none">
+                        <label for="workspace-pwa-display-scale">${t('menu.scale')}</label>
+                        <div class="workspace-menu-scale-input-wrap">
+                            <input
+                                id="workspace-pwa-display-scale"
+                                class="workspace-menu-scale-input"
+                                type="number"
+                                inputmode="numeric"
+                                min=${MIN_PWA_DISPLAY_SCALE_PERCENT}
+                                max=${MAX_PWA_DISPLAY_SCALE_PERCENT}
+                                step=${PWA_DISPLAY_SCALE_STEP_PERCENT}
+                                value=${pwaDisplayScaleDraft}
+                                aria-label=${`PWA display scale percentage, currently ${pwaDisplayScalePercent}%`}
+                                onClick=${(event) => event.stopPropagation()}
+                                onInput=${handlePwaDisplayScaleInput}
+                                onChange=${handlePwaDisplayScaleCommit}
+                                onBlur=${handlePwaDisplayScaleCommit}
+                                onKeyDown=${handlePwaDisplayScaleKeyDown}
+                            />
+                            <span aria-hidden="true">%</span>
+                        </div>
+                    </div>
+
+                    ${(onOpenTerminalTab || onOpenVncTab) && html`<div class="workspace-menu-separator"></div>`}
+                    ${onOpenTerminalTab && html`
+                        <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenTerminalTab}>
+                            ${t('menu.openTerminal')}
+                        </button>
+                    `}
+                    ${onOpenVncTab && html`
+                        <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenVncTab}>
+                            ${t('menu.openVnc')}
+                        </button>
+                    `}
+                    <div class="workspace-menu-separator"></div>
+                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenSettings}>${t('menu.settings')}</button>
+
+                    ${selectedPath && html`<div class="workspace-menu-separator"></div>`}
+                    ${selectedHasOpenableTab && html`
+                        <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenTab}>${t('workspace.openInTab')}</button>
+                    `}
+                    ${selectedPath && !selectedIsDir && html`
+                        <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenEditor} disabled=${!canEdit}>${t('workspace.openInEditor')}</button>
+                    `}
+                    ${selectedCanRename && html`
+                        <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuRename}>${t('workspace.renameSelected')}</button>
+                    `}
+                    ${selectedCanDownload && html`
+                        <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuDownload}>${t('workspace.downloadSelectedFile')}</button>
+                    `}
+                    ${selectedFolderDownloadUrl && html`
+                        <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuDownloadFolder}>${t('workspace.downloadSelectedFolder')}</button>
+                    `}
+                    ${selectedCanDelete && html`
+                        <button class="workspace-menu-item danger" role="menuitem" onClick=${handleMenuDelete}>${t('workspace.deleteSelectedFile')}</button>
+                    `}
+                    <div class="workspace-menu-separator"></div>
+                    <div class="workspace-menu-language" role="none">
+                        <${LanguageSwitcher} variant="menu" />
+                    </div>
+                </div>
+            </${BodyPortal}>
+        `}
     `;
 }

@@ -15,14 +15,14 @@ test('buildMainShellClassName composes workspace/editor/chat/zen modifiers', () 
     editorOpen: false,
     chatOnlyMode: false,
     zenMode: false,
-  })).toBe('app-shell');
+  })).toBe('app-shell workspace-right');
 
   expect(buildMainShellClassName({
     workspaceOpen: false,
     editorOpen: true,
     chatOnlyMode: true,
     zenMode: true,
-  })).toBe('app-shell workspace-collapsed editor-open chat-only zen-mode');
+  })).toBe('app-shell workspace-right workspace-collapsed editor-open chat-only zen-mode');
 });
 
 test('extractPostedUserMessageId prefers user_message.id and falls back to row_id', () => {
@@ -213,7 +213,6 @@ function createMainShellRenderOptions(overrides: Record<string, unknown> = {}) {
     removeMessageRef: noop,
     clearMessageRefs: noop,
     setMessageRefsFromCompose: noop,
-    handleCreateSessionFromCompose: noop,
     handleCreateRootSessionFromCompose: noop,
     handleRestoreBranch: noop,
     attachActiveEditorFile: noop,

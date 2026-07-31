@@ -7,7 +7,8 @@ import { clearCloudAgentQuestion } from '../ui/use-cloud-agent-question.js';
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { buildMentionValue, filterMentionAgents, parseMentionAutocompleteQuery } from '../ui/agent-mentions.js';
 import { shouldOpenSessionSwitcherFromBlankCompose, shouldRouteComposeValueToSessionSwitcher } from '../ui/compose-session-switcher.js';
-import { formatBranchPickerBaseLabel, formatBranchPickerLabel, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
+import { SESSION_SIDEBAR_OPEN_EVENT } from './session-sidebar.js';
+import { formatBranchPickerBaseLabel, formatSessionDisplayTitle, getBranchLifecycleBadges } from '../ui/branch-lifecycle.js';
 import { buildComposeStatusDotClass } from '../ui/status-dot.js';
 import { getStatusElapsedLabel, isCompactionStatus, resolveStatusPanelTitle } from '../ui/status-duration.js';
 import { useConnectionStatusPresentation } from '../ui/connection-status.js';
@@ -267,6 +268,22 @@ export function resolveComposeAbortButtonState(isAgentActive, isCompacting = fal
 
 export function isComposeSubmitAbortMode(mode) {
     return mode === 'abort' || mode === 'compacting';
+}
+
+export function isAbortSteerContent(content, submitMode) {
+    const trimmed = typeof content === 'string' ? content.trim() : '';
+    if (!trimmed.startsWith('/abort')) return false;
+    return submitMode === 'steer' || submitMode === 'compacting' || isComposeSubmitAbortMode(submitMode);
+}
+
+export function shouldRouteComposeToQuestionAnswer({
+    baseContent,
+    submitMode,
+    pendingQuestion,
+    mediaIds = [],
+}) {
+    if (isAbortSteerContent(baseContent, submitMode)) return false;
+    return Boolean(pendingQuestion?.questionId && baseContent.trim() && mediaIds.length === 0);
 }
 
 export function resolveComposeExtensionWorkingDisplay(workingState, frameIndex = 0) {
@@ -1116,6 +1133,7 @@ export function ComposeBox({
     onMoveQueuedFollowup,
     onSubmitIntercept,
     onMessageResponse,
+    onAbortAgent,
     isAgentActive = false,
     activeChatAgents = [],
     currentChatJid = 'web:default',
@@ -1128,8 +1146,6 @@ export function ComposeBox({
     onSwitchChat,
     onRenameSession,
     isRenameSessionInProgress = false,
-    onCreateSession,
-    onCreateRootSession,
     onDeleteSession,
     onPurgeArchivedSession,
     onRestoreSession,
@@ -1295,10 +1311,6 @@ export function ComposeBox({
     const speechButtonTitle = speechButtonActive
         ? 'Stop voice input'
         : (speechSupport?.title || 'Voice input');
-    const canShareLocation = typeof window !== 'undefined'
-        && typeof navigator !== 'undefined'
-        && Boolean(navigator.geolocation)
-        && Boolean(window.isSecureContext);
     const notificationsSupported = typeof window !== 'undefined' && typeof Notification !== 'undefined';
     const notificationsSecure = typeof window !== 'undefined' ? Boolean(window.isSecureContext) : false;
     const notificationDenied = notificationPermission === 'denied';
@@ -1337,7 +1349,6 @@ export function ComposeBox({
         currentSessionAgent
         && currentSessionAgent.chat_jid === (currentSessionAgent.root_chat_jid || currentSessionAgent.chat_jid)
     );
-    const isCurrentDefaultRootSession = Boolean(isCurrentRootSession && (currentSessionAgent?.chat_jid || currentChatJid) === 'web:default');
     const currentRollupParent = (() => {
         const parentBranchId = typeof currentSessionAgent?.parent_branch_id === 'string' ? currentSessionAgent.parent_branch_id.trim() : '';
         const branchId = typeof currentSessionAgent?.branch_id === 'string' ? currentSessionAgent.branch_id.trim() : '';
@@ -1360,12 +1371,10 @@ export function ComposeBox({
     const canRestoreSession = hasSwitchableChatAgents && typeof onRestoreSession === 'function';
     const renameInProgress = Boolean(isRenameSessionInProgress || renameSessionInProgressRef.current);
     const canRenameSession = !searchMode && typeof onRenameSession === 'function' && !renameInProgress;
-    const canCreateSession = !searchMode && typeof onCreateSession === 'function';
-    const canCreateRootSession = !searchMode && typeof onCreateRootSession === 'function';
     const canRollupSession = !searchMode && !isAgentActive && !rollingUpSession && Boolean(currentRollupParent?.chat_jid);
-    const canDeleteSession = !searchMode && typeof onDeleteSession === 'function' && !isCurrentDefaultRootSession;
+    const canDeleteSession = !searchMode && typeof onDeleteSession === 'function';
     const canPurgeArchivedSession = !searchMode && typeof onPurgeArchivedSession === 'function';
-    const showSessionSwitcherButton = !searchMode && (canSwitchSession || canRestoreSession || canRenameSession || canCreateSession || canCreateRootSession || canRollupSession || canDeleteSession || canPurgeArchivedSession);
+    const showSessionSwitcherButton = !searchMode && (canSwitchSession || canRestoreSession || canRenameSession || canRollupSession || canDeleteSession || canPurgeArchivedSession);
     const modelPickerState = resolveComposeModelPickerState(activeModel, agentModelsPayload);
     const showModelPickerHint = modelPickerState.showPicker;
     const modelHintLabel = modelPickerState.label;
@@ -1538,22 +1547,15 @@ export function ComposeBox({
     };
 
     const openSessionPopup = () => {
-        if (searchMode || (!canSwitchSession && !canRestoreSession && !canRenameSession && !canCreateSession && !canDeleteSession)) return false;
-
-        popupTypeaheadRef.current = { value: '', updatedAt: 0 };
-        setShowModelPopup(false);
-        setShowSlash(false);
-        setSlashMatches([]);
-        setShowMention(false);
-        setMentionMatches([]);
-        setShowSessionPopup(true);
+        if (searchMode) return false;
+        window.dispatchEvent(new CustomEvent(SESSION_SIDEBAR_OPEN_EVENT));
         return true;
     };
 
     const toggleSessionPopup = (event) => {
         event?.preventDefault?.();
         event?.stopPropagation?.();
-        if (searchMode || (!canSwitchSession && !canRestoreSession && !canRenameSession && !canCreateSession && !canDeleteSession)) return;
+        if (searchMode || (!canSwitchSession && !canRestoreSession && !canRenameSession && !canDeleteSession)) return;
         if (showSessionPopup) {
             popupTypeaheadRef.current = { value: '', updatedAt: 0 };
             setShowSessionPopup(false);
@@ -1686,16 +1688,10 @@ export function ComposeBox({
             entries.push({
                 type: 'session',
                 key: `session:${chatJid}`,
-                label: `@${agentName} — ${chatJid}${chat?.is_active ? ' active' : ''}${archived ? ' archived' : ''}`,
+                label: formatSessionDisplayTitle(chat),
                 chat,
                 disabled: archived ? !canRestoreSession : !canSwitchSession,
             });
-        }
-        if (canCreateSession) {
-            entries.push({ type: 'action', key: 'action:new', label: 'New branch', action: 'new', disabled: false });
-        }
-        if (canCreateRootSession) {
-            entries.push({ type: 'action', key: 'action:new-root', label: 'New root session…', action: 'new-root', disabled: false });
         }
         if (currentRollupParent?.chat_jid) {
             entries.push({
@@ -1713,7 +1709,7 @@ export function ComposeBox({
             entries.push({ type: 'action', key: 'action:delete', label: 'Delete current session', action: 'delete', disabled: false });
         }
         return entries;
-    }, [switchableChatAgents, canRestoreSession, canSwitchSession, canCreateSession, canCreateRootSession, currentRollupParent, canRollupSession, canRenameSession, canDeleteSession, renameInProgress]);
+    }, [switchableChatAgents, canRestoreSession, canSwitchSession, currentRollupParent, canRollupSession, canRenameSession, canDeleteSession, renameInProgress]);
 
     const handleRenameSession = async (event) => {
         if (event?.preventDefault) event.preventDefault();
@@ -1728,36 +1724,6 @@ export function ComposeBox({
             console.warn('Failed to rename session:', error);
         } finally {
             renameSessionInProgressRef.current = false;
-        }
-        requestAnimationFrame(() => textareaRef.current?.focus());
-    };
-
-    const handleCreateSession = async () => {
-        if (typeof onCreateSession !== 'function') return;
-        setShowSessionPopup(false);
-        try {
-            await onCreateSession();
-        } catch (error) {
-            console.warn('Failed to create session:', error);
-        }
-        requestAnimationFrame(() => textareaRef.current?.focus());
-    };
-
-    const handleCreateRootSession = async () => {
-        if (typeof onCreateRootSession !== 'function') return;
-        setShowSessionPopup(false);
-        const rawName = typeof window !== 'undefined'
-            ? window.prompt('New root session handle (for example: ops)')
-            : '';
-        const rootName = String(rawName || '').trim();
-        if (!rootName) {
-            requestAnimationFrame(() => textareaRef.current?.focus());
-            return;
-        }
-        try {
-            await onCreateRootSession(rootName);
-        } catch (error) {
-            console.warn('Failed to create root session:', error);
         }
         requestAnimationFrame(() => textareaRef.current?.focus());
     };
@@ -2155,14 +2121,6 @@ export function ComposeBox({
             return;
         }
         if (entry.type === 'action') {
-            if (entry.action === 'new') {
-                void handleCreateSession();
-                return;
-            }
-            if (entry.action === 'new-root') {
-                void handleCreateRootSession();
-                return;
-            }
             if (entry.action === 'rollup') {
                 void handleRollupSession();
                 return;
@@ -2337,7 +2295,12 @@ export function ComposeBox({
                     : '';
                 const message = [baseContent, fileBlock, folderBlock, messageRefBlock, mediaBlock].filter(Boolean).join('\n\n');
                 const pendingQuestion = getCloudAgentQuestion();
-                if (pendingQuestion?.questionId && baseContent.trim() && mediaIds.length === 0) {
+                if (shouldRouteComposeToQuestionAnswer({
+                    baseContent,
+                    submitMode,
+                    pendingQuestion,
+                    mediaIds,
+                })) {
                     const answerResult = await answerAgentQuestion(
                         currentChatJid,
                         pendingQuestion.questionId,
@@ -2352,6 +2315,9 @@ export function ComposeBox({
                 }
                 const response = await sendAgentMessage('default', message, null, mediaIds, resolveSubmitMode(submitMode), currentChatJid);
                 onMessageResponse?.(response);
+                if (response?.created && typeof response.chat_jid === 'string' && response.chat_jid.trim()) {
+                    onSwitchChat?.(response.chat_jid.trim());
+                }
 
                 if (response?.command) {
                     emitModelState({
@@ -2766,29 +2732,6 @@ export function ComposeBox({
         onClearMessageRefs?.();
     };
 
-    const handleLocation = () => {
-        if (!navigator.geolocation) {
-            alert('Geolocation is not available in this browser.');
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                const { latitude, longitude, accuracy } = pos.coords;
-                const coords = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-                const accuracyLabel = Number.isFinite(accuracy) ? ` ±${Math.round(accuracy)}m` : '';
-                const mapLink = `https://maps.google.com/?q=${latitude},${longitude}`;
-                const snippet = `Location: ${coords}${accuracyLabel} ${mapLink}`;
-                appendToValue(snippet);
-            },
-            (err) => {
-                const message = err?.message || 'Unable to retrieve location.';
-                alert(`Location error: ${message}`);
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-    };
-
     useEffect(() => {
         if (!showModelPopup) return;
 
@@ -3164,26 +3107,6 @@ export function ComposeBox({
                 onDragLeave=${handleDragLeave}
                 onDrop=${handleDrop}
             >
-                ${showSessionSwitcherButton && html`
-                    <div
-                        ref=${sessionTriggerRef}
-                        class="compose-session-trigger-group compose-session-trigger-top"
-                    >
-                        <button
-                            type="button"
-                            class=${`compose-session-trigger compose-session-trigger-pill${showSessionPopup ? ' active' : ''}`}
-                            data-testid="session-switcher"
-                            onClick=${toggleSessionPopup}
-                            title=${currentSessionAgent?.chat_jid || currentChatJid}
-                            aria-label=${currentSessionAgent?.agent_name
-                                ? `Manage sessions for @${currentSessionAgent.agent_name}`
-                                : 'Manage Sessions/Agents'}
-                            aria-expanded=${showSessionPopup ? 'true' : 'false'}
-                        >
-                            <span class="compose-current-agent-label active">${currentSessionAgent?.agent_name ? `@${currentSessionAgent.agent_name}` : 'Sessions'}</span>
-                        </button>
-                    </div>
-                `}
                 <div class="compose-input-main">
                     ${hasAttachments && html`
                         <div class="compose-file-refs">
@@ -3354,7 +3277,6 @@ export function ComposeBox({
                                     const purgeConfirming = canPurgeArchived && pendingPurgeChatJid === chat.chat_jid;
                                     const pruneConfirming = canPrune && pendingPruneChatJid === chat.chat_jid;
                                     const deleteConfirming = purgeConfirming || pruneConfirming;
-                                    const label = formatBranchPickerLabel(chat, { currentChatJid });
                                     const baseLabel = formatBranchPickerBaseLabel(chat);
                                     const lifecycleBadges = getBranchLifecycleBadges(chat, { currentChatJid });
                                     return html`
@@ -3372,7 +3294,7 @@ export function ComposeBox({
                                                     handleSessionSwitch(chat.chat_jid);
                                                 }}
                                                 disabled=${archived ? !canRestoreSession : !canSwitchSession}
-                                                title=${archived ? `Restore archived ${label}` : `Switch to ${label}`}
+                                                title=${archived ? `Restore archived ${baseLabel}` : `Switch to ${baseLabel}`}
                                             >
                                                 <span class="compose-session-row-content" style=${isSessionPopupChatEmphasized(chat) ? 'font-weight:700' : ''}>
                                                     <span class="compose-session-row-label">${baseLabel}</span>
@@ -3472,28 +3394,8 @@ export function ComposeBox({
                                     `;
                                 })}
                             </div>
-                            ${(canCreateSession || canCreateRootSession || canRenameSession || canDeleteSession) && html`
+                            ${(canRenameSession || canDeleteSession) && html`
                                 <div class="compose-model-popup-actions">
-                                    ${canCreateSession && html`
-                                        <button
-                                            type="button"
-                                            class=${`compose-model-popup-btn primary${sessionPopupEntries.findIndex((entry) => entry.key === 'action:new') === sessionPopupIndex ? ' active' : ''}`}
-                                            onClick=${() => { void handleCreateSession(); }}
-                                            title=${t('compose.newBranchTitle')}
-                                        >
-                                            ${t('compose.newBranch')}
-                                        </button>
-                                    `}
-                                    ${canCreateRootSession && html`
-                                        <button
-                                            type="button"
-                                            class=${`compose-model-popup-btn${sessionPopupEntries.findIndex((entry) => entry.key === 'action:new-root') === sessionPopupIndex ? ' active' : ''}`}
-                                            onClick=${() => { void handleCreateRootSession(); }}
-                                            title=${t('compose.newRootTitle')}
-                                        >
-                                            ${t('compose.newRoot')}
-                                        </button>
-                                    `}
                                     ${currentRollupParent?.chat_jid && html`
                                         <button
                                             type="button"
@@ -3573,76 +3475,7 @@ export function ComposeBox({
                         `}
                     </div>
                     `}
-                    <div class="compose-actions ${searchMode ? 'search-mode' : ''}">
-                    ${searchMode && html`
-                        <label class="compose-search-scope-wrap" title=${t('compose.searchScope')}>
-                            <span class="compose-search-scope-label">${t('compose.scope')}</span>
-                            <select
-                                class="compose-search-scope-select"
-                                value=${searchScope}
-                                onChange=${(e) => onSearchScopeChange?.(e.currentTarget.value)}
-                            >
-                                <option value="current">${t('compose.scopeCurrent')}</option>
-                                <option value="root">${t('compose.scopeBranchFamily')}</option>
-                                <option value="all">${t('compose.scopeAll')}</option>
-                            </select>
-                        </label>
-                        <label class="compose-search-filter-wrap" title=${t('compose.filterImagesTitle')}>
-                            <input type="checkbox" checked=${searchFilterImages} onChange=${() => setSearchFilterImages(v => !v)} />
-                            <span class="compose-search-filter-label">${t('compose.filterImages')}</span>
-                        </label>
-                        <label class="compose-search-filter-wrap" title=${t('compose.filterAttachmentsTitle')}>
-                            <input type="checkbox" checked=${searchFilterAttachments} onChange=${() => setSearchFilterAttachments(v => !v)} />
-                            <span class="compose-search-filter-label">${t('compose.filterAttachments')}</span>
-                        </label>
-                        <button
-                            class=${`compose-search-match-toggle ${searchMatchMode === 'and' ? 'active' : ''}`}
-                            onClick=${() => {
-                                const next = searchMatchMode === 'or' ? 'and' : 'or';
-                                setSearchMatchMode(next);
-                                fetch('/agent/settings/general', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ searchMatchMode: next }),
-                                }).catch((e) => { void e; });
-                            }}
-                            title=${searchMatchMode === 'or' ? 'Any keyword (OR) — click for all keywords (AND)' : 'All keywords (AND) — click for any keyword (OR)'}
-                            type="button"
-                        >
-                            ${searchMatchMode === 'or' ? 'OR' : 'AND'}
-                        </button>
-                    `}
-                    <button
-                        class="icon-btn search-toggle"
-                        onClick=${searchMode ? onExitSearch : onEnterSearch}
-                        title=${searchMode ? t('compose.closeSearch') : t('compose.search')}
-                    >
-                        ${searchMode ? html`
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M18 6L6 18M6 6l12 12"/>
-                            </svg>
-                        ` : html`
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"/>
-                                <path d="M21 21l-4.35-4.35"/>
-                            </svg>
-                        `}
-                    </button>
-                    ${canShareLocation && !searchMode && html`
-                        <button
-                            class="icon-btn location-btn"
-                            onClick=${handleLocation}
-                            title=${t('compose.shareLocation')}
-                            type="button"
-                            disabled=${false}
-                        >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10" />
-                                <path d="M12 2a14 14 0 0 1 0 20a14 14 0 0 1 0-20" />
-                                <path d="M2 12h20" />
-                            </svg>
-                        </button>
-                    `}
+                    <div class="compose-actions">
                     ${speechButtonVisible && html`
                         <button
                             class=${`icon-btn voice-input-btn${speechButtonActive ? ' active' : ''}${speechSupport.mode === 'fallback' ? ' fallback' : ''}`}
@@ -3714,6 +3547,7 @@ export function ComposeBox({
                                         type="button"
                                         onClick=${() => {
                                             if (isComposeSubmitAbortMode(abortButtonState.mode)) {
+                                                onAbortAgent?.();
                                                 void handleSubmit('/abort', 'steer', { clearAfterSubmit: false, includeMedia: false, includeFileRefs: false, includeFolderRefs: false, includeMessageRefs: false, recordHistory: false });
                                             }
                                         }}

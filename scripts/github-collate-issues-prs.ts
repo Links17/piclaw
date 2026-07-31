@@ -231,7 +231,7 @@ type Options = {
 
 const DEFAULT_HISTORY_POINTS = 120;
 const DEFAULT_CHART_POINTS = 30;
-const DEFAULT_DB_PATH = "/workspace/.piclaw/analytics/github-metrics.sqlite";
+const DEFAULT_DB_PATH = "/workspace/.seeed/analytics/github-metrics.sqlite";
 
 function readOption(argv: string[], name: string): string | undefined {
   const index = argv.indexOf(name);

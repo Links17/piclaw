@@ -3,8 +3,10 @@ import {
   TurnAbortedError,
   beginTurnAbortScope,
   clearTurnAbortScope,
+  getTurnAbortSignal,
   isTurnAborted,
   signalTurnAbort,
+  waitForTurnAbort,
 } from "./turn-abort.ts";
 
 describe("turn abort scope", () => {
@@ -21,5 +23,15 @@ describe("turn abort scope", () => {
     const error = new TurnAbortedError();
     expect(error.message).toBe("Turn aborted by user");
     expect(error.name).toBe("TurnAbortedError");
+  });
+
+  it("aborts the llm controller and resolves waiters", async () => {
+    beginTurnAbortScope("s2");
+    const signal = getTurnAbortSignal("s2");
+    expect(signal?.aborted).toBe(false);
+    const pending = waitForTurnAbort("s2");
+    signalTurnAbort("s2");
+    expect(signal?.aborted).toBe(true);
+    await pending;
   });
 });

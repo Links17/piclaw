@@ -1,5 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import { resolve } from "node:path";
+
+/** Workspace-local state directory (config, store, data, certs). */
+export const STATE_DIR_NAME = ".seeed";
+export const LEGACY_STATE_DIR_NAME = ".piclaw";
 
 export interface RuntimeBootstrapPathOverrides {
   workspace?: string;
@@ -16,6 +20,19 @@ export interface RuntimeConfigPaths {
   defaultTlsCertPath: string;
   defaultTlsKeyPath: string;
   hasDefaultTls: boolean;
+}
+
+function stateDirPath(workspaceDir: string, segment: string): string {
+  return resolve(workspaceDir, STATE_DIR_NAME, segment);
+}
+
+/** Rename legacy `.piclaw` to `.seeed` when upgrading existing workspaces. */
+export function migrateLegacyStateDirectory(workspaceDir: string): void {
+  const legacy = resolve(workspaceDir, LEGACY_STATE_DIR_NAME);
+  const next = resolve(workspaceDir, STATE_DIR_NAME);
+  if (!existsSync(legacy) || existsSync(next)) return;
+  renameSync(legacy, next);
+  console.info(`[config] migrated ${LEGACY_STATE_DIR_NAME} -> ${STATE_DIR_NAME} under ${workspaceDir}`);
 }
 
 /** Read raw bootstrap-path overrides for sentinels and cache identities. */
@@ -40,19 +57,20 @@ export function resolveRuntimeConfigPaths(options: {
   const env = options.env ?? process.env;
   const overrides = readRuntimeBootstrapPathOverrides(env);
   const workspaceDir = resolve(options.cliWorkspace || overrides.workspace || "/workspace");
+  migrateLegacyStateDirectory(workspaceDir);
   const storeDir = resolve(options.cliWorkspace
-    ? `${workspaceDir}/.piclaw/store`
-    : (overrides.store || `${workspaceDir}/.piclaw/store`));
+    ? stateDirPath(workspaceDir, "store")
+    : (overrides.store || stateDirPath(workspaceDir, "store")));
   const dataDir = resolve(options.cliWorkspace
-    ? `${workspaceDir}/.piclaw/data`
-    : (overrides.data || `${workspaceDir}/.piclaw/data`));
-  const defaultTlsCertPath = resolve(workspaceDir, ".piclaw", "certs", "sandbox.local.crt");
-  const defaultTlsKeyPath = resolve(workspaceDir, ".piclaw", "certs", "sandbox.local.key");
+    ? stateDirPath(workspaceDir, "data")
+    : (overrides.data || stateDirPath(workspaceDir, "data")));
+  const defaultTlsCertPath = stateDirPath(workspaceDir, "certs/sandbox.local.crt");
+  const defaultTlsKeyPath = stateDirPath(workspaceDir, "certs/sandbox.local.key");
   return {
     workspaceDir,
     storeDir,
     dataDir,
-    configPath: resolve(workspaceDir, ".piclaw", "config.json"),
+    configPath: stateDirPath(workspaceDir, "config.json"),
     defaultTlsCertPath,
     defaultTlsKeyPath,
     hasDefaultTls: existsSync(defaultTlsCertPath) && existsSync(defaultTlsKeyPath),
@@ -68,5 +86,5 @@ export function resolveRuntimeRoot(defaultRoot: string, env: NodeJS.ProcessEnv =
 /** Resolve the writable config path at call time for isolated workspace tests. */
 export function resolveConfigPath(defaultPath: string, env: NodeJS.ProcessEnv = process.env): string {
   const workspace = env.PICLAW_WORKSPACE?.trim();
-  return workspace ? resolve(workspace, ".piclaw", "config.json") : defaultPath;
+  return workspace ? stateDirPath(workspace, "config.json") : defaultPath;
 }

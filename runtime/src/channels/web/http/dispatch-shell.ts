@@ -36,8 +36,7 @@ export async function handleShellRoutes(
   serveStaticAsset: ServeStaticAsset
 ): Promise<Response | null> {
   if (flags.isIndex) {
-    const indexPath = WEB_RUNTIME_CONFIG.uiMode === 'visual' ? 'visual/index.html' : 'classic/index.html';
-    return channel.serveStatic(indexPath, req);
+    return channel.serveStatic('classic/index.html', req);
   }
 
   if (flags.isManifest) {

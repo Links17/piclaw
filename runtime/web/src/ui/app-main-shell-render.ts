@@ -1,4 +1,5 @@
 import { html } from '../vendor/preact-htm.js';
+import { remoteAccessTabsAvailable } from './workspace-visibility.js';
 import { ComposeBox } from '../components/compose-box.js';
 import { OobePanel } from '../components/oobe-panel.js';
 import { BtwPanel } from '../components/btw-panel.js';
@@ -10,6 +11,7 @@ import { TimelineMenu } from '../components/timeline-menu.js';
 import { AgentRequestModal, AgentStatus } from '../components/status.js';
 import { Timeline } from '../components/timeline.js';
 import { WorkspaceExplorer } from '../components/workspace-explorer.js';
+import { SessionSidebar } from '../components/session-sidebar.js';
 import { TabStrip } from '../components/tab-strip.js';
 import { MarkdownPreview } from '../components/markdown-preview.js';
 import { SystemMetersHud } from '../components/system-meters-hud.js';
@@ -25,7 +27,7 @@ export function buildMainShellClassName(options: {
   zenMode: boolean;
 }): string {
   const { workspaceOpen, editorOpen, chatOnlyMode, zenMode } = options;
-  return `app-shell${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}${chatOnlyMode ? ' chat-only' : ''}${zenMode ? ' zen-mode' : ''}`;
+  return `app-shell workspace-right${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}${chatOnlyMode ? ' chat-only' : ''}${zenMode ? ' zen-mode' : ''}`;
 }
 
 export function extractPostedUserMessageId(response: unknown): number | null {
@@ -112,6 +114,9 @@ export function renderMainShell(options: MainShellRenderOptions): any {
   const {
     appShellRef,
     workspaceOpen,
+    workspaceAvailable = true,
+    sessionSidebarOpen,
+    toggleSessionSidebar,
     editorOpen,
     chatOnlyMode,
     zenMode,
@@ -169,7 +174,7 @@ export function renderMainShell(options: MainShellRenderOptions): any {
     currentChatBranches,
     handleBranchPickerChange,
     formatBranchPickerLabel,
-    openRenameCurrentBranchForm,
+    openRenameBranchFormFor,
     handlePruneCurrentBranch,
     handlePurgeArchivedBranch,
     currentHashtag,
@@ -249,13 +254,13 @@ export function renderMainShell(options: MainShellRenderOptions): any {
     removeMessageRef,
     clearMessageRefs,
     setMessageRefsFromCompose,
-    handleCreateSessionFromCompose,
     handleCreateRootSessionFromCompose,
     handleRestoreBranch,
     attachActiveEditorFile,
     followupQueueCount,
     handleBtwIntercept,
     handleMessageResponse,
+    handleAbortAgent,
     handleComposeSubmitError,
     isComposeBoxAgentActive,
     activeChatAgents,
@@ -282,6 +287,11 @@ export function renderMainShell(options: MainShellRenderOptions): any {
     if (isIOSDevice()) return;
     scrollToBottom();
   };
+
+  const remoteAccessAvailable = remoteAccessTabsAvailable();
+  const showDockPanes = hasDockPanes && remoteAccessAvailable;
+  const terminalTabOpener = remoteAccessAvailable ? openTerminalTab : undefined;
+  const vncTabOpener = remoteAccessAvailable ? openVncTab : undefined;
 
   return html`
     <div class=${buildMainShellClassName({ workspaceOpen, editorOpen, chatOnlyMode, zenMode })} ref=${appShellRef}>
@@ -336,26 +346,17 @@ export function renderMainShell(options: MainShellRenderOptions): any {
         </div>
       `}
       ${!chatOnlyMode && html`
-        <${WorkspaceExplorer}
-          onFileSelect=${addFileRef}
-          onFolderSelect=${addFolderRef}
-          visible=${workspaceOpen}
-          active=${workspaceOpen || editorOpen}
-          onOpenEditor=${openEditor}
-          onOpenTerminalTab=${openTerminalTab}
-          onOpenVncTab=${openVncTab}
+        <${SessionSidebar}
+          activeChatAgents=${activeChatAgents}
+          currentChatJid=${currentChatJid}
+          onSwitchChat=${handleBranchPickerChange}
+          onCreateRootSession=${handleCreateRootSessionFromCompose}
+          onRenameSession=${openRenameBranchFormFor}
+          onDeleteSession=${handlePruneCurrentBranch}
+          onPurgeArchivedSession=${handlePurgeArchivedBranch}
+          collapsed=${!sessionSidebarOpen}
+          onToggleCollapsed=${toggleSessionSidebar}
         />
-        <button
-          class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}
-          onClick=${toggleWorkspace}
-          title=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
-          aria-label=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
-        >
-          <svg class="workspace-toggle-tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="6 3 11 8 6 13" />
-          </svg>
-        </button>
-        <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
       `}
       ${showEditorPaneContainer && html`
         <div class="editor-pane-container">
@@ -377,8 +378,8 @@ export function renderMainShell(options: MainShellRenderOptions): any {
               paneOverrides=${tabPaneOverrides}
               detachedTabs=${detachedTabs}
               onReattachTab=${handleReattachPane}
-              onToggleDock=${hasDockPanes ? toggleDock : undefined}
-              dockVisible=${hasDockPanes && dockVisible}
+              onToggleDock=${showDockPanes ? toggleDock : undefined}
+              dockVisible=${showDockPanes && dockVisible}
               onToggleZen=${toggleZenMode}
               zenMode=${zenMode}
               onPopOutTab=${isWebAppMode ? undefined : handlePopOutPane}
@@ -404,8 +405,8 @@ export function renderMainShell(options: MainShellRenderOptions): any {
               onClose=${() => handleTabTogglePreview(tabStripActiveId)}
             />
           `}
-          ${hasDockPanes && dockVisible && html`<div class="dock-splitter" onMouseDown=${handleDockSplitterMouseDown} onTouchStart=${handleDockSplitterTouchStart}></div>`}
-          ${hasDockPanes && html`<div class=${`dock-panel${dockVisible ? '' : ' hidden'}${editorOpen ? '' : ' standalone'}`}>
+          ${showDockPanes && dockVisible && html`<div class="dock-splitter" onMouseDown=${handleDockSplitterMouseDown} onTouchStart=${handleDockSplitterTouchStart}></div>`}
+          ${showDockPanes && html`<div class=${`dock-panel${dockVisible ? '' : ' hidden'}${editorOpen ? '' : ' standalone'}`}>
             <div class="dock-panel-header">
               <span class="dock-panel-title">Terminal</span>
               <div class="dock-panel-actions">
@@ -452,23 +453,47 @@ export function renderMainShell(options: MainShellRenderOptions): any {
         </div>
         <div class="editor-splitter" onMouseDown=${handleEditorSplitterMouseDown} onTouchStart=${handleEditorSplitterTouchStart}></div>
       `}
+      ${!chatOnlyMode && workspaceAvailable && html`
+        <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
+        <button
+          class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}
+          onClick=${toggleWorkspace}
+          title=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
+          aria-label=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
+        >
+          <svg class="workspace-toggle-tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="10 3 5 8 10 13" />
+          </svg>
+        </button>
+        <${WorkspaceExplorer}
+          onFileSelect=${addFileRef}
+          onFolderSelect=${addFolderRef}
+          visible=${workspaceOpen}
+          active=${workspaceOpen || editorOpen}
+          onOpenEditor=${openEditor}
+          onOpenTerminalTab=${terminalTabOpener}
+          onOpenVncTab=${vncTabOpener}
+        />
+      `}
       <${TimelineMenu}
         workspaceOpen=${workspaceOpen}
+        workspaceAvailable=${workspaceAvailable}
         toggleWorkspace=${toggleWorkspace}
         chatOnlyMode=${chatOnlyMode}
         openEditor=${openEditor}
-        onOpenTerminalTab=${openTerminalTab}
-        onOpenVncTab=${openVncTab}
+        onOpenTerminalTab=${terminalTabOpener}
+        onOpenVncTab=${vncTabOpener}
       />
       <${TimelineQuickActions}
         activeChatAgents=${activeChatAgents}
         currentChatJid=${currentChatJid}
         workspaceOpen=${workspaceOpen}
+        workspaceAvailable=${workspaceAvailable}
         chatOnlyMode=${chatOnlyMode}
         onSwitchChat=${handleBranchPickerChange}
         onToggleWorkspace=${toggleWorkspace}
-        onOpenTerminalTab=${openTerminalTab}
-        onOpenVncTab=${openVncTab}
+        onOpenTerminalTab=${terminalTabOpener}
+        onOpenVncTab=${vncTabOpener}
         onPrefillCompose=${requestComposePrefill}
       />
       <div class="container">
@@ -584,8 +609,6 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           onSwitchChat=${handleBranchPickerChange}
           onRenameSession=${handleRenameCurrentBranch}
           isRenameSessionInProgress=${isRenamingBranch}
-          onCreateSession=${handleCreateSessionFromCompose}
-          onCreateRootSession=${handleCreateRootSessionFromCompose}
           onDeleteSession=${handlePruneCurrentBranch}
           onPurgeArchivedSession=${handlePurgeArchivedBranch}
           onRestoreSession=${handleRestoreBranch}
@@ -599,6 +622,7 @@ export function renderMainShell(options: MainShellRenderOptions): any {
           onMoveQueuedFollowup=${handleMoveQueuedFollowup}
           onSubmitIntercept=${handleBtwIntercept}
           onMessageResponse=${handleMessageResponse}
+          onAbortAgent=${handleAbortAgent}
           onSubmitError=${handleComposeSubmitError}
           isAgentActive=${isComposeBoxAgentActive}
           activeChatAgents=${activeChatAgents}

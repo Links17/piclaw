@@ -1,0 +1,197 @@
+
+/* Session sidebar (left rail) */
+.session-sidebar,
+.session-sidebar-collapsed {
+    display: none;
+    flex-direction: column;
+    width: var(--session-sidebar-width, 240px);
+    min-width: var(--session-sidebar-width, 240px);
+    max-width: min(320px, 40vw);
+    background: var(--bg-primary);
+    border-right: 1px solid var(--border-color);
+    height: var(--app-height, 100dvh);
+    overflow: hidden;
+}
+
+.session-sidebar-collapsed {
+    width: 36px;
+    min-width: 36px;
+    align-items: center;
+    padding-top: env(safe-area-inset-top, 0px);
+}
+
+.session-sidebar-expand-btn {
+    margin-top: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.session-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.session-sidebar-header-actions {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.session-sidebar-icon-btn {
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    line-height: 1;
+}
+
+.session-sidebar-list {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.session-sidebar-empty {
+    padding: 12px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.session-sidebar-item-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+}
+
+.session-sidebar-item-row:hover {
+    background: color-mix(in srgb, var(--bg-secondary) 88%, var(--accent-color) 12%);
+}
+
+.session-sidebar-item-row.current {
+    border-color: color-mix(in srgb, var(--accent-color) 55%, var(--border-color) 45%);
+    background: color-mix(in srgb, var(--bg-secondary) 80%, var(--accent-color) 20%);
+}
+
+.session-sidebar-item-row.archived {
+    opacity: 0.72;
+}
+
+.session-sidebar-item-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    padding: 8px 6px 8px 10px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.session-sidebar-item-label {
+    font-weight: 600;
+    line-height: 1.3;
+    word-break: break-word;
+}
+
+.session-sidebar-item-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.session-sidebar-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.session-sidebar-item-menu {
+    flex: 0 0 auto;
+    align-self: center;
+    width: 24px;
+    height: 24px;
+    margin-right: 4px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    line-height: 1;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.session-sidebar-item-menu:hover,
+.session-sidebar-item-menu[aria-expanded="true"] {
+    border-color: var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.session-sidebar-item-dropdown {
+    min-width: 140px;
+}
+
+@media (min-width: 1024px) and (orientation: landscape) {
+    .session-sidebar,
+    .session-sidebar-collapsed {
+        display: flex;
+    }
+}
+
+@media (max-width: 1023px), (orientation: portrait) {
+    .session-sidebar,
+    .session-sidebar-collapsed {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 40;
+        box-shadow: var(--shadow-md);
+    }
+
+    .session-sidebar-collapsed {
+        width: 0;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+    }
+
+    .session-sidebar-collapsed .session-sidebar-expand-btn {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 8px);
+        left: 8px;
+        z-index: 41;
+    }
+}

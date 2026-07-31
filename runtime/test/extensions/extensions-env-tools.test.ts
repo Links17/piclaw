@@ -65,7 +65,7 @@ describe("env-tools extension", () => {
     expect(envScript).toContain("# >>> piclaw env tool >>>");
     expect(envScript).toContain("export TEST_ENV_TOOL_VAR='hello world'");
 
-    const stateJson = JSON.parse(readFileSync(`${ws.workspace}/.piclaw/env-tool.json`, "utf8"));
+    const stateJson = JSON.parse(readFileSync(`${ws.workspace}/.seeed/env-tool.json`, "utf8"));
     expect(stateJson).toEqual({ TEST_ENV_TOOL_VAR: "hello world" });
 
     const getResult = await tool.execute("env-5", { action: "get", name: "TEST_ENV_TOOL_VAR" });

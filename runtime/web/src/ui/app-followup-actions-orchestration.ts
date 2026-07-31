@@ -1,5 +1,6 @@
 import { useCallback } from '../vendor/preact-htm.js';
 import { handleMessageResponseRefresh } from './app-auth-bootstrap.js';
+import { applyAgentAbortResponse, applyOptimisticAgentAbort } from './app-agent-abort.js';
 import {
   handleInjectQueuedFollowupAction,
   handleRemoveQueuedFollowupAction,
@@ -29,6 +30,13 @@ export interface UseFollowupActionsOrchestrationOptions {
   refreshCurrentChatBranches: () => Promise<void>;
   refreshContextUsage: () => Promise<void>;
   refreshAutoresearchStatus: () => Promise<void>;
+  clearAgentRunState: () => void;
+  setAgentDraft: StateSetter<any>;
+  setAgentStatus: StateSetter<any>;
+  setAgentPlan: StateSetter<any>;
+  setAgentThought: StateSetter<any>;
+  clearCloudAgentQuestion?: () => void;
+  wasAgentActiveRef: RefBox<boolean>;
 }
 
 interface QueueActionContext {
@@ -94,7 +102,36 @@ export function useFollowupActionsOrchestration(options: UseFollowupActionsOrche
     refreshCurrentChatBranches,
     refreshContextUsage,
     refreshAutoresearchStatus,
+    clearAgentRunState,
+    setAgentDraft,
+    setAgentStatus,
+    setAgentPlan,
+    setAgentThought,
+    clearCloudAgentQuestion,
+    wasAgentActiveRef,
   } = options;
+
+  const abortAgentOptions = {
+    clearAgentRunState,
+    setAgentDraft,
+    setAgentStatus,
+    setAgentPlan,
+    setAgentThought,
+    clearCloudAgentQuestion,
+    wasAgentActiveRef,
+  };
+
+  const handleAbortAgent = useCallback(() => {
+    applyOptimisticAgentAbort(abortAgentOptions);
+  }, [
+    clearAgentRunState,
+    clearCloudAgentQuestion,
+    setAgentDraft,
+    setAgentPlan,
+    setAgentStatus,
+    setAgentThought,
+    wasAgentActiveRef,
+  ]);
 
   const handleInjectQueuedFollowup = useCallback((queuedItem: any) => {
     runInjectQueuedFollowup({
@@ -146,6 +183,7 @@ export function useFollowupActionsOrchestration(options: UseFollowupActionsOrche
   }, [currentChatJid, refreshQueueState, setFollowupQueueItems]);
 
   const handleMessageResponse = useCallback((response: any) => {
+    applyAgentAbortResponse(response, abortAgentOptions);
     runMessageResponseRefresh(response, {
       refreshActiveChatAgents,
       refreshCurrentChatBranches,
@@ -153,12 +191,26 @@ export function useFollowupActionsOrchestration(options: UseFollowupActionsOrche
       refreshAutoresearchStatus,
       refreshQueueState,
     });
-  }, [refreshActiveChatAgents, refreshAutoresearchStatus, refreshContextUsage, refreshCurrentChatBranches, refreshQueueState]);
+  }, [
+    clearAgentRunState,
+    clearCloudAgentQuestion,
+    refreshActiveChatAgents,
+    refreshAutoresearchStatus,
+    refreshContextUsage,
+    refreshCurrentChatBranches,
+    refreshQueueState,
+    setAgentDraft,
+    setAgentPlan,
+    setAgentStatus,
+    setAgentThought,
+    wasAgentActiveRef,
+  ]);
 
   return {
     handleInjectQueuedFollowup,
     handleRemoveQueuedFollowup,
     handleMoveQueuedFollowup,
     handleMessageResponse,
+    handleAbortAgent,
   };
 }

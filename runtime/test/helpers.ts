@@ -217,8 +217,8 @@ export async function withOverlayIsolation<T>(
   run: (overlay: OverlayWorkspace & { store: string; data: string }) => Promise<T> | T,
 ): Promise<T> {
   const overlay = createOverlayWorkspace(baseDir, "piclaw-isolated-");
-  const store = join(overlay.merged, ".piclaw", "store");
-  const data = join(overlay.merged, ".piclaw", "data");
+  const store = join(overlay.merged, ".seeed", "store");
+  const data = join(overlay.merged, ".seeed", "data");
   try { mkdirSync(store, { recursive: true }); } catch (e) { void e; }
   try { mkdirSync(data, { recursive: true }); } catch (e) { void e; }
 

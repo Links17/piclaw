@@ -15,7 +15,7 @@ import { isRealPathWithin } from "../../../utils/path-safety.js";
 import { EXCLUDE_DIRS } from "./constants.js";
 
 const WATCH_IGNORE_DIRS = new Set(["logs"]);
-const WATCH_INTERNAL_EXCLUDE_DIRS = new Set([".piclaw", ".pi", "artifacts", "exports", "tmp", ".tmp", "rescue"]);
+const WATCH_INTERNAL_EXCLUDE_DIRS = new Set([".seeed", ".pi", "artifacts", "exports", "tmp", ".tmp", "rescue"]);
 
 /** Resolve a relative path against the workspace root, rejecting lexical traversal. */
 export function resolveWorkspacePath(input: string | null): string | null {

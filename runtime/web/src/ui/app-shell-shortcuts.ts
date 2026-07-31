@@ -1,13 +1,14 @@
 import { useEffect } from '../vendor/preact-htm.js';
 import { watchChatSwitchShortcuts, watchDockToggleShortcut, watchKeyboardHelpShortcut, watchZenModeShortcuts, watchSettingsShortcut } from './app-browser-events.js';
 import { isLikelySafariBrowser } from './app-pane-runtime-orchestration.js';
+import { remoteAccessTabsAvailable } from './workspace-visibility.js';
 
 export function shouldWatchDockShortcut(options: {
   hasDockPanes: boolean;
   chatOnlyMode: boolean;
 }): boolean {
   const { hasDockPanes, chatOnlyMode } = options;
-  return Boolean(hasDockPanes && !chatOnlyMode);
+  return Boolean(hasDockPanes && !chatOnlyMode && remoteAccessTabsAvailable());
 }
 
 export function shouldWatchZenShortcuts(chatOnlyMode: boolean): boolean {

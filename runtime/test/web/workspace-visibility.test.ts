@@ -1,102 +1,64 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 
-import {
-  DESKTOP_WORKSPACE_OPEN_STORAGE_KEY,
-  LEGACY_WORKSPACE_OPEN_STORAGE_KEY,
-  NARROW_WORKSPACE_OPEN_STORAGE_KEY,
-  persistWorkspaceOpenPreference,
-  readStoredWorkspaceOpenPreference,
-  resolveWorkspaceLayoutBucket,
-} from '../../web/src/ui/workspace-visibility.js';
+import { sessionHasWorkspace, remoteAccessTabsAvailable, normalizeSandboxWorkspacePath, shouldAutoRevealWorkspaceForSandboxBinding, resolveWorkspaceAvailable, shouldAutoRevealWorkspaceOnAvailabilityChange, inferWorkspaceAvailableFromIndexStatus, createRevealWorkspacePanelAction } from '../../web/src/ui/workspace-visibility.js';
 
-const originalWindow = (globalThis as any).window;
-
-function createRuntime(options: {
-  matchesDesktop?: boolean;
-  storage?: Record<string, string>;
-} = {}) {
-  const storage = new Map(Object.entries(options.storage || {}));
-  return {
-    localStorage: {
-      getItem: (key: string) => storage.has(key) ? storage.get(key) ?? null : null,
-      setItem: (key: string, value: string) => {
-        storage.set(key, value);
-      },
-    },
-    matchMedia: () => ({
-      matches: Boolean(options.matchesDesktop),
-    }),
-    __storage: storage,
-  } as any;
-}
-
-afterEach(() => {
-  (globalThis as any).window = originalWindow;
+test('sessionHasWorkspace is always true outside cloud builds', () => {
+  expect(sessionHasWorkspace(null, { cloudBuild: false })).toBe(true);
+  expect(sessionHasWorkspace({ sandbox_id: null }, { cloudBuild: false })).toBe(true);
 });
 
-describe('workspace visibility preferences', () => {
-  test('resolves layout buckets from the desktop landscape media query', () => {
-    expect(resolveWorkspaceLayoutBucket(createRuntime({ matchesDesktop: true }))).toBe('desktop');
-    expect(resolveWorkspaceLayoutBucket(createRuntime({ matchesDesktop: false }))).toBe('narrow');
-    expect(resolveWorkspaceLayoutBucket(null)).toBe('desktop');
+test('sessionHasWorkspace requires sandbox_id on cloud builds', () => {
+  expect(sessionHasWorkspace(null, { cloudBuild: true })).toBe(false);
+  expect(sessionHasWorkspace({ sandbox_id: null }, { cloudBuild: true })).toBe(false);
+  expect(sessionHasWorkspace({ sandbox_id: '  ' }, { cloudBuild: true })).toBe(false);
+  expect(sessionHasWorkspace({ sandbox_id: 'sbx-123' }, { cloudBuild: true })).toBe(true);
+});
+
+test('remoteAccessTabsAvailable is disabled on cloud builds', () => {
+  expect(remoteAccessTabsAvailable({ cloudBuild: false })).toBe(true);
+  expect(remoteAccessTabsAvailable({ cloudBuild: true })).toBe(false);
+});
+
+test('normalizeSandboxWorkspacePath strips /workspace prefix', () => {
+  expect(normalizeSandboxWorkspacePath('/workspace/demo.ino')).toBe('demo.ino');
+  expect(normalizeSandboxWorkspacePath('demo.ino')).toBe('demo.ino');
+  expect(normalizeSandboxWorkspacePath('/etc/passwd')).toBeNull();
+});
+
+test('shouldAutoRevealWorkspaceForSandboxBinding only fires on new sandbox ids', () => {
+  expect(shouldAutoRevealWorkspaceForSandboxBinding(null, null)).toBe(false);
+  expect(shouldAutoRevealWorkspaceForSandboxBinding('sbx-a', 'sbx-a')).toBe(false);
+  expect(shouldAutoRevealWorkspaceForSandboxBinding(null, 'sbx-a')).toBe(true);
+  expect(shouldAutoRevealWorkspaceForSandboxBinding('sbx-a', 'sbx-b')).toBe(true);
+});
+
+test('resolveWorkspaceAvailable honors probe hint on cloud builds', () => {
+  expect(resolveWorkspaceAvailable(null, { cloudBuild: true, probeAvailable: false })).toBe(false);
+  expect(resolveWorkspaceAvailable(null, { cloudBuild: true, probeAvailable: true })).toBe(true);
+  expect(resolveWorkspaceAvailable({ sandbox_id: 'sbx-1' }, { cloudBuild: true, probeAvailable: false })).toBe(true);
+});
+
+test('shouldAutoRevealWorkspaceOnAvailabilityChange only fires on false to true', () => {
+  expect(shouldAutoRevealWorkspaceOnAvailabilityChange(false, false)).toBe(false);
+  expect(shouldAutoRevealWorkspaceOnAvailabilityChange(true, true)).toBe(false);
+  expect(shouldAutoRevealWorkspaceOnAvailabilityChange(true, false)).toBe(false);
+  expect(shouldAutoRevealWorkspaceOnAvailabilityChange(false, true)).toBe(true);
+});
+
+test('inferWorkspaceAvailableFromIndexStatus requires has_sandbox', () => {
+  expect(inferWorkspaceAvailableFromIndexStatus({ state: 'ready' })).toBe(false);
+  expect(inferWorkspaceAvailableFromIndexStatus({ has_sandbox: true })).toBe(true);
+  expect(inferWorkspaceAvailableFromIndexStatus({ has_sandbox: false })).toBe(false);
+});
+
+test('createRevealWorkspacePanelAction opens workspace and marks probe available', () => {
+  let open = false;
+  let probe = false;
+  const reveal = createRevealWorkspacePanelAction({
+    setWorkspaceOpen: (next) => { open = next; },
+    setWorkspaceProbeAvailable: (next) => { probe = next; },
   });
-
-  test('persists workspace visibility separately for desktop and narrow layouts', () => {
-    const desktopRuntime = createRuntime({ matchesDesktop: true });
-    const narrowRuntime = createRuntime({ matchesDesktop: false });
-
-    persistWorkspaceOpenPreference(true, { runtime: desktopRuntime, bucket: 'desktop' });
-    persistWorkspaceOpenPreference(false, { runtime: narrowRuntime, bucket: 'narrow' });
-
-    expect(desktopRuntime.__storage.get(DESKTOP_WORKSPACE_OPEN_STORAGE_KEY)).toBe('true');
-    expect(narrowRuntime.__storage.get(NARROW_WORKSPACE_OPEN_STORAGE_KEY)).toBe('false');
-  });
-
-  test('desktop initial load can inherit the legacy preference, but narrow stays collapsed by default', () => {
-    const desktopRuntime = createRuntime({
-      matchesDesktop: true,
-      storage: { [LEGACY_WORKSPACE_OPEN_STORAGE_KEY]: 'true' },
-    });
-    const narrowRuntime = createRuntime({
-      matchesDesktop: false,
-      storage: { [LEGACY_WORKSPACE_OPEN_STORAGE_KEY]: 'true' },
-    });
-
-    expect(readStoredWorkspaceOpenPreference({
-      runtime: desktopRuntime,
-      allowLegacyFallback: true,
-      defaultValue: false,
-    })).toBe(true);
-
-    expect(readStoredWorkspaceOpenPreference({
-      runtime: narrowRuntime,
-      allowLegacyFallback: true,
-      defaultValue: false,
-    })).toBe(false);
-  });
-
-  test('layout-specific keys override legacy values and stay isolated across layouts', () => {
-    const runtime = createRuntime({
-      matchesDesktop: false,
-      storage: {
-        [LEGACY_WORKSPACE_OPEN_STORAGE_KEY]: 'true',
-        [DESKTOP_WORKSPACE_OPEN_STORAGE_KEY]: 'true',
-        [NARROW_WORKSPACE_OPEN_STORAGE_KEY]: 'false',
-      },
-    });
-
-    expect(readStoredWorkspaceOpenPreference({
-      runtime,
-      bucket: 'desktop',
-      allowLegacyFallback: true,
-      defaultValue: false,
-    })).toBe(true);
-
-    expect(readStoredWorkspaceOpenPreference({
-      runtime,
-      bucket: 'narrow',
-      allowLegacyFallback: true,
-      defaultValue: false,
-    })).toBe(false);
-  });
+  reveal();
+  expect(open).toBe(true);
+  expect(probe).toBe(true);
 });

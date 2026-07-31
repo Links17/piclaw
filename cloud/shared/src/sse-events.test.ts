@@ -46,9 +46,40 @@ describe("@piclaw-cloud/shared sse-events", () => {
     expect(mapped?.data.chat_jid).toBe("web:test");
   });
 
-  test("legacy mapInternalToWeb still maps delta", () => {
-    const mapped = mapInternalToWeb("s1", { type: "delta", text: "hi", replica: "A" }, scope);
-    expect(mapped).toEqual({ type: "agent_draft_delta", delta: "hi" });
+  test("maps turn_aborted to classic done status", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "turn_aborted",
+      messageId: 42,
+      replica: "A",
+    });
+    expect(mapped?.data.type).toBe("done");
+    expect(mapped?.data.title).toBe("Stopped");
+  });
+
+  test("maps user-aborted turn_failed to done", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "turn_failed",
+      messageId: 42,
+      error: "Turn aborted by user",
+      replica: "A",
+    });
+    expect(mapped?.data.type).toBe("done");
+  });
+
+  test("maps workspace_update to classic workspace_update", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "workspace_update",
+      path: "demo.ino",
+      replica: "A",
+    });
+    expect(mapped).toEqual({
+      event: "workspace_update",
+      data: {
+        updates: [{ path: "demo.ino", truncated: true }],
+        chat_jid: "web:test",
+        turn_id: "42",
+      },
+    });
   });
 });
 

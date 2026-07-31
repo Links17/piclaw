@@ -1769,21 +1769,21 @@ describe("smart-compaction", () => {
     });
 
     // Use a logical workspace path rather than this test's physical checkout:
-    // pre-push runs under .piclaw/tmp, which is intentionally junk-filtered.
+    // pre-push runs under .seeed/tmp, which is intentionally junk-filtered.
     const fixtureProjectRoot = "/workspace/fixture-project";
     const prep = makePreparation(60, {
       fileOps: {
         read: new Set([
           path.resolve(fixtureProjectRoot, "runtime/src/channels/web/http/dispatch-agent.ts"),
           "tmp/pr474-dispatch.patch",
-          ".piclaw/tmp/pi-bash-123.log",
+          ".seeed/tmp/pi-bash-123.log",
           ".pi/agent/sessions/abc/session.jsonl",
           "node_modules/pkg/index.js",
         ]),
         written: new Set([
           path.resolve(fixtureProjectRoot, "runtime/src/utils/logger.ts"),
           "tmp/edit_probe.txt",
-          ".piclaw/tmp/pi-edit-123.log",
+          ".seeed/tmp/pi-edit-123.log",
         ]),
         edited: new Set([
           path.resolve(fixtureProjectRoot, "runtime/src/extensions/observability.ts"),
@@ -1806,7 +1806,7 @@ describe("smart-compaction", () => {
 
     expect(readFilesBlock).toContain("src/channels/web/http/dispatch-agent.ts");
     expect(readFilesBlock).not.toContain("tmp/pr474-dispatch.patch");
-    expect(readFilesBlock).not.toContain(".piclaw/tmp/pi-bash-123.log");
+    expect(readFilesBlock).not.toContain(".seeed/tmp/pi-bash-123.log");
     expect(readFilesBlock).not.toContain(".pi/agent/sessions/abc/session.jsonl");
     expect(readFilesBlock).not.toContain("node_modules/pkg/index.js");
 
@@ -1814,7 +1814,7 @@ describe("smart-compaction", () => {
     expect(modifiedFilesBlock).toContain("extensions/observability.ts");
     expect(modifiedFilesBlock).toContain("utils/logger.ts");
     expect(modifiedFilesBlock).toContain("tmp/edit_probe.txt");
-    expect(modifiedFilesBlock).toContain(".piclaw/tmp/pi-edit-123.log");
+    expect(modifiedFilesBlock).toContain(".seeed/tmp/pi-edit-123.log");
     expect(modifiedFilesBlock).toContain(".pi/agent/models.json");
   });
 

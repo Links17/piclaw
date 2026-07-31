@@ -125,7 +125,7 @@ test("workspace watch path filtering excludes internal runtime state by default"
   const path = await import("node:path");
   const rootPath = resolveWorkspacePath("")!;
 
-  expect(shouldIgnoreWatchPath(path.join(rootPath, ".piclaw", "data"), false)).toBe(true);
+  expect(shouldIgnoreWatchPath(path.join(rootPath, ".seeed", "data"), false)).toBe(true);
   expect(shouldIgnoreWatchPath(path.join(rootPath, ".pi", "skills"), true)).toBe(true);
   expect(shouldIgnoreWatchPath(path.join(rootPath, "exports", "report.csv"), false)).toBe(true);
   expect(shouldIgnoreWatchPath(path.join(rootPath, ".github", "workflows"), false)).toBe(true);

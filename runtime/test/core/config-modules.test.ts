@@ -79,9 +79,9 @@ test("resolveRuntimeConfigPaths preserves CLI workspace and environment preceden
 
   const cliPaths = resolveRuntimeConfigPaths({ cliWorkspace: "/cli/ws", env });
   expect(cliPaths.workspaceDir).toBe("/cli/ws");
-  expect(cliPaths.storeDir).toBe("/cli/ws/.piclaw/store");
-  expect(cliPaths.dataDir).toBe("/cli/ws/.piclaw/data");
-  expect(cliPaths.configPath).toBe("/cli/ws/.piclaw/config.json");
+  expect(cliPaths.storeDir).toBe("/cli/ws/.seeed/store");
+  expect(cliPaths.dataDir).toBe("/cli/ws/.seeed/data");
+  expect(cliPaths.configPath).toBe("/cli/ws/.seeed/config.json");
 });
 
 test("bootstrap path helpers preserve sentinels, trimming, and runtime-root fallbacks", () => {
@@ -103,7 +103,7 @@ test("bootstrap path helpers preserve sentinels, trimming, and runtime-root fall
 });
 
 test("resolveConfigPath and source helpers stay stateless", () => {
-  expect(resolveConfigPath("/default/config.json", { PICLAW_WORKSPACE: "/dynamic/ws" } as NodeJS.ProcessEnv)).toBe("/dynamic/ws/.piclaw/config.json");
+  expect(resolveConfigPath("/default/config.json", { PICLAW_WORKSPACE: "/dynamic/ws" } as NodeJS.ProcessEnv)).toBe("/dynamic/ws/.seeed/config.json");
   expect(resolveConfigPath("/default/config.json", {} as NodeJS.ProcessEnv)).toBe("/default/config.json");
   const root = { web: { terminalEnabled: true }, other: 1 };
   expect(nestedConfig(root, "web")).toEqual({ terminalEnabled: true });

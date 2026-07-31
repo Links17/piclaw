@@ -179,6 +179,22 @@
     background-color: var(--bg-hover);
 }
 
+.post.agent-post {
+    align-self: flex-start;
+    max-width: min(88%, 720px);
+}
+
+.post.user-post {
+    align-self: flex-end;
+    max-width: min(88%, 720px);
+    flex-direction: row-reverse;
+}
+
+.post.user-post .post-actions {
+    left: 0;
+    right: auto;
+}
+
 .post.thread-reply {
     margin-left: 2.5rem;
     padding-left: calc(var(--spacing-md) + var(--output-pad, 0px) - 2px);
@@ -208,6 +224,19 @@
 .post.thread-reply.thread-prev::before,
 .post.thread-reply.thread-next::after {
     opacity: 1;
+}
+
+.post.user-post.thread-reply {
+    margin-left: 0;
+    margin-right: 2.5rem;
+    padding-left: calc(var(--spacing-md) + var(--output-pad, 0px));
+    padding-right: calc(var(--spacing-md) + var(--output-pad, 0px) - 2px);
+}
+
+.post.user-post.thread-reply::before,
+.post.user-post.thread-reply::after {
+    left: auto;
+    right: 0;
 }
 
 .post.thread-reply .post-avatar {

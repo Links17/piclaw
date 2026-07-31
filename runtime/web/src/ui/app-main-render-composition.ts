@@ -89,6 +89,9 @@ export function composeRenderedMainAppOptions(input: {
     shellState: {
       appShellRef: input.surface.appShellRef,
       workspaceOpen: input.surface.workspaceOpen,
+      workspaceAvailable: input.surface.workspaceAvailable,
+      sessionSidebarOpen: input.surface.sessionSidebarOpen,
+      toggleSessionSidebar: input.surface.toggleSessionSidebar,
       editorOpen: input.editorState.editorOpen,
       chatOnlyMode: input.routeState.chatOnlyMode,
       isRenameBranchFormOpen: input.surface.isRenameBranchFormOpen,
@@ -178,6 +181,7 @@ export function composeRenderedMainAppOptions(input: {
       attachmentPreview: input.surface.attachmentPreview,
       setAttachmentPreview: input.surface.setAttachmentPreview,
       handleMessageResponse: input.orchestration.followupActions.handleMessageResponse,
+      handleAbortAgent: input.orchestration.followupActions.handleAbortAgent,
       isComposeBoxAgentActive: input.orchestration.isComposeBoxAgentActive,
       extensionWorkingState: input.surface.extensionWorkingState,
     },

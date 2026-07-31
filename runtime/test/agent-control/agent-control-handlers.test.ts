@@ -21,13 +21,13 @@ let restoreIdentityState: (() => void) | null = null;
 // ── Config fixture ──────────────────────────────────────────────
 // Tests that exercise config-writing handlers must never touch the real
 // workspace config. Resolve the path lazily from the current test env and
-// hard-fail if it ever points at /workspace/.piclaw/config.json.
+// hard-fail if it ever points at /workspace/.seeed/config.json.
 let savedConfig: string | null = null;
 let savedConfigPath: string | null = null;
 
 function getConfigPath(): string {
-  const configPath = resolve(process.env.PICLAW_WORKSPACE || "/workspace", ".piclaw", "config.json");
-  if (configPath === "/workspace/.piclaw/config.json") {
+  const configPath = resolve(process.env.PICLAW_WORKSPACE || "/workspace", ".seeed", "config.json");
+  if (configPath === "/workspace/.seeed/config.json") {
     throw new Error("Refusing to use the production config path in tests");
   }
   return configPath;

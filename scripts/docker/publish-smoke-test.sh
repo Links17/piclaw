@@ -185,7 +185,7 @@ wait_for_runtime() {
 
   local supervisor_deadline=$((SECONDS + 30))
   while [ "$SECONDS" -lt "$supervisor_deadline" ]; do
-    if docker exec "$CONTAINER_NAME" sh -c 'pgrep -af supervisord >/dev/null && supervisorctl -c /workspace/.piclaw/supervisor/supervisord.conf status piclaw | grep -q RUNNING'; then
+    if docker exec "$CONTAINER_NAME" sh -c 'pgrep -af supervisord >/dev/null && supervisorctl -c /workspace/.seeed/supervisor/supervisord.conf status piclaw | grep -q RUNNING'; then
       supervisor_ready=1
       break
     fi

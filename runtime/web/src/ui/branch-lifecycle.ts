@@ -69,16 +69,22 @@ export function getBranchHandleDraftState(value, currentValue = '') {
 }
 
 /**
+ * User-facing session title for sidebars, pickers, and toasts.
+ */
+export function formatSessionDisplayTitle(chat) {
+    const agentName = typeof chat?.agent_name === 'string' ? chat.agent_name.trim() : '';
+    if (agentName) return agentName;
+    const title = typeof chat?.title === 'string' ? chat.title.trim() : '';
+    if (title) return title;
+    return 'New chat';
+}
+
+/**
  * Build the always-visible current branch label shown at the top of the session manager.
  */
 export function formatCurrentBranchLabel(currentSessionAgent, currentChatJid) {
-    const currentHandle = typeof currentSessionAgent?.agent_name === 'string' && currentSessionAgent.agent_name.trim()
-        ? normalizeHandle(currentSessionAgent.agent_name)
-        : String(currentChatJid || '').trim();
-    const currentId = typeof currentSessionAgent?.chat_jid === 'string' && currentSessionAgent.chat_jid.trim()
-        ? currentSessionAgent.chat_jid.trim()
-        : String(currentChatJid || '').trim();
-    return `${currentHandle} — ${currentId} • current branch`;
+    void currentChatJid;
+    return formatSessionDisplayTitle(currentSessionAgent);
 }
 
 /**
@@ -104,21 +110,15 @@ export function getBranchLifecycleBadges(chat, options = {}) {
  * Build the branch row identity without lifecycle badges for rich picker rendering.
  */
 export function formatBranchPickerBaseLabel(chat) {
-    const handle = normalizeHandle(chat?.agent_name) || String(chat?.chat_jid || '').trim();
-    const chatJid = typeof chat?.chat_jid === 'string' && chat.chat_jid.trim()
-        ? chat.chat_jid.trim()
-        : 'unknown-chat';
-    return `${handle} — ${chatJid}`;
+    return formatSessionDisplayTitle(chat);
 }
 
 /**
  * Build the branch row label for the session manager popup.
  */
 export function formatBranchPickerLabel(chat, options = {}) {
-    const badges = getBranchLifecycleBadges(chat, options);
-    return badges.length > 0
-        ? `${formatBranchPickerBaseLabel(chat)} • ${badges.join(' • ')}`
-        : formatBranchPickerBaseLabel(chat);
+    void options;
+    return formatBranchPickerBaseLabel(chat);
 }
 
 /**

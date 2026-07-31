@@ -951,20 +951,18 @@
     display: block;
 }
 
-/* Dropdown anchor depends on position */
-.timeline-menu-portal.in-chat .timeline-menu-dropdown {
+/* Dropdown uses fixed coordinates computed from the hamburger button. */
+.timeline-menu-dropdown-fixed {
+    position: fixed;
+    top: 0;
     left: 0;
     right: auto;
+    margin: 0;
 }
 
-.timeline-menu-portal.in-workspace .timeline-menu-dropdown {
-    left: 0;
-    right: auto;
-}
-
-/* Hide the workspace explorer's own hamburger — replaced by timeline menu */
+/* Workspace explorer renders its own portaled hamburger when open. */
 .workspace-header-left > .workspace-menu-wrap {
-    display: none;
+    display: inline-flex;
 }
 
 /* ── Loading ─────────────────────────────────────────────────────────── */

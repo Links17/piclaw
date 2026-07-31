@@ -25,7 +25,7 @@ import { parseArgs } from "util";
 import { buildInClause, resolveSessionScope, summariseSessionScope } from "./lib/chat-session-scope";
 import { refreshAgentMemoryFromDailyNotes } from "./lib/agent-memory-sidecar";
 
-const defaultDbPath = `${process.env.PICLAW_STORE || "/workspace/.piclaw/store"}/messages.db`;
+const defaultDbPath = `${process.env.PICLAW_STORE || "/workspace/.seeed/store"}/messages.db`;
 
 
 // --help support

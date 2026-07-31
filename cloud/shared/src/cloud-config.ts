@@ -58,6 +58,9 @@ export interface CloudConfig {
   };
   subagentMaxConcurrent: number;
   subagentMaxTurns: number;
+  web?: {
+    allowedOrigins?: string[];
+  };
 }
 
 type DeepPartial<T> = {
@@ -125,6 +128,9 @@ function defaultConfig(): CloudConfig {
     },
     subagentMaxConcurrent: 4,
     subagentMaxTurns: 8,
+    web: {
+      allowedOrigins: [],
+    },
   };
 }
 
@@ -200,6 +206,9 @@ function envLayer(): DeepPartial<CloudConfig> {
     },
     subagentMaxConcurrent: envNumber("CLOUD_SUBAGENT_MAX_CONCURRENT"),
     subagentMaxTurns: envNumber("CLOUD_SUBAGENT_MAX_TURNS"),
+    web: {
+      allowedOrigins: envFirst("CLOUD_WEB_ALLOWED_ORIGINS")?.split(",").map((s) => s.trim()).filter(Boolean),
+    },
   };
 }
 

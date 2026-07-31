@@ -3,6 +3,7 @@
  */
 
 import { recordAppPerfRequest } from './ui/app-perf-tracing.js';
+import { inferWorkspaceAvailableFromIndexStatus } from './ui/workspace-visibility.js';
 import { resolveScreenSizeHint } from './ui/screen-size-hint.js';
 
 declare const __PICLAW_API_BASE__: string | undefined;
@@ -290,6 +291,14 @@ export async function deletePost(postId, cascade = false, chatJid = null) {
 /**
  * Send message to agent
  */
+export async function abortAgentRun(chatJid) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return request(`/agent/runs/abort${query}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+    });
+}
+
 export async function sendAgentMessage(agentId, content, threadId = null, mediaIds = [], mode = null, chatJid = null) {
     const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
     const payload: ApiOptions = {
@@ -417,10 +426,10 @@ export async function forkChatBranch(sourceChatJid, options: ApiOptions = {}) {
 /**
  * Create a clean root chat session family.
  */
-export async function createRootChatSession(agentName) {
+export async function createRootChatSession(_agentName?: string) {
     return request('/agent/root-session', {
         method: 'POST',
-        body: JSON.stringify({ agent_name: agentName }),
+        body: JSON.stringify({}),
     });
 }
 
@@ -845,9 +854,24 @@ export async function getWorkspaceBranch(path = '') {
 }
 
 /** Get the current workspace FTS indexing status snapshot. */
-export async function getWorkspaceIndexStatus(scope = 'all') {
-    const url = `/workspace/index-status?scope=${encodeURIComponent(scope || 'all')}`;
-    return request(url);
+export async function getWorkspaceIndexStatus(scope = 'all', chatJid: string | null = null) {
+    const params = new URLSearchParams();
+    params.set('scope', scope || 'all');
+    const normalizedChatJid = typeof chatJid === 'string' ? chatJid.trim() : '';
+    if (normalizedChatJid) params.set('chat_jid', normalizedChatJid);
+    return request(`/workspace/index-status?${params.toString()}`);
+}
+
+/** Cloud-only: probe whether a session has a sandbox binding without touching the VM. */
+export async function probeSessionWorkspaceAvailability(chatJid: string) {
+    const normalized = typeof chatJid === 'string' ? chatJid.trim() : '';
+    if (!normalized) return false;
+    try {
+        const payload = await getWorkspaceIndexStatus('all', normalized);
+        return inferWorkspaceAvailableFromIndexStatus(payload);
+    } catch {
+        return false;
+    }
 }
 
 /** Trigger a workspace FTS reindex and return the updated status snapshot. */

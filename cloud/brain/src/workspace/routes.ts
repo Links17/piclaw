@@ -1,7 +1,8 @@
 /**
  * Read-only /workspace/* routes for cloud brain Web UI.
  */
-import { config } from "../config.ts";
+import * as store from "@piclaw-cloud/store";
+import { chatJidToSessionId } from "../web-adapter.ts";
 import { getWorkspaceFilePreview, getWorkspaceRawFile, getWorkspaceTree } from "./sandbox-tree.ts";
 
 function json(body: unknown, status = 200): Response {
@@ -11,8 +12,9 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function chatJidFromUrl(url: URL): string {
-  return url.searchParams.get("chat_jid") || config.defaultChatJid;
+function chatJidFromUrl(url: URL): string | null {
+  const raw = url.searchParams.get("chat_jid");
+  return raw && raw.trim() ? raw.trim() : null;
 }
 
 /** Handle workspace routes; returns null when pathname is not a workspace route. */
@@ -22,6 +24,7 @@ export async function handleWorkspaceRoutes(req: Request, pathname: string): Pro
   if (req.method === "GET" && pathname === "/workspace/tree") {
     try {
       const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
       const showHidden =
         url.searchParams.get("show_hidden") === "1" || url.searchParams.get("show_hidden") === "true";
       const result = await getWorkspaceTree(
@@ -40,6 +43,7 @@ export async function handleWorkspaceRoutes(req: Request, pathname: string): Pro
   if (req.method === "GET" && pathname === "/workspace/raw") {
     try {
       const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
       const body = await getWorkspaceRawFile(chatJid, url.searchParams.get("path"));
       const headers: Record<string, string> = { "Content-Type": body.contentType };
       if (url.searchParams.get("download") === "1") {
@@ -58,6 +62,7 @@ export async function handleWorkspaceRoutes(req: Request, pathname: string): Pro
   if (req.method === "GET" && pathname === "/workspace/file") {
     try {
       const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
       const body = await getWorkspaceFilePreview(
         chatJid,
         url.searchParams.get("path"),
@@ -77,7 +82,18 @@ export async function handleWorkspaceRoutes(req: Request, pathname: string): Pro
   }
 
   if (req.method === "GET" && pathname === "/workspace/index-status") {
-    return json({ state: "ready", indexed_file_count: 0, roots: ["workspace"] });
+    const chatJid = chatJidFromUrl(url);
+    let hasSandbox = false;
+    if (chatJid) {
+      const session = await store.getSession(chatJidToSessionId(chatJid));
+      hasSandbox = Boolean(typeof session?.sandbox_id === "string" && session.sandbox_id.trim());
+    }
+    return json({
+      state: hasSandbox ? "ready" : "unavailable",
+      has_sandbox: hasSandbox,
+      indexed_file_count: 0,
+      roots: ["workspace"],
+    });
   }
 
   if (req.method === "GET" && pathname === "/workspace/branch") {

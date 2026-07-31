@@ -17,7 +17,7 @@ const sessionsArgIndex = args.indexOf("--sessions-dir");
 const sessionsCandidate = sessionsArgIndex >= 0 ? args[sessionsArgIndex + 1] : undefined;
 const sessionsDir = sessionsCandidate && !sessionsCandidate.startsWith("--")
   ? sessionsCandidate
-  : "/workspace/.piclaw/data/sessions";
+  : "/workspace/.seeed/data/sessions";
 
 const sourceArgIndex = args.indexOf("--source");
 const sourceCandidate = sourceArgIndex >= 0 ? args[sourceArgIndex + 1] : undefined;
@@ -31,13 +31,13 @@ const chatJidCandidate = chatJidIndex >= 0 ? args[chatJidIndex + 1] : undefined;
 const chatJid = chatJidCandidate && !chatJidCandidate.startsWith("--")
   ? chatJidCandidate
   : process.env.PICLAW_CHAT_JID || "web:default";
-const dataDir = process.env.PICLAW_DATA || "/workspace/.piclaw/data";
+const dataDir = process.env.PICLAW_DATA || "/workspace/.seeed/data";
 const messagesDir = join(dataDir, "ipc", "messages");
 const mediaDir = join(dataDir, "ipc", "media");
 const outputSvgArgIndex = args.indexOf("--output-svg");
 const outputSvgCandidate = outputSvgArgIndex >= 0 ? args[outputSvgArgIndex + 1] : undefined;
 const outputSvg = outputSvgCandidate && !outputSvgCandidate.startsWith("--") ? outputSvgCandidate : undefined;
-const storeDir = process.env.PICLAW_STORE || "/workspace/.piclaw/store";
+const storeDir = process.env.PICLAW_STORE || "/workspace/.seeed/store";
 const dbPath = join(storeDir, "messages.db");
 
 const now = new Date();

@@ -10,13 +10,16 @@ import {
 import { normalizeSubagentRunId } from "../subagents/run-id.ts";
 import type { AgentToolOptions } from "../subagents/types.ts";
 import { applyUniqueEdit } from "./edit.ts";
+import { config } from "../config.ts";
+import { publish } from "../events.ts";
+import { publishWorkspaceUpdate } from "../workspace/publish.ts";
 import { resolveWorkspacePath, WORKSPACE_ROOT } from "./path.ts";
 import { runQuestionTool } from "./question.ts";
 import { runSkillTool } from "./skill.ts";
 import { runTodoTool } from "./todo.ts";
 import { toolNamesForMode, type ToolDefinition } from "./schemas.ts";
 import { getMcpToolDefinitions, invokeMcpTool } from "../mcp/client.ts";
-import { TurnAbortedError } from "../turn-abort.ts";
+import { TurnAbortedError, assertTurnNotAborted, isTurnAborted, waitForTurnAbort } from "../turn-abort.ts";
 
 const MAX_OUTPUT_CHARS = 32_000;
 
@@ -88,12 +91,27 @@ export async function dispatchTool(
   }
 }
 
+async function killSandboxCommandBestEffort(sbx: Awaited<ReturnType<typeof ensureSandbox>>): Promise<void> {
+  try {
+    await sbx.commands.run("pkill -P 1 2>/dev/null || true", { timeoutMs: 5_000 });
+  } catch {
+    // best-effort
+  }
+}
+
 async function runBashTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  assertTurnNotAborted(sessionId);
   const command = String(args.command ?? "").trim();
   if (!command) return { output: "command is required", isError: true };
   const sbx = await ensureSandbox(sessionId);
   const wrapped = `cd ${WORKSPACE_ROOT} && ${command}`;
-  const result = await sbx.commands.run(wrapped, { timeoutMs: 120_000 });
+  const runPromise = sbx.commands.run(wrapped, { timeoutMs: 120_000 });
+  await Promise.race([runPromise, waitForTurnAbort(sessionId)]);
+  if (isTurnAborted(sessionId)) {
+    void killSandboxCommandBestEffort(sbx);
+    throw new TurnAbortedError();
+  }
+  const result = await runPromise;
   const parts = [`$ ${command}`];
   if (result.stdout.trim()) parts.push(result.stdout.trimEnd());
   if (result.stderr.trim()) parts.push(result.stderr.trimEnd());
@@ -108,11 +126,13 @@ async function runReadTool(sessionId: string, args: Record<string, unknown>): Pr
   return { output: truncate(String(content)), isError: false };
 }
 
+
 async function runWriteTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
   const path = resolveWorkspacePath(String(args.path ?? ""));
   const content = String(args.content ?? "");
   const sbx = await ensureSandbox(sessionId);
   await writeFile(sbx, path, content);
+  await publishWorkspaceUpdate(sessionId, path);
   return { output: `Wrote ${content.length} bytes to ${path}`, isError: false };
 }
 
@@ -124,6 +144,7 @@ async function runEditTool(sessionId: string, args: Record<string, unknown>): Pr
   const current = await readFile(sbx, path);
   const updated = applyUniqueEdit(String(current), oldString, newString);
   await writeFile(sbx, path, updated);
+  await publishWorkspaceUpdate(sessionId, path);
   return { output: `Edited ${path}`, isError: false };
 }
 

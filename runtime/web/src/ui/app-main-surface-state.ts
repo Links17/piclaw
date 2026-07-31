@@ -1,7 +1,12 @@
-import { useMemo, useRef, useState } from '../vendor/preact-htm.js';
+import { useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
 import {
   readStoredWorkspaceOpenPreference,
+  resolveWorkspaceAvailable,
+  sessionHasWorkspace,
 } from './workspace-visibility.js';
+import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
+import { isCloudWebBuild, legacyDefaultChatJid } from './chat-jid.js';
+import { probeSessionWorkspaceAvailability } from '../api.js';
 import { useNotifications } from './use-notifications.js';
 import { isStandaloneWebAppMode } from './chat-window.js';
 import { getBranchHandleDraftState } from './branch-lifecycle.js';
@@ -40,7 +45,7 @@ export function resolveStableRootChatJid(currentChatJid: string, currentBranchRe
   if (recordRoot) return recordRoot;
 
   const normalizedChatJid = typeof currentChatJid === 'string' ? currentChatJid.trim() : '';
-  if (!normalizedChatJid) return 'web:default';
+  if (!normalizedChatJid) return legacyDefaultChatJid();
 
   const branchMarkerIndex = normalizedChatJid.indexOf(':branch:');
   if (branchMarkerIndex <= 0) {
@@ -98,6 +103,28 @@ export function useMainAppSurfaceState(options: {
     () => resolveStableRootChatJid(currentChatJid, currentBranchRecord),
     [currentBranchRecord, currentChatJid],
   );
+  const [workspaceProbeAvailable, setWorkspaceProbeAvailable] = useState(false);
+
+  useEffect(() => {
+    setWorkspaceProbeAvailable(false);
+    if (!isCloudWebBuild()) return undefined;
+    if (sessionHasWorkspace(currentBranchRecord)) return undefined;
+    const chatJid = typeof currentChatJid === 'string' ? currentChatJid.trim() : '';
+    if (!chatJid) return undefined;
+
+    let cancelled = false;
+    void probeSessionWorkspaceAvailability(chatJid).then((available) => {
+      if (!cancelled && available) setWorkspaceProbeAvailable(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentChatJid, currentBranchRecord?.sandbox_id]);
+
+  const workspaceAvailable = useMemo(
+    () => resolveWorkspaceAvailable(currentBranchRecord, { probeAvailable: workspaceProbeAvailable }),
+    [currentBranchRecord, workspaceProbeAvailable],
+  );
   const activeSearchScopeLabel = describeSearchScope(searchScope);
   const [branchLoaderState, setBranchLoaderState] = useState(() => createBranchLoaderState(branchLoaderMode));
   const followupQueueCount = followupQueueItems.length;
@@ -119,9 +146,17 @@ export function useMainAppSurfaceState(options: {
 
   const [removingPostIds, setRemovingPostIds] = useState(() => new Set<string | number>());
   const [workspaceOpen, setWorkspaceOpen] = useState(() => readStoredWorkspaceOpenPreference({
-    allowLegacyFallback: true,
+    allowLegacyFallback: false,
     defaultValue: false,
   }));
+  const [sessionSidebarOpen, setSessionSidebarOpen] = useState(() => getLocalStorageItem('sessionSidebarCollapsed') !== '1');
+  const toggleSessionSidebar = () => {
+    setSessionSidebarOpen((prev) => {
+      const next = !prev;
+      setLocalStorageItem('sessionSidebarCollapsed', next ? '0' : '1');
+      return next;
+    });
+  };
   const [userProfile, setUserProfile] = useState({ name: 'You', avatar_url: null, avatar_background: null });
   const staleUiVersionRef = useRef<string | null>(null);
   const staleUiReloadScheduledRef = useRef(false);
@@ -153,9 +188,13 @@ export function useMainAppSurfaceState(options: {
   const renameBranchLockUntilRef = useRef(0);
   const [isRenameBranchFormOpen, setIsRenameBranchFormOpen] = useState(false);
   const [renameBranchNameDraft, setRenameBranchNameDraft] = useState('');
+  const [renameBranchFormTarget, setRenameBranchFormTarget] = useState<any>(null);
   const renameBranchDraftState = useMemo(
-    () => getBranchHandleDraftState(renameBranchNameDraft, currentBranchRecord?.agent_name || ''),
-    [currentBranchRecord?.agent_name, renameBranchNameDraft],
+    () => getBranchHandleDraftState(
+      renameBranchNameDraft,
+      renameBranchFormTarget?.agent_name || currentBranchRecord?.agent_name || '',
+    ),
+    [currentBranchRecord?.agent_name, renameBranchFormTarget?.agent_name, renameBranchNameDraft],
   );
   const renameBranchNameInputRef = useRef<any>(null);
 
@@ -221,6 +260,9 @@ export function useMainAppSurfaceState(options: {
     dismissedLiveWidgetKeysRef,
     currentBranchRecord,
     currentRootChatJid,
+    workspaceAvailable,
+    workspaceProbeAvailable,
+    setWorkspaceProbeAvailable,
     activeSearchScopeLabel,
     branchLoaderState,
     setBranchLoaderState,
@@ -239,6 +281,8 @@ export function useMainAppSurfaceState(options: {
     setRemovingPostIds,
     workspaceOpen,
     setWorkspaceOpen,
+    sessionSidebarOpen,
+    toggleSessionSidebar,
     userProfile,
     setUserProfile,
     staleUiVersionRef,
@@ -275,6 +319,8 @@ export function useMainAppSurfaceState(options: {
     renameBranchNameDraft,
     setRenameBranchNameDraft,
     renameBranchDraftState,
+    renameBranchFormTarget,
+    setRenameBranchFormTarget,
     renameBranchNameInputRef,
   };
 }

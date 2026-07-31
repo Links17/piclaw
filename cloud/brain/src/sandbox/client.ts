@@ -11,9 +11,11 @@ import {
   shouldProceedAfterResumeFailure,
 } from "./lifecycle.ts";
 import { installProxyFetch } from "./proxy-fetch.ts";
+import { buildWorkspaceVolumeMounts, createWorkspaceVolume, deleteWorkspaceVolume, volumeNameForSession } from "./volume.ts";
 
 export type { Sandbox };
 export { SandboxUnavailableError } from "./errors.ts";
+export { createWorkspaceVolume, deleteWorkspaceVolume, volumeNameForSession };
 
 const restoreFetch = installProxyFetch();
 
@@ -116,19 +118,25 @@ export async function healthCheck(): Promise<{ ok: boolean; detail: unknown }> {
   }
 }
 
-export async function createSandbox(): Promise<Sandbox> {
+export async function createSandbox(options: { volumeId?: string | null } = {}): Promise<Sandbox> {
   if (!sandboxConfig.templateId) throw new Error("CUBE_TEMPLATE_ID is required");
+
+  const body: Record<string, unknown> = {
+    templateID: sandboxConfig.templateId,
+    timeout: timeoutSec(),
+    secure: false,
+    allow_internet_access: true,
+    // Pause is owned by cloud/scheduler (session idleMs), not Cube autoPause.
+    autoPause: false,
+  };
+  const volumeId = typeof options.volumeId === "string" ? options.volumeId.trim() : "";
+  if (volumeId) {
+    body.volumeMounts = buildWorkspaceVolumeMounts(volumeId);
+  }
 
   const res = await cubeFetch("/sandboxes", {
     method: "POST",
-    body: JSON.stringify({
-      templateID: sandboxConfig.templateId,
-      timeout: timeoutSec(),
-      secure: false,
-      allow_internet_access: true,
-      // Pause is owned by cloud/scheduler (session idleMs), not Cube autoPause.
-      autoPause: false,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`POST /sandboxes → ${res.status}: ${await res.text()}`);
 

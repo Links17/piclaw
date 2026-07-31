@@ -12,6 +12,7 @@ import { discoverCustomAgentTypes, scheduleAgentTask } from "./custom-types.ts";
 import { allocateSubagentRunId, normalizeSubagentRunId } from "./run-id.ts";
 import { buildSkillPreloadSection } from "../skills/registry.ts";
 import type { AgentToolOptions, SubagentRunOutcome } from "./types.ts";
+import { TurnAbortedError } from "../turn-abort.ts";
 
 const runningBySession = new Map<string, Set<string>>();
 
@@ -111,6 +112,26 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
     };
     return outcome;
   } catch (error) {
+    if (error instanceof TurnAbortedError) {
+      const outcome: SubagentRunOutcome = {
+        runId,
+        status: "stopped",
+        summary: "Stopped by user.",
+        artifacts: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        background: options.runInBackground,
+      };
+      await store.markSubagentStopped(runId, "Stopped by user.");
+      await publish(sessionId, {
+        type: "subagent_done",
+        runId,
+        status: "stopped",
+        summary: "Stopped by user.",
+        artifacts: [],
+        replica: config.replicaId,
+      });
+      return outcome;
+    }
     const message = error instanceof Error ? error.message : String(error);
     const outcome: SubagentRunOutcome = {
       runId,
@@ -335,6 +356,7 @@ export function formatAgentToolResult(outcome: SubagentRunOutcome): string {
 export async function stopSubagent(sessionId: string, runId: string): Promise<{ ok: boolean; error?: string }> {
   const run = await store.getSubagentRun(runId);
   if (!run || run.session_id !== sessionId) return { ok: false, error: "unknown run" };
+  untrackRun(sessionId, runId);
   await store.markSubagentStopped(runId, "Stopped by user.");
   await publish(sessionId, {
     type: "subagent_done",
@@ -346,6 +368,13 @@ export async function stopSubagent(sessionId: string, runId: string): Promise<{ 
   });
   await notifySubagentCompletion(sessionId, runId);
   return { ok: true };
+}
+
+export async function stopAllRunningSubagents(sessionId: string): Promise<void> {
+  const runIds = [...(runningBySession.get(sessionId) ?? [])];
+  for (const runId of runIds) {
+    await stopSubagent(sessionId, runId);
+  }
 }
 
 export async function steerSubagent(

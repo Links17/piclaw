@@ -1323,7 +1323,7 @@ html[data-iphone-standalone-compose-inset="1"] .container {
         width: 0;
         min-width: 0;
         opacity: 0;
-        transform: translateX(-8px);
+        transform: translateX(8px);
         pointer-events: none;
     }
 
@@ -1334,13 +1334,15 @@ html[data-iphone-standalone-compose-inset="1"] .container {
     }
 
     .app-shell.workspace-collapsed .workspace-toggle-tab {
-        left: 0;
-        border-radius: 0 var(--radius-md) var(--radius-md) 0;
-        border-left: 0;
+        right: 0;
+        left: auto;
+        border-radius: var(--radius-md) 0 0 var(--radius-md);
+        border-right: 0;
     }
 
     .app-shell:not(.workspace-collapsed) .workspace-toggle-tab {
-        left: calc(var(--sidebar-width, 280px) - var(--workspace-tab-width, 20px));
+        right: calc(var(--sidebar-width, 280px) - var(--workspace-tab-width, 20px));
+        left: auto;
     }
 
     .app-shell.sidebar-resizing .workspace-toggle-tab {
@@ -1360,7 +1362,15 @@ html[data-iphone-standalone-compose-inset="1"] .container {
         margin: 0 auto;
     }
 
-    .app-shell.workspace-collapsed:not(.editor-open):not(.chat-only):not(.pane-popout) {
+    /* Keep session rail + chat pinned left; legacy centering only without session sidebar. */
+    .app-shell.workspace-collapsed:has(.session-sidebar, .session-sidebar-collapsed) .container {
+        flex: 1 1 0;
+        max-width: none;
+        min-width: var(--chat-pane-min-width, 10vw);
+        margin: 0;
+    }
+
+    .app-shell.workspace-collapsed:not(.editor-open):not(.chat-only):not(.pane-popout):not(:has(.session-sidebar, .session-sidebar-collapsed)) {
         justify-content: center;
     }
 
@@ -1368,6 +1378,12 @@ html[data-iphone-standalone-compose-inset="1"] .container {
         flex: 0 1 auto;
         width: min(100%, var(--chat-max-width, 900px));
         margin: 0;
+    }
+
+    .app-shell.workspace-collapsed:not(.editor-open):not(.chat-only):not(.pane-popout):has(.session-sidebar, .session-sidebar-collapsed) > .container {
+        flex: 1 1 0;
+        width: auto;
+        max-width: none;
     }
 
     .container {

@@ -30,4 +30,5 @@ export const config = {
   questionTimeoutMs: cloud.question.timeoutMs,
   subagentMaxConcurrent: cloud.subagentMaxConcurrent,
   subagentMaxTurns: cloud.subagentMaxTurns,
+  webAllowedOrigins: cloud.web?.allowedOrigins ?? [],
 };
