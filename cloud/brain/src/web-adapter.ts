@@ -13,6 +13,7 @@ import {
 import { spawnAgent, getSubagentResult, stopSubagent, steerSubagent } from "./subagents/service.ts";
 import { config } from "./config.ts";
 import { abortSessionTurn, submitMessage, removeQueuedFollowup, steerQueuedFollowup, reorderQueuedFollowups } from "./turn.ts";
+import { handleModelSlashCommand } from "./models/service.ts";
 import { UNTITLED_SESSION_TITLE } from "@piclaw-cloud/store";
 import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { requireSessionAccess } from "./auth.ts";
@@ -220,6 +221,14 @@ export async function reorderQueueItems(chatJid: string, fromIndex: number, toIn
 
 export async function sendAgentMessage(chatJid: string, content: string, mode?: string | null) {
   const sessionId = await ensureChatSession(chatJid);
+  const modelCommand = await handleModelSlashCommand(chatJid, content);
+  if (modelCommand) {
+    return {
+      ok: true,
+      ui_only: true,
+      command: modelCommand.command,
+    };
+  }
   if (mode === "steer" && (content.trim() === "/abort" || content.trim().startsWith("/abort "))) {
     await abortSessionTurn(sessionId);
     return {

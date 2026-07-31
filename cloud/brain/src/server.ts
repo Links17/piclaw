@@ -16,6 +16,9 @@ import { getKernelRuntime } from "./kernel/runtime.ts";
 import { handleWorkspaceRoutes } from "./workspace/routes.ts";
 import { handleMediaRoutes } from "./media/routes.ts";
 import { handleWebPushRoutes } from "./push/routes.ts";
+import { handleSessionRecordingRoutes } from "./recordings/routes.ts";
+import { handleAddonRoutes } from "./addons/routes.ts";
+import { handleGeneralSettingsRoute, handleModelsRoute } from "./models/routes.ts";
 import {
   handleScheduledTasksAction,
   handleScheduledTasksList,
@@ -373,8 +376,21 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
+          if (url.pathname === "/agent/settings/general") {
+            return respond(await handleGeneralSettingsRoute(req));
+          }
           return respond(json({}));
         }
+
+        if (req.method === "POST" && url.pathname === "/agent/settings/general") {
+          return respond(await handleGeneralSettingsRoute(req));
+        }
+
+        const recordingResponse = await handleSessionRecordingRoutes(req, url.pathname);
+        if (recordingResponse) return respond(recordingResponse);
+
+        const addonResponse = await handleAddonRoutes(req, url.pathname, url);
+        if (addonResponse) return respond(addonResponse);
 
         if (req.method === "POST" && url.pathname === "/agent/queue-steer") {
           const chatJid = readRequestChatJid(url);
@@ -411,7 +427,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname === "/agent/models") {
-          return respond(json({ models: [{ id: config.openaiModel, label: config.openaiModel }], current: config.openaiModel }));
+          return respond(await handleModelsRoute(req, url));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/context") {
@@ -440,9 +456,6 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return respond(json({ ok: true }));
         }
 
-        if (req.method === "GET" && url.pathname === "/agent/addons/web-entries") {
-          return respond(json({ entries: [] }));
-        }
 
         const pushResponse = await handleWebPushRoutes(req, url.pathname);
         if (pushResponse) return respond(pushResponse);
