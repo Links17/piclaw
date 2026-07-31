@@ -12,7 +12,7 @@ import {
 } from "./skills/registry.ts";
 import { spawnAgent, getSubagentResult, stopSubagent, steerSubagent } from "./subagents/service.ts";
 import { config } from "./config.ts";
-import { abortSessionTurn, submitMessage } from "./turn.ts";
+import { abortSessionTurn, submitMessage, removeQueuedFollowup, steerQueuedFollowup, reorderQueuedFollowups } from "./turn.ts";
 import { UNTITLED_SESSION_TITLE } from "@piclaw-cloud/store";
 import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { requireSessionAccess } from "./auth.ts";
@@ -188,15 +188,34 @@ export async function getAgentStatus(chatJid: string) {
 
 export async function getQueueState(chatJid: string) {
   const sessionId = await ensureChatSession(chatJid);
-  const items = await store.getQueuedFollowups(sessionId);
+  const items = await store.listQueuedFollowupItems(sessionId);
   return {
     count: items.length,
-    items: items.map((content, index) => ({
-      row_id: `q-${index}`,
-      content,
-      status: "queued",
+    items: items.map((item) => ({
+      row_id: item.messageId,
+      content: item.content,
+      status: "queued" as const,
+      message_id: item.messageId,
     })),
   };
+}
+
+export async function removeQueueItem(chatJid: string, rowId: number) {
+  const sessionId = await ensureChatSession(chatJid);
+  const result = await removeQueuedFollowup(sessionId, rowId);
+  return { status: "ok" as const, ...result };
+}
+
+export async function steerQueueItem(chatJid: string, rowId: number) {
+  const sessionId = await ensureChatSession(chatJid);
+  const result = await steerQueuedFollowup(sessionId, rowId);
+  return { status: "ok" as const, ...result };
+}
+
+export async function reorderQueueItems(chatJid: string, fromIndex: number, toIndex: number) {
+  const sessionId = await ensureChatSession(chatJid);
+  const result = await reorderQueuedFollowups(sessionId, fromIndex, toIndex);
+  return { status: "ok" as const, ...result };
 }
 
 export async function sendAgentMessage(chatJid: string, content: string, mode?: string | null) {

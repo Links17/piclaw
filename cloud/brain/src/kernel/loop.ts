@@ -11,6 +11,7 @@ import { buildSystemPrompt } from "../llm/messages.ts";
 import { buildSkillsPromptSection } from "../skills/registry.ts";
 import { getDispatchMcpTools } from "../tools/dispatcher.ts";
 import { getToolDefinitionsForMode } from "../tools/schemas.ts";
+import { pollSessionSteerMessage } from "../subagents/channels.ts";
 import type { LlmUsage } from "../llm.ts";
 
 async function buildTurnContext(sessionId: string) {
@@ -63,6 +64,11 @@ export async function runKernelToolLoop(
     maxTurns: config.maxToolRounds,
     onDelta,
     limitQuestionPerTurn: true,
+    pollSteer: () => pollSessionSteerMessage(sessionId),
+    onSteerApplied: async (message) => {
+      const { publish } = await import("../events.ts");
+      await publish(sessionId, { type: "steer_applied", content: message, replica: config.replicaId });
+    },
   });
 
   return {

@@ -44,7 +44,7 @@ async function notifyBackgroundCompletion(sessionId: string, outcome: SubagentRu
   const counter = newCounter();
   const messageId = await store.insertMessage(sessionId, "user", content, { counter });
   await store.enqueueFollowup(sessionId, { content, messageId }, counter);
-  await publish(sessionId, { type: "followup_queued", content });
+  await publish(sessionId, { type: "followup_queued", content, messageId });
 }
 
 async function finishSubagentOutcome(

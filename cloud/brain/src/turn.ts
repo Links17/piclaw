@@ -8,11 +8,12 @@ import { publish } from "./events.ts";
 import { runKernelToolLoop } from "./kernel/loop.ts";
 import { getKernelRuntime } from "./kernel/runtime.ts";
 import { QuotaExceededError } from "./quota.ts";
-import { trackTurnDelta, trackTurnFinished, trackTurnStarted } from "./agent-run-state.ts";
+import { trackTurnDelta, trackTurnFinished, trackTurnStarted, getInflightTurn } from "./agent-run-state.ts";
 import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuestionCleared } from "./tools/question.ts";
 import { getPendingQuestion } from "./question/state.ts";
 import { scheduleSessionTitleGeneration } from "./session-title.ts";
 import { stopAllRunningSubagents } from "./subagents/service.ts";
+import { enqueueSessionSteerMessage } from "./subagents/channels.ts";
 import {
   TurnAbortedError,
   beginTurnAbortScope,
@@ -25,6 +26,12 @@ export type TurnOutcome = "ran" | "queued" | "answered" | "aborted";
 export interface SubmitMessageResult {
   outcome: TurnOutcome;
   userMessageId: number;
+}
+
+export interface QueueMutationResult {
+  removed: boolean;
+  row_id?: number;
+  count: number;
 }
 
 function normalizeIncomingContent(content: string): { content: string; modeSwitch?: "plan" | "execute" } {
@@ -108,7 +115,7 @@ export async function submitMessage(sessionId: string, content: string): Promise
       scheduleSessionTitleGeneration(sessionId, session.user_id, messageContent);
     }
     await store.enqueueFollowup(sessionId, { content: messageContent, messageId }, counter);
-    await publish(sessionId, { type: "followup_queued", content: messageContent });
+    await publish(sessionId, { type: "followup_queued", content: messageContent, messageId });
     await publish(sessionId, { type: "message", id: messageId, role: "user", content: messageContent });
     const retryLock = await store.tryLockSession(sessionId);
     if (retryLock) {
@@ -225,7 +232,7 @@ async function drainFollowups(sessionId: string): Promise<void> {
     const counter = newCounter();
     const item = await store.popFollowup(sessionId, counter);
     if (item === null) return;
-    await publish(sessionId, { type: "followup_consumed", content: item.content });
+    await publish(sessionId, { type: "followup_consumed", content: item.content, messageId: item.messageId });
     await runTurnLocked(sessionId, item.messageId, counter);
   }
 }
@@ -277,4 +284,75 @@ export async function sweepInflight(): Promise<void> {
 
 export async function setSessionMode(sessionId: string, mode: "plan" | "execute"): Promise<void> {
   await store.setSessionMode(sessionId, mode);
+}
+
+export async function removeQueuedFollowup(sessionId: string, rowId: number): Promise<QueueMutationResult> {
+  const counter = newCounter();
+  const removed = await store.removeFollowupByMessageId(sessionId, rowId, counter);
+  if (!removed) {
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return { removed: false, count: items.length };
+  }
+  await store.deleteMessage(sessionId, rowId, counter);
+  await publish(sessionId, { type: "followup_removed", messageId: rowId });
+  const items = await store.listQueuedFollowupItems(sessionId);
+  return { removed: true, row_id: rowId, count: items.length };
+}
+
+export async function steerQueuedFollowup(
+  sessionId: string,
+  rowId: number,
+): Promise<QueueMutationResult & { queued?: "steer" | false; user_message?: { id: number; content: string } }> {
+  const counter = newCounter();
+  const removed = await store.removeFollowupByMessageId(sessionId, rowId, counter);
+  if (!removed) {
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return { removed: false, count: items.length };
+  }
+  await publish(sessionId, { type: "followup_removed", messageId: rowId });
+  const inflight = getInflightTurn(sessionId);
+  if (inflight) {
+    await enqueueSessionSteerMessage(sessionId, removed.content);
+    await publish(sessionId, { type: "steer_applied", content: removed.content, replica: config.replicaId });
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return {
+      removed: true,
+      row_id: rowId,
+      queued: "steer",
+      count: items.length,
+      user_message: { id: rowId, content: removed.content },
+    };
+  }
+  const lock = await store.tryLockSession(sessionId);
+  if (!lock) {
+    await store.enqueueFollowup(sessionId, removed, counter);
+    await publish(sessionId, { type: "followup_queued", content: removed.content, messageId: rowId });
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return { removed: false, row_id: rowId, count: items.length };
+  }
+  try {
+    await runTurnLocked(sessionId, rowId, counter);
+    await drainFollowups(sessionId);
+  } finally {
+    await lock.release();
+  }
+  const items = await store.listQueuedFollowupItems(sessionId);
+  return {
+    removed: true,
+    row_id: rowId,
+    queued: false,
+    count: items.length,
+    user_message: { id: rowId, content: removed.content },
+  };
+}
+
+export async function reorderQueuedFollowups(
+  sessionId: string,
+  fromIndex: number,
+  toIndex: number,
+): Promise<{ reordered: boolean; count: number }> {
+  const counter = newCounter();
+  const reordered = await store.reorderFollowups(sessionId, fromIndex, toIndex, counter);
+  const items = await store.listQueuedFollowupItems(sessionId);
+  return { reordered, count: items.length };
 }

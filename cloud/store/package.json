@@ -12,7 +12,8 @@
     "test": "bun test src/store.test.ts"
   },
   "dependencies": {
-    "@piclaw-cloud/shared": "workspace:*"
+    "@piclaw-cloud/shared": "workspace:*",
+    "cron-parser": "5.5.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

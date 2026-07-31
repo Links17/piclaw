@@ -14,6 +14,11 @@ import { submitMessage, sweepInflight } from "./turn.ts";
 import { getContextUsage } from "./agent-run-state.ts";
 import { getKernelRuntime } from "./kernel/runtime.ts";
 import { handleWorkspaceRoutes } from "./workspace/routes.ts";
+import { handleMediaRoutes } from "./media/routes.ts";
+import {
+  handleScheduledTasksAction,
+  handleScheduledTasksList,
+} from "./scheduled-tasks/handlers.ts";
 import {
   agentResponseSsePayload,
   answerAgentQuestion,
@@ -39,11 +44,14 @@ import {
   removeUserSkill,
   renameChatBranch,
   restoreChatBranch,
+  removeQueueItem,
+  reorderQueueItems,
   sendAgentMessage,
   sendAgentMessageWithOptionalCreate,
   setAgentMode,
   spawnSubagentViaApi,
   steerSubagentForChat,
+  steerQueueItem,
   stopSubagentForChat,
   userPostPayload,
 } from "./web-adapter.ts";
@@ -347,16 +355,49 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return respond(json(await listSessionSubagents(chatJid)));
         }
 
+        const mediaResponse = await handleMediaRoutes(req, url.pathname);
+        if (mediaResponse) return respond(mediaResponse);
+
+        if (req.method === "GET" && url.pathname === "/agent/scheduled-tasks") {
+          return respond(await handleScheduledTasksList(req, url));
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/scheduled-tasks/action") {
+          return respond(await handleScheduledTasksAction(req));
+        }
+
         if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
           return respond(json({}));
         }
 
         if (req.method === "POST" && url.pathname === "/agent/queue-steer") {
-          return respond(json({ removed: false, queued: "steer" }));
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
+          const body = await readJson(req);
+          const rowId = Number(body.row_id);
+          if (!Number.isFinite(rowId)) return respond(json({ error: "row_id required" }, 400));
+          return respond(json(await steerQueueItem(chatJid, rowId)));
         }
 
         if (req.method === "POST" && url.pathname === "/agent/queue-remove") {
-          return respond(json({ removed: false }));
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
+          const body = await readJson(req);
+          const rowId = Number(body.row_id);
+          if (!Number.isFinite(rowId)) return respond(json({ error: "row_id required" }, 400));
+          return respond(json(await removeQueueItem(chatJid, rowId)));
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/queue-reorder") {
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
+          const body = await readJson(req);
+          const fromIndex = Number(body.from_index);
+          const toIndex = Number(body.to_index);
+          if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex)) {
+            return respond(json({ error: "from_index and to_index required" }, 400));
+          }
+          return respond(json(await reorderQueueItems(chatJid, fromIndex, toIndex)));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/commands") {

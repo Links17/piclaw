@@ -6,6 +6,10 @@ export * from "./auth.ts";
 export * from "./quota.ts";
 export * from "./rls.ts";
 export * from "./scheduler.ts";
+export * from "./scheduled-tasks.ts";
+export * from "./media.ts";
+export { computeNextRun } from "./compute-next-run.ts";
+export type { ComputeNextRunOptions } from "./compute-next-run.ts";
 export * from "./subagent-runs.ts";
 export * from "./session-capabilities.ts";
 export * from "./skills.ts";
@@ -420,10 +424,88 @@ export async function popFollowup(
 }
 
 export async function getQueuedFollowups(sessionId: string): Promise<string[]> {
+  const items = await listQueuedFollowupItems(sessionId);
+  return items.map((item) => item.content);
+}
+
+export async function listQueuedFollowupItems(sessionId: string): Promise<QueuedFollowup[]> {
   const rows = await sql`
     SELECT queued_followups FROM session_cursors WHERE session_id = ${sessionId}`;
   const arr = rows[0]?.queued_followups ?? [];
-  return (arr as Array<{ content: string }>).map((item) => item.content);
+  if (!Array.isArray(arr)) return [];
+  return arr.map((item) => ({
+    content: String((item as { content?: unknown }).content ?? ""),
+    messageId: Number((item as { message_id?: unknown }).message_id),
+  }));
+}
+
+export async function removeFollowupByMessageId(
+  sessionId: string,
+  messageId: number,
+  counter?: RoundtripCounter,
+): Promise<QueuedFollowup | null> {
+  const rows = await counted(counter)`
+    WITH cur AS (
+      SELECT queued_followups FROM session_cursors WHERE session_id = ${sessionId} FOR UPDATE
+    ),
+    found AS (
+      SELECT
+        ord - 1 AS idx,
+        elem->>'content' AS content,
+        (elem->>'message_id')::bigint AS message_id
+      FROM cur,
+      jsonb_array_elements(cur.queued_followups) WITH ORDINALITY AS t(elem, ord)
+      WHERE (elem->>'message_id')::bigint = ${messageId}
+      LIMIT 1
+    )
+    UPDATE session_cursors sc
+    SET queued_followups = sc.queued_followups - found.idx::int
+    FROM found
+    WHERE sc.session_id = ${sessionId}
+    RETURNING found.content, found.message_id`;
+  const row = rows[0];
+  if (!row || row.content == null) return null;
+  return { content: String(row.content), messageId: Number(row.message_id) };
+}
+
+export async function reorderFollowups(
+  sessionId: string,
+  fromIndex: number,
+  toIndex: number,
+  counter?: RoundtripCounter,
+): Promise<boolean> {
+  const rows = await counted(counter)`
+    SELECT queued_followups FROM session_cursors WHERE session_id = ${sessionId} FOR UPDATE`;
+  const raw = rows[0]?.queued_followups;
+  if (!Array.isArray(raw)) return false;
+  const items = raw.map((item) => ({
+    content: String((item as { content?: unknown }).content ?? ""),
+    message_id: Number((item as { message_id?: unknown }).message_id),
+  }));
+  if (
+    fromIndex < 0 || toIndex < 0
+    || fromIndex >= items.length || toIndex >= items.length
+    || fromIndex === toIndex
+  ) {
+    return false;
+  }
+  const [moved] = items.splice(fromIndex, 1);
+  items.splice(toIndex, 0, moved!);
+  await counted(counter)`
+    UPDATE session_cursors
+    SET queued_followups = ${JSON.stringify(items)}::jsonb
+    WHERE session_id = ${sessionId}`;
+  return true;
+}
+
+export async function deleteMessage(
+  sessionId: string,
+  messageId: number,
+  counter?: RoundtripCounter,
+): Promise<boolean> {
+  const rows = await counted(counter)`
+    DELETE FROM messages WHERE session_id = ${sessionId} AND id = ${messageId} RETURNING id`;
+  return rows.length > 0;
 }
 
 export async function getCursor(sessionId: string): Promise<Record<string, unknown> | null> {

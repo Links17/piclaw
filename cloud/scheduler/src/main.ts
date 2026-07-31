@@ -3,6 +3,7 @@
  */
 import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 import * as store from "@piclaw-cloud/store";
+import { computeNextRun } from "@piclaw-cloud/store";
 import { applyMigrations } from "@piclaw-cloud/store/db";
 
 const cloud = getCloudConfig();
@@ -67,6 +68,7 @@ async function sweepScheduledTasks(): Promise<void> {
   const due = await store.listDueScheduledTasks(20);
   const brainBase = process.env.CLOUD_BRAIN_URL || `http://127.0.0.1:${cloud.server.port}`;
   for (const task of due) {
+    const startedAt = Date.now();
     try {
       const res = await fetch(`${brainBase.replace(/\/$/, "")}/sessions/${encodeURIComponent(task.session_id)}/subagents`, {
         method: "POST",
@@ -78,12 +80,48 @@ async function sweepScheduledTasks(): Promise<void> {
           run_in_background: true,
         }),
       });
+      const durationMs = Date.now() - startedAt;
       if (res.ok) {
+        const body = await res.json().catch(() => ({})) as { success?: boolean; data?: { run_id?: string } };
+        const resultSummary = body.data?.run_id ? `spawned subagent ${body.data.run_id}` : "spawned subagent";
+        await store.appendTaskRunLog({
+          taskId: task.id,
+          durationMs,
+          status: "success",
+          result: resultSummary,
+        });
+        const nextRun = task.schedule_type === "once"
+          ? null
+          : computeNextRun(task.schedule_type, task.schedule_value, { currentDate: new Date() });
+        await store.markScheduledTaskRan(task.id, nextRun, resultSummary);
         console.log(`[scheduler] spawned scheduled subagent for ${task.session_id} (${task.id})`);
       } else {
-        console.warn(`[scheduler] failed to spawn ${task.id}: HTTP ${res.status}`);
+        const errorText = `HTTP ${res.status}`;
+        await store.appendTaskRunLog({
+          taskId: task.id,
+          durationMs,
+          status: "error",
+          error: errorText,
+        });
+        const nextRun = task.schedule_type === "once"
+          ? null
+          : computeNextRun(task.schedule_type, task.schedule_value, { currentDate: new Date() });
+        await store.markScheduledTaskRan(task.id, nextRun, null);
+        console.warn(`[scheduler] failed to spawn ${task.id}: ${errorText}`);
       }
     } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      const message = error instanceof Error ? error.message : String(error);
+      await store.appendTaskRunLog({
+        taskId: task.id,
+        durationMs,
+        status: "error",
+        error: message,
+      });
+      const nextRun = task.schedule_type === "once"
+        ? null
+        : computeNextRun(task.schedule_type, task.schedule_value, { currentDate: new Date() });
+      await store.markScheduledTaskRan(task.id, nextRun, null);
       console.warn(`[scheduler] scheduled task ${task.id} failed:`, error);
     }
   }

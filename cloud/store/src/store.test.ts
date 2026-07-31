@@ -8,7 +8,7 @@ describe("@piclaw-cloud/shared sse-events", () => {
   });
 
   test("maps followup_queued", () => {
-    const mapped = mapInternalToWeb("s1", { type: "followup_queued", content: "next" });
+    const mapped = mapInternalToWeb("s1", { type: "followup_queued", content: "next", messageId: 42 });
     expect(mapped).toEqual({ type: "agent_followup_queued", content: "next" });
   });
 

@@ -22,8 +22,9 @@ export type WebSseEvent =
   | { type: "agent_draft"; text: string }
   | { type: "agent_thought_delta"; delta: string }
   | { type: "agent_response"; messageId: string; content: string; recovery?: boolean }
-  | { type: "agent_followup_queued"; content: string }
-  | { type: "agent_followup_consumed"; content: string }
+  | { type: "agent_followup_queued"; content: string; row_id?: number }
+  | { type: "agent_followup_consumed"; content: string; row_id?: number }
+  | { type: "agent_followup_removed"; row_id: number }
   | { type: "agent_steer_queued"; content: string }
   | { type: "agent_question"; questionId: string; question: string; options: unknown[] }
   | { type: "subagent_created"; runId: string; agentType: string; description?: string }
@@ -39,8 +40,10 @@ export type InternalSessionEvent =
   | { type: "turn_done"; messageId: number; replica: string; dbRoundtrips: number; durationMs: number }
   | { type: "turn_aborted"; messageId?: number; replica: string }
   | { type: "turn_failed"; messageId: number; error: string; replica: string }
-  | { type: "followup_queued"; content: string }
-  | { type: "followup_consumed"; content: string }
+  | { type: "followup_queued"; content: string; messageId: number }
+  | { type: "followup_consumed"; content: string; messageId: number }
+  | { type: "followup_removed"; messageId: number }
+  | { type: "steer_applied"; content: string; replica: string }
   | { type: "recovery"; messageId: number; action: "retried" | "cleared"; replica: string }
   | { type: "tool_start"; name: string; toolCallId: string; replica: string; detail?: string }
   | { type: "tool_result"; name: string; toolCallId: string; isError: boolean; replica: string }
@@ -103,11 +106,21 @@ export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): 
     case "followup_queued":
       return {
         event: "agent_followup_queued",
-        data: scoped(scope, { content: event.content }),
+        data: scoped(scope, { content: event.content, row_id: event.messageId }),
       };
     case "followup_consumed":
       return {
         event: "agent_followup_consumed",
+        data: scoped(scope, { content: event.content, row_id: event.messageId }),
+      };
+    case "followup_removed":
+      return {
+        event: "agent_followup_removed",
+        data: scoped(scope, { row_id: event.messageId }),
+      };
+    case "steer_applied":
+      return {
+        event: "agent_steer_queued",
         data: scoped(scope, { content: event.content }),
       };
     case "tool_start":
