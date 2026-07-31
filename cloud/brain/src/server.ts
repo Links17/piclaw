@@ -200,6 +200,24 @@ async function withAuth(req: Request, handler: (ctx: RequestContext) => Promise<
   }
 }
 
+async function withChatAuth(
+  req: Request,
+  chatJid: string | null,
+  handler: (ctx: RequestContext & { chatJid: string }) => Promise<Response>,
+  options: { allowMissing?: boolean } = {},
+): Promise<Response> {
+  if (!chatJid) {
+    if (options.allowMissing) {
+      return applyCors(req, json({ error: "chat_jid required" }, 400));
+    }
+    return applyCors(req, json({ error: "chat_jid required" }, 400));
+  }
+  return withAuth(req, async ({ userId }) => {
+    await requireSessionAccess(chatJid, userId);
+    return handler({ userId, chatJid });
+  });
+}
+
 export async function bootstrapSchema(): Promise<void> {
   await applyMigrations();
 }
@@ -226,8 +244,10 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         if (req.method === "GET" && url.pathname === "/sse/stream") {
           const chatJid = readRequestChatJid(url);
           if (!chatJid) return respond(noopSseResponse());
-          const sessionId = await ensureChatSession(chatJid);
-          return respond(sseResponse(sessionId, chatJid));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) => {
+            const sessionId = await ensureChatSession(jid);
+            return respond(sseResponse(sessionId, jid));
+          });
         }
 
         if (req.method === "GET" && url.pathname === "/timeline") {
@@ -236,19 +256,25 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           if (!chatJid) return respond(json({ posts: [], limit, has_more: false }));
           const beforeRaw = url.searchParams.get("before_id");
           const before = beforeRaw ? Number(beforeRaw) : null;
-          return respond(json(await getTimeline(chatJid, limit, before)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await getTimeline(jid, limit, before))),
+          );
         }
 
         if (req.method === "GET" && url.pathname === "/agent/status") {
           const chatJid = readRequestChatJid(url);
           if (!chatJid) return respond(json(idleAgentStatusPayload()));
-          return respond(json(await getAgentStatus(chatJid)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await getAgentStatus(jid))),
+          );
         }
 
         if (req.method === "GET" && url.pathname === "/agent/queue-state") {
           const chatJid = readRequestChatJid(url);
           if (!chatJid) return respond(json(emptyQueueState()));
-          return respond(json(await getQueueState(chatJid)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await getQueueState(jid))),
+          );
         }
 
         if (req.method === "GET" && url.pathname === "/agent/roster") {
@@ -348,7 +374,9 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const questionId = String(body.question_id ?? body.questionId ?? "");
           const answer = String(body.answer ?? body.content ?? "");
           if (!questionId || !answer) return respond(json({ error: "question_id and answer required" }, 400));
-          return respond(json(await answerAgentQuestion(chatJid, questionId, answer)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await answerAgentQuestion(jid, questionId, answer))),
+          );
         }
 
         if (req.method === "POST" && url.pathname === "/agent/mode") {
@@ -356,13 +384,17 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
           const body = await readJson(req);
           const mode = body.mode === "plan" ? "plan" : "execute";
-          return respond(json(await setAgentMode(chatJid, mode)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await setAgentMode(jid, mode))),
+          );
         }
 
         if (req.method === "GET" && url.pathname === "/agent/subagents") {
           const chatJid = readRequestChatJid(url);
           if (!chatJid) return respond(json({ runs: [] }));
-          return respond(json(await listSessionSubagents(chatJid)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await listSessionSubagents(jid))),
+          );
         }
 
         const mediaResponse = await handleMediaRoutes(req, url.pathname);
@@ -381,7 +413,7 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname === "/agent/settings-data") {
-          return respond(json(await getSettingsData()));
+          return withAuth(req, async ({ userId }) => respond(json(await getSettingsData(userId))));
         }
 
         if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
@@ -428,7 +460,9 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const body = await readJson(req);
           const rowId = Number(body.row_id);
           if (!Number.isFinite(rowId)) return respond(json({ error: "row_id required" }, 400));
-          return respond(json(await steerQueueItem(chatJid, rowId)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await steerQueueItem(jid, rowId))),
+          );
         }
 
         if (req.method === "POST" && url.pathname === "/agent/queue-remove") {
@@ -437,7 +471,9 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           const body = await readJson(req);
           const rowId = Number(body.row_id);
           if (!Number.isFinite(rowId)) return respond(json({ error: "row_id required" }, 400));
-          return respond(json(await removeQueueItem(chatJid, rowId)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await removeQueueItem(jid, rowId))),
+          );
         }
 
         if (req.method === "POST" && url.pathname === "/agent/queue-reorder") {
@@ -449,22 +485,26 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex)) {
             return respond(json({ error: "from_index and to_index required" }, 400));
           }
-          return respond(json(await reorderQueueItems(chatJid, fromIndex, toIndex)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(await reorderQueueItems(jid, fromIndex, toIndex))),
+          );
         }
 
         if (req.method === "GET" && url.pathname === "/agent/commands") {
-          return respond(json({ commands: await buildAgentCommandList() }));
+          return withAuth(req, async () => respond(json({ commands: await buildAgentCommandList() })));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/session-tree") {
           const chatJid = readRequestChatJid(url);
           if (!chatJid) return respond(json({ leafId: null, nodes: [], error: "chat_jid required" }, 400));
-          try {
-            return respond(json(await getSessionTreeForChat(chatJid)));
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            return respond(json({ leafId: null, nodes: [], error: message }, 200));
-          }
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) => {
+            try {
+              return respond(json(await getSessionTreeForChat(jid)));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              return respond(json({ leafId: null, nodes: [], error: message }, 200));
+            }
+          });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/system-metrics") {
@@ -485,15 +525,17 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           if (!chatJid) {
             return respond(json({ tokens: null, context_window: fallbackWindow, percent: null }));
           }
-          const usage = getContextUsage(chatJidToSessionId(chatJid));
-          if (!usage) {
-            return respond(json({ tokens: null, context_window: fallbackWindow, percent: null }));
-          }
-          return respond(json({
-            tokens: usage.tokens,
-            context_window: usage.contextWindow,
-            percent: usage.percent,
-          }));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) => {
+            const usage = getContextUsage(chatJidToSessionId(jid));
+            if (!usage) {
+              return respond(json({ tokens: null, context_window: fallbackWindow, percent: null }));
+            }
+            return respond(json({
+              tokens: usage.tokens,
+              context_window: usage.contextWindow,
+              percent: usage.percent,
+            }));
+          });
         }
 
         if (req.method === "GET" && url.pathname === "/agent/autoresearch/status") {
@@ -521,7 +563,9 @@ export function startServer(): ReturnType<typeof Bun.serve> {
               connected_clients: 0,
             }));
           }
-          return respond(json(getTerminalSessionInfo(chatJid)));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) =>
+            respond(json(getTerminalSessionInfo(jid))),
+          );
         }
 
         if (req.method === "POST" && url.pathname === "/terminal/handoff") {
@@ -529,11 +573,9 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "POST" && url.pathname === "/agent/runs/abort") {
-          return withAuth(req, async () => {
-            const chatJid = readRequestChatJid(url);
-            if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
-            return respond(json(await abortAgentRunForChat(chatJid)));
-          });
+          return withChatAuth(req, readRequestChatJid(url), async ({ chatJid: jid }) =>
+            respond(json(await abortAgentRunForChat(jid))),
+          );
         }
 
         if (req.method === "POST" && parts[0] === "agent" && parts[1] && parts[2] === "message") {
@@ -558,10 +600,12 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         if (req.method === "GET" && url.pathname === "/terminal/ws") {
           const chatJid = readRequestChatJid(url);
           if (!chatJid) return respond(json({ error: "chat_jid required" }, 400));
-          const sessionId = chatJidToSessionId(chatJid);
-          const upgraded = server.upgrade(req, { data: { sessionId, chatJid } });
-          if (upgraded) return undefined as unknown as Response;
-          return respond(json({ error: "websocket upgrade failed" }, 400));
+          return withChatAuth(req, chatJid, async ({ chatJid: jid }) => {
+            const sessionId = chatJidToSessionId(jid);
+            const upgraded = server.upgrade(req, { data: { sessionId, chatJid: jid } });
+            if (upgraded) return undefined as unknown as Response;
+            return respond(json({ error: "websocket upgrade failed" }, 400));
+          });
         }
 
         if (req.method === "GET" && url.pathname === "/skills") {

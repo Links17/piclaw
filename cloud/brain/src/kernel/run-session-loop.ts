@@ -2,7 +2,6 @@ import * as store from "@piclaw-cloud/store";
 import type { RoundtripCounter } from "@piclaw-cloud/store/db";
 import {
   convertToLlm,
-  DEFAULT_COMPACTION_SETTINGS,
   estimateContextTokens,
   generateSummary,
   runAgentLoopContinue,
@@ -13,6 +12,7 @@ import {
   type AssistantMessage,
   type ToolResultMessage,
   type Usage,
+  type Model,
 } from "./pi.ts";
 import { config } from "../config.ts";
 import { publish } from "../events.ts";
@@ -35,6 +35,7 @@ import {
 } from "./subagent-message-map.ts";
 import { getKernelRuntime } from "./runtime.ts";
 import { buildAgentTools } from "./tool-bridge.ts";
+import { getSessionCompactionSettings } from "./compaction-settings.ts";
 
 const DEFAULT_GRACE_TURNS = 5;
 const WRAP_UP_MESSAGE =
@@ -44,17 +45,22 @@ const COMPACTION_TAIL_MESSAGES = 6;
 async function maybeCompactMessages(
   agentMessages: AgentMessage[],
   sessionId: string,
+  sessionModel: Model<string>,
+  userId: string,
   kernel: NonNullable<ReturnType<typeof getKernelRuntime>>,
 ): Promise<AgentMessage[]> {
+  const compaction = await getSessionCompactionSettings(userId, sessionModel.contextWindow);
+  if (!compaction.enabled) return agentMessages;
+
   const estimate = estimateContextTokens(agentMessages);
-  if (!shouldCompact(estimate.tokens, kernel.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
+  if (!shouldCompact(estimate.tokens, sessionModel.contextWindow, compaction.settings)) {
     return agentMessages;
   }
   const summaryResult = await generateSummary(
     agentMessages,
     kernel.models,
-    kernel.model,
-    DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+    sessionModel,
+    compaction.settings.reserveTokens,
     getTurnAbortSignal(sessionId),
   );
   if (!summaryResult.ok || !summaryResult.value.trim()) {
@@ -81,6 +87,8 @@ export interface RunAgentSessionLoopOptions {
   systemPrompt: string;
   mode: "plan" | "execute";
   toolDefinitions: ToolDefinition[];
+  model?: Model<string>;
+  userId?: string;
   maxTurns: number;
   graceTurns?: number;
   onDelta?: (text: string) => Promise<void>;
@@ -159,6 +167,10 @@ export async function runAgentSessionLoop(
 
   const persist = options.persist;
   const sessionId = persist.sessionId;
+  const sessionModel = options.model ?? kernel.model;
+  const sessionOwner = await store.getSession(sessionId);
+  const userId = options.userId ?? sessionOwner?.user_id ?? "default-user";
+
   const isSubagent = persist.kind === "subagent";
   const runId = isSubagent ? persist.runId : undefined;
   const graceTurns = options.graceTurns ?? DEFAULT_GRACE_TURNS;
@@ -183,7 +195,7 @@ export async function runAgentSessionLoop(
   await runAgentLoopContinue(
     context,
     {
-      model: kernel.model,
+      model: sessionModel,
       convertToLlm,
       transformContext: async (agentMessages) => {
         if (options.pollSteer) {
@@ -201,12 +213,12 @@ export async function runAgentSessionLoop(
         if (!isSubagent) {
           setContextUsage(sessionId, {
             tokens: estimate.tokens,
-            contextWindow: kernel.model.contextWindow,
-            percent: Math.min(100, Math.round((estimate.tokens / kernel.model.contextWindow) * 100)),
+            contextWindow: sessionModel.contextWindow,
+            percent: Math.min(100, Math.round((estimate.tokens / sessionModel.contextWindow) * 100)),
           });
         }
 
-        agentMessages = await maybeCompactMessages(agentMessages, sessionId, kernel);
+        agentMessages = await maybeCompactMessages(agentMessages, sessionId, sessionModel, userId, kernel);
 
         if (turnCount >= options.maxTurns && !wrapUpInjected) {
           wrapUpInjected = true;

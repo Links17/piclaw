@@ -8,6 +8,7 @@ import {
   mimeTypeForPath,
   parseAddonAssetRequestPath,
 } from "./web-entries.ts";
+import { installAddonForChat, restartAddonRuntimeResponse, uninstallAddonForChat } from "./install.ts";
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
@@ -15,6 +16,10 @@ function json(body: unknown, status = 200): Response {
 
 function readRequestChatJid(url: URL): string {
   return url.searchParams.get("chat_jid")?.trim() || "web:default";
+}
+
+async function readJsonBody(req: Request): Promise<Record<string, unknown>> {
+  return (await req.json().catch(() => ({}))) as Record<string, unknown>;
 }
 
 export async function handleAddonRoutes(req: Request, pathname: string, url: URL): Promise<Response | null> {
@@ -63,8 +68,27 @@ export async function handleAddonRoutes(req: Request, pathname: string, url: URL
     }
   }
 
-  if (req.method === "POST" && pathname.startsWith("/agent/addons/")) {
-    return json({ error: "Add-on install/uninstall is not available in cloud mode yet." }, 501);
+  if (req.method === "POST" && pathname === "/agent/addons/install") {
+    const chatJid = readRequestChatJid(url);
+    const body = await readJsonBody(req);
+    const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+    if (!slug) return json({ error: "Missing slug" }, 400);
+    const result = await installAddonForChat(chatJid, slug, url);
+    return json(result.body, result.status);
+  }
+
+  if (req.method === "POST" && pathname === "/agent/addons/uninstall") {
+    const chatJid = readRequestChatJid(url);
+    const body = await readJsonBody(req);
+    const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+    if (!slug) return json({ error: "Missing slug" }, 400);
+    const result = await uninstallAddonForChat(chatJid, slug, url);
+    return json(result.body, result.status);
+  }
+
+  if (req.method === "POST" && pathname === "/agent/addons/restart") {
+    const response = restartAddonRuntimeResponse();
+    return json(response.body, response.status);
   }
 
   if ((req.method === "GET" || req.method === "POST") && pathname.startsWith("/agent/addons/api/")) {

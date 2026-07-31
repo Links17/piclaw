@@ -7,6 +7,7 @@ import { config } from "./config.ts";
 import { publish } from "./events.ts";
 import { runKernelToolLoop } from "./kernel/loop.ts";
 import { getKernelRuntime } from "./kernel/runtime.ts";
+import { resolveSessionKernelModel, resolveModelIdForLogging } from "./kernel/resolve-model.ts";
 import { QuotaExceededError } from "./quota.ts";
 import { trackTurnDelta, trackTurnFinished, trackTurnStarted, getInflightTurn } from "./agent-run-state.ts";
 import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuestionCleared } from "./tools/question.ts";
@@ -180,10 +181,11 @@ async function runTurnLocked(
 
     await store.endTurn(sessionId, messageId, counter);
     const durationMs = Date.now() - startedAt;
+    const sessionModel = await resolveSessionKernelModel(sessionId);
     await store.logTokenUsage({
       sessionId,
       messageId: assistantMessageId,
-      model: config.openaiModel,
+      model: resolveModelIdForLogging(sessionModel),
       inputTokens: usage.inputTokens ?? 0,
       outputTokens: usage.outputTokens ?? 0,
       cacheReadTokens: usage.cachedTokens ?? 0,

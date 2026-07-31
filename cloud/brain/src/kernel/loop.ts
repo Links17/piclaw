@@ -7,6 +7,7 @@ import { config } from "../config.ts";
 import { rowsToAgentMessages } from "./message-map.ts";
 import { runAgentSessionLoop } from "./run-session-loop.ts";
 import { getKernelRuntime } from "./runtime.ts";
+import { resolveSessionKernelModel, resolveModelIdForLogging } from "./resolve-model.ts";
 import { buildSystemPrompt } from "../llm/messages.ts";
 import { buildSkillsPromptSection } from "../skills/registry.ts";
 import { getDispatchMcpTools } from "../tools/dispatcher.ts";
@@ -42,9 +43,12 @@ export async function runKernelToolLoop(
     throw new Error("Agent kernel is not initialized");
   }
 
+  const session = await store.getSession(sessionId);
+  const userId = session?.user_id ?? "default-user";
   const turnContext = await buildTurnContext(sessionId);
+  const sessionModel = await resolveSessionKernelModel(sessionId);
   const rows = await store.hydrate(sessionId, counter);
-  const messages = rowsToAgentMessages(rows, kernel.model.id);
+  const messages = rowsToAgentMessages(rows, resolveModelIdForLogging(sessionModel));
   if (messages.length === 0 || messages[messages.length - 1]?.role === "assistant") {
     throw new Error("Cannot start kernel loop: context must end with user or toolResult message");
   }
@@ -61,6 +65,8 @@ export async function runKernelToolLoop(
     systemPrompt,
     mode: turnContext.mode,
     toolDefinitions: turnContext.tools,
+    model: sessionModel,
+    userId,
     maxTurns: config.maxToolRounds,
     onDelta,
     limitQuestionPerTurn: true,

@@ -2,6 +2,7 @@
 import * as store from "@piclaw-cloud/store";
 import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { config } from "./config.ts";
+import { chatJidToSessionId } from "./web-adapter.ts";
 
 export class AuthError extends Error {
   constructor(message: string) {
@@ -42,4 +43,16 @@ export async function requireSessionAccess(sessionId: string, userId: string): P
       throw new Error("unknown session");
     }
   }
+}
+
+/** Resolve user, set RLS context, and verify session access for a web chat_jid. */
+export async function authorizeChatAccess(req: Request, chatJid: string): Promise<string> {
+  const userId = await resolveRequestUser(req);
+  await store.setUserContext(userId);
+  const sessionId = chatJidToSessionId(chatJid);
+  if (!sessionId) {
+    throw new AuthError("chat_jid required");
+  }
+  await requireSessionAccess(sessionId, userId);
+  return userId;
 }

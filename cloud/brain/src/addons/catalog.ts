@@ -7,7 +7,7 @@ interface CatalogAddonInstall {
   spec?: string;
 }
 
-interface CatalogAddon {
+export interface CatalogAddon {
   slug: string;
   name: string;
   version?: string;
@@ -94,7 +94,7 @@ function mergeCatalogs(catalogs: CatalogData[]): CatalogData | null {
   return { version: version || undefined, source: sources.join(", "), addons };
 }
 
-async function fetchMergedCatalog(catalogUrls: string[]) {
+export async function fetchMergedCatalog(catalogUrls: string[]) {
   const urls = parseCatalogUrlList(catalogUrls);
   const results = await Promise.all(urls.map(async (catalogUrl) => ({
     url: catalogUrl,
@@ -103,6 +103,28 @@ async function fetchMergedCatalog(catalogUrls: string[]) {
   const failedUrls = results.filter((result) => !result.catalog).map((result) => result.url);
   const catalog = mergeCatalogs(results.map((result) => result.catalog).filter(Boolean) as CatalogData[]);
   return { catalog, urls, failedUrls };
+}
+
+export function resolveAddonInstallSpec(addon: Pick<CatalogAddon, "name" | "version" | "install">): {
+  kind: string;
+  spec: string;
+} {
+  const explicitSpec = addon.install?.spec?.trim();
+  if (explicitSpec) {
+    return {
+      kind: addon.install?.kind?.trim() || "tarball",
+      spec: explicitSpec,
+    };
+  }
+  return {
+    kind: "package",
+    spec: addon.name,
+  };
+}
+
+export async function findCatalogAddon(slug: string, catalogUrls: string[]): Promise<CatalogAddon | null> {
+  const { catalog } = await fetchMergedCatalog(catalogUrls);
+  return catalog?.addons?.find((entry) => entry.slug === slug) ?? null;
 }
 
 function resolveInstallKind(addon: CatalogAddon): string {
