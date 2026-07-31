@@ -5,34 +5,19 @@ import * as store from "@piclaw-cloud/store";
 import { newCounter } from "@piclaw-cloud/store/db";
 import { config } from "./config.ts";
 import { publish } from "./events.ts";
-import { streamCompletionRound, isLlmMockEnabled, type LlmUsage } from "./llm.ts";
 import { runKernelToolLoop } from "./kernel/loop.ts";
-import { isKernelConfigured } from "./kernel/runtime.ts";
-import {
-  assistantToolCallBlocks,
-  historyToOpenAi,
-  toolResultBlocks,
-  type OpenAiMessage,
-  type OpenAiToolCall,
-} from "./llm/messages.ts";
-import { dispatchTool, getDispatchMcpTools } from "./tools/dispatcher.ts";
-import { getToolDefinitionsForMode, type ToolDefinition } from "./tools/schemas.ts";
+import { getKernelRuntime } from "./kernel/runtime.ts";
 import { QuotaExceededError } from "./quota.ts";
-import { trackTurnDelta, trackTurnFinished, trackTurnStarted, setPlanPreview } from "./agent-run-state.ts";
+import { trackTurnDelta, trackTurnFinished, trackTurnStarted } from "./agent-run-state.ts";
 import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuestionCleared } from "./tools/question.ts";
 import { getPendingQuestion } from "./question/state.ts";
-import { buildSkillsPromptSection } from "./skills/registry.ts";
 import { scheduleSessionTitleGeneration } from "./session-title.ts";
 import { stopAllRunningSubagents } from "./subagents/service.ts";
 import {
   TurnAbortedError,
-  assertTurnNotAborted,
   beginTurnAbortScope,
   clearTurnAbortScope,
-  getTurnAbortSignal,
-  isTurnAborted,
   signalTurnAbort,
-  throwIfAborted,
 } from "./turn-abort.ts";
 
 export type TurnOutcome = "ran" | "queued" | "answered" | "aborted";
@@ -153,173 +138,6 @@ export async function submitMessage(sessionId: string, content: string): Promise
   return { outcome: "ran", userMessageId };
 }
 
-function mergeUsage(total: LlmUsage, round: LlmUsage): LlmUsage {
-  return {
-    inputTokens: (total.inputTokens ?? 0) + (round.inputTokens ?? 0),
-    outputTokens: (total.outputTokens ?? 0) + (round.outputTokens ?? 0),
-    cachedTokens: (total.cachedTokens ?? 0) + (round.cachedTokens ?? 0),
-  };
-}
-
-function toOpenAiToolCalls(calls: Array<{ id: string; name: string; arguments: string }>): OpenAiToolCall[] {
-  return calls.map((call) => ({
-    id: call.id,
-    type: "function" as const,
-    function: { name: call.name, arguments: call.arguments },
-  }));
-}
-
-async function buildTurnContext(sessionId: string): Promise<{
-  mode: "plan" | "execute";
-  tools: ToolDefinition[];
-  skillsSection: string;
-  planText: string;
-}> {
-  const session = await store.getSession(sessionId);
-  const userId = session?.user_id ?? "default-user";
-  const [mode, planText, skillsSection, mcpTools] = await Promise.all([
-    store.getSessionMode(sessionId),
-    store.getSessionPlanText(sessionId),
-    buildSkillsPromptSection(sessionId, userId),
-    getDispatchMcpTools(),
-  ]);
-  return {
-    mode,
-    planText,
-    skillsSection,
-    tools: getToolDefinitionsForMode(mode, mcpTools),
-  };
-}
-
-async function runToolLoop(
-  sessionId: string,
-  counter: ReturnType<typeof newCounter>,
-  onDelta: (text: string) => Promise<void>,
-  options: { recovery?: boolean } = {},
-): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
-  if (!isLlmMockEnabled() && isKernelConfigured()) {
-    return runKernelToolLoop(sessionId, counter, onDelta, options);
-  }
-  return runLegacyToolLoop(sessionId, counter, onDelta, options);
-}
-
-async function runLegacyToolLoop(
-  sessionId: string,
-  counter: ReturnType<typeof newCounter>,
-  onDelta: (text: string) => Promise<void>,
-  options: { recovery?: boolean } = {},
-): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
-  const turnContext = await buildTurnContext(sessionId);
-  let messages: OpenAiMessage[] = historyToOpenAi(await store.hydrate(sessionId, counter), {
-    mode: turnContext.mode,
-    skillsSection: turnContext.skillsSection,
-    planText: turnContext.planText,
-  });
-  let totalUsage: LlmUsage = { inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
-  let finalText = "";
-  let assistantMessageId: number | null = null;
-  let questionCallsThisTurn = 0;
-
-  for (let round = 0; round < config.maxToolRounds; round += 1) {
-    assertTurnNotAborted(sessionId);
-    const result = await streamCompletionRound(
-      messages,
-      onDelta,
-      turnContext.tools,
-      { sessionId, signal: getTurnAbortSignal(sessionId) },
-    );
-    totalUsage = mergeUsage(totalUsage, result.usage);
-
-    if (result.toolCalls.length === 0) {
-      finalText = result.text;
-      assistantMessageId = await store.insertMessage(sessionId, "assistant", finalText, {
-        counter,
-        recoveryMarker: options.recovery ?? false,
-      });
-      messages.push({ role: "assistant", content: finalText });
-      if (turnContext.mode === "plan" && finalText.trim()) {
-        await store.setSessionPlanText(sessionId, finalText.trim());
-        setPlanPreview(sessionId, finalText.trim());
-        await publish(sessionId, { type: "plan_update", text: finalText.trim(), replica: config.replicaId });
-      }
-      break;
-    }
-
-    const toolCalls = toOpenAiToolCalls(result.toolCalls);
-    await store.insertMessage(sessionId, "assistant", result.text || "", {
-      counter,
-      contentBlocks: assistantToolCallBlocks(toolCalls),
-    });
-    messages.push({ role: "assistant", content: result.text || null, tool_calls: toolCalls });
-
-    for (const call of result.toolCalls) {
-      assertTurnNotAborted(sessionId);
-      let args: Record<string, unknown> = {};
-      let parseError: string | null = null;
-      try {
-        args = JSON.parse(call.arguments || "{}") as Record<string, unknown>;
-      } catch {
-        parseError = `Invalid tool arguments JSON for ${call.name}`;
-      }
-      const skillDetail =
-        call.name === "skill" && typeof args.name === "string" ? String(args.name) : undefined;
-
-      await publish(sessionId, {
-        type: "tool_start",
-        name: call.name,
-        toolCallId: call.id,
-        replica: config.replicaId,
-        ...(skillDetail ? { detail: skillDetail } : {}),
-      });
-
-      let toolResult: { output: string; isError: boolean };
-      if (parseError) {
-        toolResult = { output: parseError, isError: true };
-      } else if (call.name === "question") {
-        if (questionCallsThisTurn >= 1) {
-          toolResult = {
-            output: "question tool already used this turn; proceed with reasonable defaults.",
-            isError: true,
-          };
-        } else {
-          questionCallsThisTurn += 1;
-          toolResult = await dispatchTool(sessionId, call.name, args, turnContext.mode, turnContext.tools);
-        }
-      } else {
-        toolResult = await dispatchTool(sessionId, call.name, args, turnContext.mode, turnContext.tools);
-      }
-
-      if (isTurnAborted(sessionId)) {
-        throw new TurnAbortedError();
-      }
-
-      await publish(sessionId, {
-        type: "tool_result",
-        name: call.name,
-        toolCallId: call.id,
-        isError: toolResult.isError,
-        replica: config.replicaId,
-      });
-
-      await store.insertMessage(sessionId, "tool", toolResult.output, {
-        counter,
-        contentBlocks: toolResultBlocks(call.id, call.name),
-      });
-      messages.push({ role: "tool", tool_call_id: call.id, content: toolResult.output });
-    }
-
-    if (round === config.maxToolRounds - 1) {
-      finalText = result.text || "Stopped: maximum tool rounds reached.";
-      assistantMessageId = await store.insertMessage(sessionId, "assistant", finalText, {
-        counter,
-        recoveryMarker: options.recovery ?? false,
-      });
-    }
-  }
-
-  return { finalText, usage: totalUsage, assistantMessageId };
-}
-
 async function runTurnLocked(
   sessionId: string,
   messageId: number,
@@ -333,7 +151,12 @@ async function runTurnLocked(
   beginTurnAbortScope(sessionId);
 
   try {
-    const { finalText, usage, assistantMessageId } = await runToolLoop(
+    if (!getKernelRuntime()) {
+      throw new Error(
+        "Agent kernel is not initialized — configure openai in brain.config.json or set CLOUD_LLM_MOCK=1",
+      );
+    }
+    const { finalText, usage, assistantMessageId } = await runKernelToolLoop(
       sessionId,
       counter,
       async (delta) => {

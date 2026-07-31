@@ -4,9 +4,9 @@
 import * as store from "@piclaw-cloud/store";
 import { config } from "../config.ts";
 import { publish } from "../events.ts";
-import { isLlmMockEnabled, type LlmUsage } from "../llm.ts";
+import type { LlmUsage } from "../llm.ts";
 import { runAgentSessionLoop } from "../kernel/run-session-loop.ts";
-import { getKernelRuntime, isKernelConfigured } from "../kernel/runtime.ts";
+import { getKernelRuntime } from "../kernel/runtime.ts";
 import { subagentRowsToAgentMessages } from "../kernel/subagent-message-map.ts";
 import { pollSteerMessage } from "./channels.ts";
 import {
@@ -14,7 +14,6 @@ import {
   resolveSubagentProfile,
   type ProfileOverrides,
 } from "./profiles.ts";
-import { runLegacySubagentLoop } from "./legacy-subagent-loop.ts";
 import type { SubagentType } from "./types.ts";
 
 export interface SubagentLoopOptions {
@@ -31,10 +30,6 @@ export interface SubagentLoopResult {
   artifacts: string[];
   usage: LlmUsage;
   toolCount: number;
-}
-
-function shouldUseKernelLoop(): boolean {
-  return !isLlmMockEnabled() && isKernelConfigured();
 }
 
 function extractArtifacts(summary: string, task: string): string[] {
@@ -55,14 +50,6 @@ export async function runSubagentLoop(
   runId: string,
   options: SubagentLoopOptions,
 ): Promise<SubagentLoopResult> {
-  if (!shouldUseKernelLoop()) {
-    const legacy = await runLegacySubagentLoop(sessionId, runId, options.agentType, options.prompt, {
-      maxTurns: options.maxTurns,
-      constraints: options.constraints,
-    });
-    return legacy;
-  }
-
   const kernel = getKernelRuntime();
   if (!kernel) {
     throw new Error("Agent kernel is not initialized");
