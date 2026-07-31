@@ -18,7 +18,12 @@ import { handleMediaRoutes } from "./media/routes.ts";
 import { handleWebPushRoutes } from "./push/routes.ts";
 import { handleSessionRecordingRoutes } from "./recordings/routes.ts";
 import { handleAddonRoutes } from "./addons/routes.ts";
-import { handleGeneralSettingsRoute, handleModelsRoute } from "./models/routes.ts";
+import { handleGeneralSettingsRoute, handleCompactionSettingsRoute, handleWorkspaceSettingsRoute, handleModelsRoute } from "./models/routes.ts";
+import { handleKeychainRoutes } from "./keychain/routes.ts";
+import { getSettingsData } from "./settings/data.ts";
+import { buildAgentCommandList } from "./commands/service.ts";
+import { getSessionTreeForChat } from "./session-tree/service.ts";
+import { readSystemMetrics } from "./system-metrics/sampler.ts";
 import {
   handleScheduledTasksAction,
   handleScheduledTasksList,
@@ -375,9 +380,19 @@ export function startServer(): ReturnType<typeof Bun.serve> {
           return respond(await handleInternalScheduledTaskExecute(req));
         }
 
+        if (req.method === "GET" && url.pathname === "/agent/settings-data") {
+          return respond(json(await getSettingsData()));
+        }
+
         if (req.method === "GET" && url.pathname.startsWith("/agent/settings/")) {
           if (url.pathname === "/agent/settings/general") {
             return respond(await handleGeneralSettingsRoute(req));
+          }
+          if (url.pathname === "/agent/settings/compaction") {
+            return respond(await handleCompactionSettingsRoute(req));
+          }
+          if (url.pathname === "/agent/settings/environment") {
+            return respond(json({ ok: true, settings: { variables: [], overrides: {}, count: 0, overrideCount: 0, keychainEnvNames: [] } }));
           }
           return respond(json({}));
         }
@@ -385,6 +400,21 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         if (req.method === "POST" && url.pathname === "/agent/settings/general") {
           return respond(await handleGeneralSettingsRoute(req));
         }
+
+        if (req.method === "POST" && url.pathname === "/agent/settings/compaction") {
+          return respond(await handleCompactionSettingsRoute(req));
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/settings/workspace") {
+          return respond(await handleWorkspaceSettingsRoute(req));
+        }
+
+        if (req.method === "POST" && url.pathname === "/agent/settings/compaction/reset-backoff") {
+          return respond(json({ ok: true, settings: await store.getCompactionSettingsSnapshot() }));
+        }
+
+        const keychainResponse = await handleKeychainRoutes(req, url.pathname);
+        if (keychainResponse) return respond(keychainResponse);
 
         const recordingResponse = await handleSessionRecordingRoutes(req, url.pathname);
         if (recordingResponse) return respond(recordingResponse);
@@ -423,7 +453,25 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname === "/agent/commands") {
-          return respond(json({ commands: [] }));
+          return respond(json({ commands: await buildAgentCommandList() }));
+        }
+
+        if (req.method === "GET" && url.pathname === "/agent/session-tree") {
+          const chatJid = readRequestChatJid(url);
+          if (!chatJid) return respond(json({ leafId: null, nodes: [], error: "chat_jid required" }, 400));
+          try {
+            return respond(json(await getSessionTreeForChat(chatJid)));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return respond(json({ leafId: null, nodes: [], error: message }, 200));
+          }
+        }
+
+        if (req.method === "GET" && url.pathname === "/agent/system-metrics") {
+          return respond(json(readSystemMetrics({
+            active_chats: 0,
+            replica_id: config.replicaId,
+          })));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/models") {

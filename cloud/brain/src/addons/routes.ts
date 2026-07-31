@@ -1,6 +1,7 @@
 import { ensureSandbox } from "../sandbox/session.ts";
 import { readFile } from "../sandbox/fs.ts";
 import { chatJidToSessionId, ensureChatSession } from "../web-adapter.ts";
+import { getAddonsCatalog } from "./catalog.ts";
 import {
   addonAssetAbsolutePath,
   getInstalledAddonWebEntries,
@@ -17,6 +18,18 @@ function readRequestChatJid(url: URL): string {
 }
 
 export async function handleAddonRoutes(req: Request, pathname: string, url: URL): Promise<Response | null> {
+  if (req.method === "GET" && pathname === "/agent/addons") {
+    const chatJid = readRequestChatJid(url);
+    try {
+      await ensureChatSession(chatJid);
+    } catch {
+      // catalog still useful without a valid session
+    }
+    const result = await getAddonsCatalog(chatJid, url);
+    if (result.status !== 200) return json({ error: result.error }, result.status);
+    return json(result.body);
+  }
+
   if (req.method === "GET" && pathname === "/agent/addons/web-entries") {
     const chatJid = readRequestChatJid(url);
     try {
@@ -48,6 +61,10 @@ export async function handleAddonRoutes(req: Request, pathname: string, url: URL
     } catch {
       return json({ error: "Asset not found" }, 404);
     }
+  }
+
+  if (req.method === "POST" && pathname.startsWith("/agent/addons/")) {
+    return json({ error: "Add-on install/uninstall is not available in cloud mode yet." }, 501);
   }
 
   if ((req.method === "GET" || req.method === "POST") && pathname.startsWith("/agent/addons/api/")) {
