@@ -20,6 +20,23 @@ export interface CloudConfig {
     apiKey: string;
     model: string;
   };
+  /**
+   * Additional OpenAI-compatible providers. The legacy `openai` object remains
+   * the default `piclaw-cloud` provider for backwards compatibility.
+   */
+  providers?: Array<{
+    id: string;
+    name?: string;
+    baseUrl: string;
+    apiKey: string;
+    models: Array<{
+      id: string;
+      name?: string;
+      contextWindow?: number;
+      maxTokens?: number;
+      reasoning?: boolean;
+    }>;
+  }>;
   sandbox: {
     enabled: boolean;
     apiUrl: string;
@@ -90,6 +107,7 @@ function defaultConfig(): CloudConfig {
       apiKey: "",
       model: "gpt-4o-mini",
     },
+    providers: [],
     sandbox: {
       enabled: true,
       apiUrl: "http://192.168.200.127:12088",

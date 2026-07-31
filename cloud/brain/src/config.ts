@@ -14,6 +14,7 @@ export const config = {
   openaiBaseUrl: cloud.openai.baseUrl,
   openaiApiKey: cloud.openai.apiKey,
   openaiModel: cloud.openai.model,
+  providers: cloud.providers ?? [],
   defaultChatJid: cloud.server.defaultChatJid,
   /** When false, bash:/PTY routes return a stub (turn-loop scenarios only). */
   sandboxEnabled: cloud.sandbox.enabled,

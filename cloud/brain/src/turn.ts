@@ -181,11 +181,11 @@ async function runTurnLocked(
 
     await store.endTurn(sessionId, messageId, counter);
     const durationMs = Date.now() - startedAt;
-    const sessionModel = await resolveSessionKernelModel(sessionId);
+    const sessionRuntime = await resolveSessionKernelModel(sessionId);
     await store.logTokenUsage({
       sessionId,
       messageId: assistantMessageId,
-      model: resolveModelIdForLogging(sessionModel),
+      model: resolveModelIdForLogging(sessionRuntime.model),
       inputTokens: usage.inputTokens ?? 0,
       outputTokens: usage.outputTokens ?? 0,
       cacheReadTokens: usage.cachedTokens ?? 0,

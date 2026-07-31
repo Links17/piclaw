@@ -88,6 +88,8 @@ export interface RunAgentSessionLoopOptions {
   mode: "plan" | "execute";
   toolDefinitions: ToolDefinition[];
   model?: Model<string>;
+  models?: NonNullable<ReturnType<typeof getKernelRuntime>>["models"];
+  apiKey?: string;
   userId?: string;
   maxTurns: number;
   graceTurns?: number;
@@ -168,6 +170,8 @@ export async function runAgentSessionLoop(
   const persist = options.persist;
   const sessionId = persist.sessionId;
   const sessionModel = options.model ?? kernel.model;
+  const sessionModels = options.models ?? kernel.models;
+  const sessionApiKey = options.apiKey ?? config.openaiApiKey;
   const sessionOwner = await store.getSession(sessionId);
   const userId = options.userId ?? sessionOwner?.user_id ?? "default-user";
 
@@ -218,7 +222,10 @@ export async function runAgentSessionLoop(
           });
         }
 
-        agentMessages = await maybeCompactMessages(agentMessages, sessionId, sessionModel, userId, kernel);
+        agentMessages = await maybeCompactMessages(agentMessages, sessionId, sessionModel, userId, {
+          ...kernel,
+          models: sessionModels,
+        });
 
         if (turnCount >= options.maxTurns && !wrapUpInjected) {
           wrapUpInjected = true;
@@ -230,7 +237,7 @@ export async function runAgentSessionLoop(
 
         return agentMessages;
       },
-      getApiKey: () => config.openaiApiKey,
+      getApiKey: () => sessionApiKey,
       beforeToolCall: async (callContext) => {
         assertTurnNotAborted(sessionId);
         if (

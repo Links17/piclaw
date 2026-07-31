@@ -1,8 +1,10 @@
 import * as store from "@piclaw-cloud/store";
 import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { config } from "../config.ts";
-import { CLOUD_KERNEL_PROVIDER_ID } from "../kernel/provider.ts";
-import { getKernelRuntime } from "../kernel/runtime.ts";
+import {
+  buildProviderRegistryEntries,
+  type ProviderModelConfig,
+} from "../kernel/provider-registry.ts";
 import { chatJidToSessionId } from "../web-adapter.ts";
 
 export interface AvailableModelOption {
@@ -63,22 +65,45 @@ function buildModelOption(model: {
   };
 }
 
+function configuredModelOptions(): AvailableModelOption[] {
+  return buildProviderRegistryEntries({
+    openai: {
+      baseUrl: config.openaiBaseUrl,
+      apiKey: config.openaiApiKey,
+      model: config.openaiModel,
+    },
+    providers: config.providers,
+  }).flatMap((provider) => provider.models.map((model: ProviderModelConfig) =>
+    buildModelOption({
+      provider: provider.id,
+      id: model.id,
+      name: model.name,
+      contextWindow: model.contextWindow,
+      reasoning: model.reasoning,
+    }),
+  ));
+}
+
 export async function getAvailableModels(chatJid: string, userId = DEFAULT_USER_ID): Promise<AvailableModelsResult> {
   const sessionId = chatJidToSessionId(chatJid);
   const prefs = sessionId ? await store.getSessionModelPrefs(sessionId) : { modelLabel: null, thinkingLevel: null };
   const userPrefs = await store.getUserPreferences(userId);
-  const kernel = getKernelRuntime();
-  const defaultModel = kernel?.model ?? {
-    provider: CLOUD_KERNEL_PROVIDER_ID,
-    id: config.openaiModel,
-    name: config.openaiModel,
-    contextWindow: 128_000,
-    reasoning: false,
-  };
-  const modelOptions = [buildModelOption(defaultModel)];
+  const modelOptions = configuredModelOptions();
+  const configuredProviders = buildProviderRegistryEntries({
+    openai: {
+      baseUrl: config.openaiBaseUrl,
+      apiKey: config.openaiApiKey,
+      model: config.openaiModel,
+    },
+    providers: config.providers,
+  });
   const models = modelOptions.map((option) => option.label);
-  const currentModel = prefs.modelLabel || modelLabel(defaultModel.provider, defaultModel.id);
-  const currentModelOption = modelOptions.find((option) => option.label === currentModel) ?? modelOptions[0]!;
+  const defaultModel = modelOptions[0] ?? null;
+  const currentModel = prefs.modelLabel || defaultModel?.label || null;
+  const currentModelOption = modelOptions.find((option) => option.label === currentModel) ?? modelOptions[0];
+  if (!currentModelOption) {
+    throw new Error("No cloud provider models are configured");
+  }
   const thinkingLevel = prefs.thinkingLevel ?? "off";
   const supportsThinking = Boolean(currentModelOption.reasoning);
   const availableThinkingLevels = supportsThinking
@@ -99,8 +124,15 @@ export async function getAvailableModels(chatJid: string, userId = DEFAULT_USER_
     latest_response_model: currentModel,
     scoped_models_only: Boolean(userPrefs.scopedModelsOnly),
     enabled_model_patterns: [],
-    provider_diagnostics: { providers: [] },
-    oobe: { provider_ready_completed_instance: Boolean(kernel) },
+    provider_diagnostics: {
+      providers: configuredProviders.map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        configured: Boolean(provider.baseUrl.trim() && provider.apiKey.trim()),
+        model_count: provider.models.length,
+      })),
+    },
+    oobe: { provider_ready_completed_instance: modelOptions.length > 0 },
   };
 }
 

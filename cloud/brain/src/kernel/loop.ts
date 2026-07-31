@@ -6,7 +6,6 @@ import { newCounter } from "@piclaw-cloud/store/db";
 import { config } from "../config.ts";
 import { rowsToAgentMessages } from "./message-map.ts";
 import { runAgentSessionLoop } from "./run-session-loop.ts";
-import { getKernelRuntime } from "./runtime.ts";
 import { resolveSessionKernelModel, resolveModelIdForLogging } from "./resolve-model.ts";
 import { buildSystemPrompt } from "../llm/messages.ts";
 import { buildSkillsPromptSection } from "../skills/registry.ts";
@@ -38,15 +37,11 @@ export async function runKernelToolLoop(
   onDelta: (text: string) => Promise<void>,
   options: { recovery?: boolean } = {},
 ): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
-  const kernel = getKernelRuntime();
-  if (!kernel) {
-    throw new Error("Agent kernel is not initialized");
-  }
-
   const session = await store.getSession(sessionId);
   const userId = session?.user_id ?? "default-user";
   const turnContext = await buildTurnContext(sessionId);
-  const sessionModel = await resolveSessionKernelModel(sessionId);
+  const sessionRuntime = await resolveSessionKernelModel(sessionId);
+  const sessionModel = sessionRuntime.model;
   const rows = await store.hydrate(sessionId, counter);
   const messages = rowsToAgentMessages(rows, resolveModelIdForLogging(sessionModel));
   if (messages.length === 0 || messages[messages.length - 1]?.role === "assistant") {
@@ -66,6 +61,8 @@ export async function runKernelToolLoop(
     mode: turnContext.mode,
     toolDefinitions: turnContext.tools,
     model: sessionModel,
+    models: sessionRuntime.models,
+    apiKey: sessionRuntime.apiKey,
     userId,
     maxTurns: config.maxToolRounds,
     onDelta,
