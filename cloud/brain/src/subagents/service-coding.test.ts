@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatCodingSubagentToolResult } from "./gateway.ts";
+import { formatCodingSubagentToolResult } from "./service.ts";
 
 describe("coding subagent gateway", () => {
   test("formatCodingSubagentToolResult returns structured envelope", () => {

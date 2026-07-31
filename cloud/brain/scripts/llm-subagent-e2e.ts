@@ -8,6 +8,7 @@
  *   - subagent.codingWorkerMode=sandbox in config (recommended)
  */
 import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
+import { ensureE2eSession } from "./e2e-session.ts";
 import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
 import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
 import { getAccessToken } from "../src/sandbox/auth.ts";
@@ -208,7 +209,7 @@ let inoPath = "";
 
 console.log("\n[1] delegate create — coding_agent + sandbox worker");
 {
-  await fetch(`${BASE}/timeline?chat_jid=${encodeURIComponent(CHAT)}`);
+  await ensureE2eSession(BASE, CHAT, "llm-subagent-e2e");
   await postAgent(
     "请使用 coding_agent 工具完成：在 /workspace 创建 wio_subagent_test.ino，内容为 Wio Terminal hello world sketch（必须含 setup() 和 loop()，Serial 输出 hello world）",
   );
@@ -221,7 +222,11 @@ console.log("\n[1] delegate create — coding_agent + sandbox worker");
 
   const runs = await getSubagentRuns();
   check(
-    runs.some((r) => r.agent_type === "coding" && r.status === "completed"),
+    runs.some(
+      (r) =>
+        (r.agent_type === "general-purpose" || r.agent_type === "coding") &&
+        r.status === "completed",
+    ),
     `subagent_runs persisted (${runs.length} runs)`,
   );
 

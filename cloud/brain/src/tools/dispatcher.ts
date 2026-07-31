@@ -5,7 +5,7 @@ import {
   getSubagentResult,
   spawnAgent,
   steerSubagent,
-} from "../subagents/manager.ts";
+} from "../subagents/service.ts";
 import { normalizeSubagentRunId } from "../subagents/run-id.ts";
 import type { AgentToolOptions } from "../subagents/types.ts";
 import { applyUniqueEdit } from "./edit.ts";

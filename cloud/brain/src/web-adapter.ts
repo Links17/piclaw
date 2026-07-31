@@ -10,7 +10,7 @@ import {
   installUserSkill,
   listUserSkillsForApi,
 } from "./skills/registry.ts";
-import { spawnAgent, getSubagentResult, stopSubagent, steerSubagent } from "./subagents/manager.ts";
+import { spawnAgent, getSubagentResult, stopSubagent, steerSubagent } from "./subagents/service.ts";
 import { config } from "./config.ts";
 import { abortSessionTurn, submitMessage } from "./turn.ts";
 import { UNTITLED_SESSION_TITLE } from "@piclaw-cloud/store";
@@ -284,7 +284,7 @@ export async function abortAgentRunForChat(chatJid: string) {
 
 export async function stopSubagentForChat(chatJid: string, runId: string) {
   const sessionId = await ensureChatSession(chatJid);
-  const { stopSubagent } = await import("./subagents/manager.ts");
+  const { stopSubagent } = await import("./subagents/service.ts");
   return stopSubagent(sessionId, runId);
 }
 

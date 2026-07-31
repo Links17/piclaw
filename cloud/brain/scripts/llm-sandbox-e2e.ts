@@ -7,6 +7,7 @@
  *   - CubeSandbox cluster (sandbox section in config)
  */
 import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
+import { ensureE2eSession } from "./e2e-session.ts";
 import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
 import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
 import { getAccessToken } from "../src/sandbox/auth.ts";
@@ -154,7 +155,7 @@ let sandboxId = "";
 
 console.log("\n[1] hello — LLM reply");
 {
-  await fetch(`${BASE}/timeline?chat_jid=${encodeURIComponent(CHAT)}`);
+  await ensureE2eSession(BASE, CHAT, "llm-e2e");
   await postAgent("hello");
   const messages = await getMessages();
   const reply = lastAssistantText(messages);

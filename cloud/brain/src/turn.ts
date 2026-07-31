@@ -23,7 +23,7 @@ import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuest
 import { getPendingQuestion } from "./question/state.ts";
 import { buildSkillsPromptSection } from "./skills/registry.ts";
 import { scheduleSessionTitleGeneration } from "./session-title.ts";
-import { stopAllRunningSubagents } from "./subagents/manager.ts";
+import { stopAllRunningSubagents } from "./subagents/service.ts";
 import {
   TurnAbortedError,
   assertTurnNotAborted,
