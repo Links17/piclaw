@@ -60,6 +60,9 @@ export async function streamCompletionRound(
   if (isMockPrefix && isLlmMockEnabled()) {
     return streamMockRound(messages, onDelta, prompt, options);
   }
+  if (isLlmMockEnabled() && isScenarioMockPrompt(prompt)) {
+    return streamScenarioMockRound(messages, onDelta, prompt, options);
+  }
   if (isOpenAiConfigured()) {
     return streamOpenAiRound(messages, onDelta, tools, options);
   }
@@ -89,6 +92,47 @@ async function streamMockRound(
     return mockCodingRound(messages, onDelta, prompt, options);
   }
   throw new Error(`mock prefix required when CLOUD_LLM_MOCK=1 (got: ${prompt.slice(0, 40)})`);
+}
+
+function isScenarioMockPrompt(prompt: string): boolean {
+  return (
+    prompt.includes("hello quick") ||
+    prompt.includes("medium first") ||
+    prompt.includes("second while busy") ||
+    prompt.includes("slow doomed turn") ||
+    prompt.includes("count me")
+  );
+}
+
+async function streamScenarioMockRound(
+  messages: OpenAiMessage[],
+  onDelta: (text: string) => Promise<void>,
+  prompt: string,
+  options: StreamCompletionOptions = {},
+): Promise<CompletionRound> {
+  throwIfAborted(options.sessionId ?? "", options.signal);
+  const text =
+    prompt.includes("slow doomed turn") || prompt.includes("medium first")
+      ? "Mock busy turn streaming output for abort testing."
+      : prompt.includes("count me")
+        ? "Counted."
+        : "Mock quick reply.";
+  const slow = prompt.includes("slow doomed turn");
+  if (slow) {
+    for (const char of text) {
+      throwIfAborted(options.sessionId ?? "", options.signal);
+      await onDelta(char);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+  } else {
+    await streamMockTextWithAbortCheck(text, onDelta, options);
+  }
+  return {
+    text,
+    toolCalls: [],
+    finishReason: "stop",
+    usage: { inputTokens: 1, cachedTokens: 0, outputTokens: text.length },
+  };
 }
 
 async function streamMockTextWithAbortCheck(

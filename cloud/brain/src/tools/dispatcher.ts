@@ -1,6 +1,5 @@
 import { readFile, writeFile } from "../sandbox/fs.ts";
 import { ensureSandbox } from "../sandbox/session.ts";
-import { formatCodingSubagentToolResult, runCodingSubagent } from "../subagents/gateway.ts";
 import {
   formatAgentToolResult,
   getSubagentResult,
@@ -11,6 +10,7 @@ import { normalizeSubagentRunId } from "../subagents/run-id.ts";
 import type { AgentToolOptions } from "../subagents/types.ts";
 import { applyUniqueEdit } from "./edit.ts";
 import { config } from "../config.ts";
+import { isLlmMockEnabled } from "../llm.ts";
 import { publish } from "../events.ts";
 import { publishWorkspaceUpdate } from "../workspace/publish.ts";
 import { resolveWorkspacePath, WORKSPACE_ROOT } from "./path.ts";
@@ -99,7 +99,26 @@ async function killSandboxCommandBestEffort(sbx: Awaited<ReturnType<typeof ensur
   }
 }
 
+function mockSandboxToolResult(name: string, args: Record<string, unknown>): ToolDispatchResult | null {
+  if (!isLlmMockEnabled() || config.sandboxEnabled) return null;
+  if (name === "bash") {
+    return { output: `$ ${String(args.command ?? "")}\n(mock ok)\n(exit 0)`, isError: false };
+  }
+  if (name === "read") {
+    return { output: `(mock file ${String(args.path ?? "")})`, isError: false };
+  }
+  if (name === "write") {
+    return { output: `Mock wrote ${String(args.path ?? "")}`, isError: false };
+  }
+  if (name === "edit") {
+    return { output: `Mock edited ${String(args.path ?? "")}`, isError: false };
+  }
+  return null;
+}
+
 async function runBashTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("bash", args);
+  if (mocked) return mocked;
   assertTurnNotAborted(sessionId);
   const command = String(args.command ?? "").trim();
   if (!command) return { output: "command is required", isError: true };
@@ -120,6 +139,8 @@ async function runBashTool(sessionId: string, args: Record<string, unknown>): Pr
 }
 
 async function runReadTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("read", args);
+  if (mocked) return mocked;
   const path = resolveWorkspacePath(String(args.path ?? ""));
   const sbx = await ensureSandbox(sessionId);
   const content = await readFile(sbx, path);
@@ -128,6 +149,8 @@ async function runReadTool(sessionId: string, args: Record<string, unknown>): Pr
 
 
 async function runWriteTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("write", args);
+  if (mocked) return mocked;
   const path = resolveWorkspacePath(String(args.path ?? ""));
   const content = String(args.content ?? "");
   const sbx = await ensureSandbox(sessionId);
@@ -137,6 +160,8 @@ async function runWriteTool(sessionId: string, args: Record<string, unknown>): P
 }
 
 async function runEditTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("edit", args);
+  if (mocked) return mocked;
   const path = resolveWorkspacePath(String(args.path ?? ""));
   const oldString = String(args.old_string ?? "");
   const newString = String(args.new_string ?? "");
@@ -179,10 +204,16 @@ async function runCodingAgentTool(sessionId: string, args: Record<string, unknow
   if (!task) return { output: "task is required", isError: true };
   const constraints = typeof args.constraints === "string" ? args.constraints : undefined;
   const timeoutMs = typeof args.timeout_ms === "number" ? args.timeout_ms : undefined;
-  const result = await runCodingSubagent(sessionId, { task, constraints, timeoutMs });
-  const isError = result.status !== "completed";
+  const outcome = await spawnAgent(sessionId, {
+    prompt: task,
+    description: constraints ?? task,
+    subagentType: "general-purpose",
+    timeoutMs,
+    runInBackground: false,
+  });
+  const isError = outcome.status === "failed" || outcome.status === "timed_out" || outcome.status === "stopped";
   return {
-    output: formatCodingSubagentToolResult(result),
+    output: formatAgentToolResult(outcome),
     isError,
   };
 }

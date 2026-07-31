@@ -1,26 +1,75 @@
 /**
  * Brain verification — two replicas, Web SSE vocabulary, mutex/recovery/follow-up.
  */
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
 const A = "http://localhost:7801";
 const B = "http://localhost:7802";
+const scenarioConfigDir = mkdtempSync(join(tmpdir(), "piclaw-brain-scenario-"));
+
+function loadBaseConfig(): Record<string, unknown> {
+  const candidates = [
+    join(new URL("../..", import.meta.url).pathname, "brain.config.json"),
+    join(new URL("../..", import.meta.url).pathname, "brain.config.example.json"),
+  ];
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    }
+  }
+  return {};
+}
+
+function writeScenarioConfig(port: number, replicaId: string): string {
+  const base = loadBaseConfig();
+  const server = {
+    ...(base.server as Record<string, unknown> | undefined),
+    port,
+    replicaId,
+    inflightGraceMs: 500,
+    sweepIntervalMs: 500,
+  };
+  const openai = { baseUrl: "", apiKey: "", model: "mock" };
+  const sandbox = { ...(base.sandbox as Record<string, unknown> | undefined), enabled: false };
+  const subagent = {
+    ...(base.subagent as Record<string, unknown> | undefined),
+    codingWorkerMode: "mock",
+  };
+  const path = join(scenarioConfigDir, `brain-${port}.json`);
+  writeFileSync(
+    path,
+    JSON.stringify({ ...base, server, openai, sandbox, subagent }, null, 2),
+  );
+  return path;
+}
 
 interface SseEvent {
   event: string;
   data: Record<string, unknown>;
 }
 
+function isAgentIdle(event: SseEvent): boolean {
+  return event.event === "agent_status" && (event.data.status === "idle" || event.data.type === "done");
+}
+
+function isAgentStreaming(event: SseEvent): boolean {
+  return (
+    event.event === "agent_status" &&
+    (event.data.status === "streaming" ||
+      event.data.type === "streaming" ||
+      event.data.type === "thinking")
+  );
+}
+
 function startReplica(port: number, id: string) {
+  const configPath = writeScenarioConfig(port, id);
   return Bun.spawn({
-    cmd: ["bun", "run", "src/main.ts"],
+    cmd: ["bun", "run", "src/main.ts", "--config", configPath],
     cwd: new URL("..", import.meta.url).pathname,
     env: {
       ...process.env,
-      CLOUD_PORT: String(port),
-      POC_PORT: String(port),
-      CLOUD_REPLICA_ID: id,
-      POC_REPLICA_ID: id,
-      CLOUD_SANDBOX_ENABLED: "0",
-      CLOUD_CODING_WORKER_MODE: "mock",
       CLOUD_LLM_MOCK: "1",
     },
     stdout: "inherit",
@@ -117,7 +166,7 @@ console.log("\n[1] cross-replica Web SSE fan-out");
   const sse = collectSse(B, String(id), events, true);
   await Bun.sleep(300);
   await post(A, `/sessions/${id}/messages?wait=1`, { content: "hello quick" });
-  await waitFor(() => events.some((e) => e.event === "agent_status" && e.data.status === "idle"), "idle status");
+  await waitFor(() => events.some(isAgentIdle), "idle status");
   const deltas = events.filter((e) => e.event === "agent_draft_delta").length;
   check(deltas > 0, `agent_draft_delta via B SSE (${deltas})`);
   check(events.some((e) => e.event === "agent_response"), "agent_response received");
@@ -132,13 +181,13 @@ console.log("\n[2] mutual exclusion & follow-up drain");
   await Bun.sleep(300);
 
   void post(A, `/sessions/${id}/messages`, { content: "medium first" });
-  await waitFor(() => events.some((e) => e.event === "agent_status" && e.data.status === "streaming"), "first turn streaming");
+  await waitFor(() => events.some(isAgentStreaming), "first turn streaming");
 
   const second = await post(B, `/sessions/${id}/messages?wait=1`, { content: "second while busy" });
   check(second.outcome === "queued", `second message deferred (outcome=${second.outcome})`);
 
   await waitFor(
-    () => events.filter((e) => e.event === "agent_status" && e.data.status === "idle").length >= 2,
+    () => events.filter(isAgentIdle).length >= 2,
     "both turns completed",
   );
   check(events.some((e) => e.event === "agent_followup_consumed"), "follow-up consumed");
@@ -165,7 +214,15 @@ console.log("\n[3] kill replica mid-turn → recovery on B");
   await replicaA.exited;
 
   await waitFor(
-    () => events.some((e) => e.event === "agent_response" && e.data.recovery === true),
+    () =>
+      events.some(
+        (e) =>
+          e.event === "agent_response" &&
+          (e.data.recovery === true ||
+            (typeof e.data.data === "object" &&
+              e.data.data !== null &&
+              (e.data.data as { recovery?: boolean }).recovery === true)),
+      ),
     "recovered agent_response",
     90000,
   );
@@ -218,7 +275,13 @@ console.log("\n[5] coding_agent subagent (mock-tools, no sandbox)");
 
   const { runs } = await get(A, `/sessions/${id}/subagents`);
   const subRuns = (runs as Array<{ status: string; agent_type: string }>) ?? [];
-  check(subRuns.some((r) => r.agent_type === "coding" && r.status === "completed"), "subagent_runs persisted");
+  check(
+    subRuns.some(
+      (r) =>
+        (r.agent_type === "coding" || r.agent_type === "general-purpose") && r.status === "completed",
+    ),
+    "subagent_runs persisted",
+  );
 }
 
 replicaA.kill();

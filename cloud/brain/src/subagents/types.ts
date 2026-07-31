@@ -1,3 +1,8 @@
+/**
+ * Subagent shared types.
+ */
+import type { ProfileOverrides } from "./profiles.ts";
+
 export type SubagentType = "general-purpose" | "explore" | "plan" | "coding";
 
 export interface AgentToolOptions {
@@ -10,6 +15,7 @@ export interface AgentToolOptions {
   resume?: string;
   timeoutMs?: number;
   schedule?: string;
+  profileOverrides?: ProfileOverrides;
 }
 
 export interface SubagentRunOutcome {

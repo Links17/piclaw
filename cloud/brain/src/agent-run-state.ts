@@ -61,3 +61,19 @@ export function trackTurnDelta(sessionId: string, delta: string): void {
 export function trackTurnFinished(sessionId: string): void {
   clearInflightTurn(sessionId);
 }
+
+export interface ContextUsageSnapshot {
+  tokens: number;
+  contextWindow: number;
+  percent: number;
+}
+
+const contextUsage = new Map<string, ContextUsageSnapshot>();
+
+export function setContextUsage(sessionId: string, snapshot: ContextUsageSnapshot): void {
+  contextUsage.set(sessionId, snapshot);
+}
+
+export function getContextUsage(sessionId: string): ContextUsageSnapshot | null {
+  return contextUsage.get(sessionId) ?? null;
+}

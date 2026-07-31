@@ -2,6 +2,7 @@
   "name": "piclaw-cloud",
   "private": true,
   "workspaces": [
+    "../packages/agent-kernel",
     "shared",
     "store",
     "brain",

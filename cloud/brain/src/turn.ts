@@ -5,7 +5,9 @@ import * as store from "@piclaw-cloud/store";
 import { newCounter } from "@piclaw-cloud/store/db";
 import { config } from "./config.ts";
 import { publish } from "./events.ts";
-import { streamCompletionRound, type LlmUsage } from "./llm.ts";
+import { streamCompletionRound, isLlmMockEnabled, type LlmUsage } from "./llm.ts";
+import { runKernelToolLoop } from "./kernel/loop.ts";
+import { isKernelConfigured } from "./kernel/runtime.ts";
 import {
   assistantToolCallBlocks,
   historyToOpenAi,
@@ -190,6 +192,18 @@ async function buildTurnContext(sessionId: string): Promise<{
 }
 
 async function runToolLoop(
+  sessionId: string,
+  counter: ReturnType<typeof newCounter>,
+  onDelta: (text: string) => Promise<void>,
+  options: { recovery?: boolean } = {},
+): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
+  if (!isLlmMockEnabled() && isKernelConfigured()) {
+    return runKernelToolLoop(sessionId, counter, onDelta, options);
+  }
+  return runLegacyToolLoop(sessionId, counter, onDelta, options);
+}
+
+async function runLegacyToolLoop(
   sessionId: string,
   counter: ReturnType<typeof newCounter>,
   onDelta: (text: string) => Promise<void>,

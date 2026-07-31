@@ -11,6 +11,8 @@ import { QuotaExceededError } from "./quota.ts";
 import { subscribe, type SessionEvent } from "./events.ts";
 import { serveStaticRequest } from "./static.ts";
 import { submitMessage, sweepInflight } from "./turn.ts";
+import { getContextUsage } from "./agent-run-state.ts";
+import { getKernelRuntime } from "./kernel/runtime.ts";
 import { handleWorkspaceRoutes } from "./workspace/routes.ts";
 import {
   agentResponseSsePayload,
@@ -366,7 +368,21 @@ export function startServer(): ReturnType<typeof Bun.serve> {
         }
 
         if (req.method === "GET" && url.pathname === "/agent/context") {
-          return respond(json({ tokens: null, context_window: null, percent: null }));
+          const chatJid = readRequestChatJid(url);
+          const kernel = getKernelRuntime();
+          const fallbackWindow = kernel?.model.contextWindow ?? null;
+          if (!chatJid) {
+            return respond(json({ tokens: null, context_window: fallbackWindow, percent: null }));
+          }
+          const usage = getContextUsage(chatJidToSessionId(chatJid));
+          if (!usage) {
+            return respond(json({ tokens: null, context_window: fallbackWindow, percent: null }));
+          }
+          return respond(json({
+            tokens: usage.tokens,
+            context_window: usage.contextWindow,
+            percent: usage.percent,
+          }));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/autoresearch/status") {

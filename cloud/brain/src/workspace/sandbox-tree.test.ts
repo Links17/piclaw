@@ -16,12 +16,12 @@ describe("handleWorkspaceRoutes", () => {
     expect(await res?.json()).toEqual({ ok: true });
   });
 
-  test("index-status stub ready", async () => {
+  test("index-status without chat_jid returns unavailable", async () => {
     const res = await handleWorkspaceRoutes(
       new Request("http://localhost/workspace/index-status"),
       "/workspace/index-status",
     );
     const body = await res?.json();
-    expect(body?.state).toBe("ready");
+    expect(body?.state).toBe("unavailable");
   });
 });

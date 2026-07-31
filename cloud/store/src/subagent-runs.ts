@@ -65,8 +65,10 @@ export async function markSubagentRunning(id: string, sandboxId?: string | null)
     UPDATE subagent_runs SET
       status = 'running',
       sandbox_id = COALESCE(${sandboxId ?? null}, sandbox_id),
-      started_at = COALESCE(started_at, now())
-    WHERE id = ${id} AND status IN ('queued', 'running')`;
+      started_at = COALESCE(started_at, now()),
+      finished_at = NULL,
+      error = NULL
+    WHERE id = ${id} AND status IN ('queued', 'running', 'pending', 'completed', 'stopped', 'failed', 'cancelled', 'timed_out')`;
 }
 
 export async function finishSubagentRun(

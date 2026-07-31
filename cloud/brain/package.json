@@ -13,6 +13,7 @@
     "web-e2e": "bun run scripts/web-e2e-scenario.ts"
   },
   "dependencies": {
+    "@piclaw/agent-kernel": "workspace:*",
     "@piclaw-cloud/shared": "workspace:*",
     "@piclaw-cloud/store": "workspace:*",
     "e2b": "^2.36.1",
