@@ -1,5 +1,4 @@
 import { createPublicKey, generateKeyPairSync } from "node:crypto";
-import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { sql } from "./db.ts";
 
 export interface StoredWebPushSubscription {
@@ -80,7 +79,14 @@ export function normalizeWebPushSubscription(
   };
 }
 
-export async function listWebPushSubscriptions(userId = DEFAULT_USER_ID): Promise<StoredWebPushSubscription[]> {
+function requireUserId(userId: string | undefined): string {
+  const normalized = userId?.trim() ?? "";
+  if (!normalized) throw new Error("userId is required for web push ownership.");
+  return normalized;
+}
+
+export async function listWebPushSubscriptions(userId: string): Promise<StoredWebPushSubscription[]> {
+  userId = requireUserId(userId);
   const rows = await sql`
     SELECT endpoint, expiration_time, p256dh, auth, device_id, user_agent
     FROM web_push_subscriptions
@@ -97,12 +103,12 @@ export async function listWebPushSubscriptions(userId = DEFAULT_USER_ID): Promis
 
 export async function upsertWebPushSubscription(
   value: unknown,
-  options: { userId?: string; userAgent?: string | null; deviceId?: string | null } = {},
+  options: { userId: string; userAgent?: string | null; deviceId?: string | null },
 ): Promise<StoredWebPushSubscription> {
   const normalized = normalizeWebPushSubscription(value, options);
   if (!normalized) throw new Error("Invalid push subscription.");
-  const userId = options.userId ?? DEFAULT_USER_ID;
-  await sql`
+  const userId = requireUserId(options.userId);
+  const rows = await sql`
     INSERT INTO web_push_subscriptions (user_id, endpoint, p256dh, auth, expiration_time, device_id, user_agent)
     VALUES (
       ${userId},
@@ -119,13 +125,20 @@ export async function upsertWebPushSubscription(
       expiration_time = EXCLUDED.expiration_time,
       device_id = COALESCE(EXCLUDED.device_id, web_push_subscriptions.device_id),
       user_agent = COALESCE(EXCLUDED.user_agent, web_push_subscriptions.user_agent),
-      updated_at = now()`;
+      updated_at = now()
+    WHERE web_push_subscriptions.user_id = EXCLUDED.user_id
+    RETURNING user_id`;
+  if (!rows[0]) throw new Error("Push subscription endpoint is owned by another user.");
   return normalized;
 }
 
-export async function removeWebPushSubscription(endpoint: string): Promise<boolean> {
+export async function removeWebPushSubscription(endpoint: string, userId: string): Promise<boolean> {
   const normalized = endpoint.trim();
   if (!normalized) return false;
-  const rows = await sql`DELETE FROM web_push_subscriptions WHERE endpoint = ${normalized} RETURNING id`;
+  userId = requireUserId(userId);
+  const rows = await sql`
+    DELETE FROM web_push_subscriptions
+    WHERE endpoint = ${normalized} AND user_id = ${userId}
+    RETURNING id`;
   return rows.length > 0;
 }

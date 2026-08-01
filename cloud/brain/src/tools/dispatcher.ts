@@ -17,7 +17,17 @@ import { resolveWorkspacePath, WORKSPACE_ROOT } from "./path.ts";
 import { runQuestionTool } from "./question.ts";
 import { runSkillTool } from "./skill.ts";
 import { runTodoTool } from "./todo.ts";
-import { toolNamesForMode, type ToolDefinition } from "./schemas.ts";
+import {
+  activatableToolNames,
+  getToolCatalog,
+  toolNamesForMode,
+  type ToolDefinition,
+} from "./schemas.ts";
+import {
+  activateToolNames,
+  getActiveToolNames,
+  resetActiveToolNames,
+} from "./active.ts";
 import { getMcpToolDefinitions, invokeMcpTool } from "../mcp/client.ts";
 import { TurnAbortedError, assertTurnNotAborted, isTurnAborted, waitForTurnAbort } from "../turn-abort.ts";
 
@@ -45,7 +55,8 @@ export async function dispatchTool(
   sessionMode: "plan" | "execute" = "execute",
   mcpTools: ToolDefinition[] = [],
 ): Promise<ToolDispatchResult> {
-  const allowed = toolNamesForMode(sessionMode, mcpTools);
+  const activeTools = getActiveToolNames(sessionId);
+  const allowed = toolNamesForMode(sessionMode, mcpTools, activeTools);
   if (!allowed.has(name)) {
     return { output: `Tool not available in ${sessionMode} mode: ${name}`, isError: true };
   }
@@ -56,6 +67,19 @@ export async function dispatchTool(
 
   try {
     switch (name) {
+      case "list_tools":
+        return {
+          output: JSON.stringify({
+            active: [...activeTools].sort(),
+            available: getToolCatalog(mcpTools),
+          }),
+          isError: false,
+        };
+      case "activate_tools":
+        return runActivateToolsTool(sessionId, args, mcpTools);
+      case "reset_active_tools":
+        resetActiveToolNames(sessionId);
+        return { output: "Active tools reset to the baseline set.", isError: false };
       case "bash":
         return await runBashTool(sessionId, args);
       case "read":
@@ -89,6 +113,26 @@ export async function dispatchTool(
     const message = error instanceof Error ? error.message : String(error);
     return { output: message, isError: true };
   }
+}
+
+function runActivateToolsTool(
+  sessionId: string,
+  args: Record<string, unknown>,
+  mcpTools: ToolDefinition[],
+): ToolDispatchResult {
+  const rawNames = args.names;
+  if (!Array.isArray(rawNames) || rawNames.some((name) => typeof name !== "string" || !name.trim())) {
+    return { output: "names must be a non-empty array of tool names", isError: true };
+  }
+  const result = activateToolNames(
+    sessionId,
+    rawNames.map((name) => name.trim()),
+    activatableToolNames(mcpTools),
+  );
+  return {
+    output: JSON.stringify(result),
+    isError: result.unknown.length > 0,
+  };
 }
 
 async function killSandboxCommandBestEffort(sbx: Awaited<ReturnType<typeof ensureSandbox>>): Promise<void> {

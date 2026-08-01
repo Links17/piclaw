@@ -2,7 +2,7 @@
  * SSE event vocabulary — canonical contract between brain and runtime/web.
  * PoC internal names (turn-loop) map to these via brain/events/publish.ts.
  */
-export type AgentStatus = "idle" | "thinking" | "streaming" | "tool" | "error";
+export type AgentStatus = "idle" | "thinking" | "streaming" | "tool" | "compaction" | "error";
 
 export interface SseScope {
   chatJid: string;
@@ -45,6 +45,7 @@ export type InternalSessionEvent =
   | { type: "followup_removed"; messageId: number }
   | { type: "steer_applied"; content: string; replica: string }
   | { type: "recovery"; messageId: number; action: "retried" | "cleared"; replica: string }
+  | { type: "compaction_done"; compactedThroughMessageId: number; tokensBefore: number; replica: string }
   | { type: "tool_start"; name: string; toolCallId: string; replica: string; detail?: string }
   | { type: "tool_result"; name: string; toolCallId: string; isError: boolean; replica: string }
   | { type: "question_asked"; questionId: string; question: string; options: Array<{ label: string; description?: string }>; replica: string }
@@ -123,6 +124,20 @@ export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): 
         event: "agent_steer_queued",
         data: scoped(scope, { content: event.content }),
       };
+    case "recovery":
+      return {
+        event: "agent_recovery",
+        data: scoped(scope, {
+          message_id: event.messageId,
+          action: event.action,
+          replica: event.replica,
+        }),
+      };
+    case "compaction_done":
+      return agentStatusEnvelope(scope, "compaction", "Context compacted", {
+        compacted_through_message_id: event.compactedThroughMessageId,
+        tokens_before: event.tokensBefore,
+      });
     case "tool_start":
       return agentStatusEnvelope(scope, "tool", event.name, { detail: event.detail ?? event.name });
     case "tool_result":

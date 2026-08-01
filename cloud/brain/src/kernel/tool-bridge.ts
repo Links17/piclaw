@@ -1,4 +1,4 @@
-import { Type, type AgentTool } from "./pi.ts";
+import { Type, type AgentTool, type AgentToolResult } from "./pi.ts";
 import { dispatchTool } from "../tools/dispatcher.ts";
 import type { ToolDefinition } from "../tools/schemas.ts";
 
@@ -102,6 +102,7 @@ export function buildAgentTools(
   sessionId: string,
   sessionMode: "plan" | "execute",
   definitions: ToolDefinition[],
+  availableDefinitions: ToolDefinition[] = definitions,
 ): AgentTool[] {
   return definitions.map((definition) => {
     const name = definition.function.name;
@@ -111,20 +112,25 @@ export function buildAgentTools(
       description: definition.function.description,
       parameters: schemaForTool(definition),
       ...(name === "question" ? { executionMode: "sequential" as const } : {}),
-      execute: async (toolCallId, params, signal) => {
+      execute: async (
+        toolCallId: string,
+        params: unknown,
+        signal?: AbortSignal,
+        onUpdate?: (partialResult: AgentToolResult<string>) => void,
+      ): Promise<AgentToolResult<string>> => {
         void toolCallId;
         void signal;
+        void onUpdate;
         const result = await dispatchTool(
           sessionId,
           name,
           params as Record<string, unknown>,
           sessionMode,
-          definitions,
+          availableDefinitions,
         );
         return {
           content: [{ type: "text" as const, text: result.output }],
           details: result.output,
-          isError: result.isError,
         };
       },
     };

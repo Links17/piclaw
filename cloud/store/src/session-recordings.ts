@@ -119,10 +119,30 @@ export async function listSessionRecordings(limit = 200): Promise<SessionRecordi
   return rows.map((row: Record<string, unknown>) => rowToMeta(row));
 }
 
+export async function listSessionRecordingsForUser(
+  userId: string,
+  limit = 200,
+): Promise<SessionRecordingMeta[]> {
+  const rows = await sql`
+    SELECT * FROM session_recordings
+    WHERE user_id = ${userId}
+    ORDER BY started_at DESC
+    LIMIT ${limit}`;
+  return rows.map((row: Record<string, unknown>) => rowToMeta(row));
+}
+
 export async function listActiveSessionRecordings(): Promise<SessionRecordingMeta[]> {
   const rows = await sql`
     SELECT * FROM session_recordings
     WHERE status = 'recording'
+    ORDER BY started_at DESC`;
+  return rows.map((row: Record<string, unknown>) => rowToMeta(row));
+}
+
+export async function listActiveSessionRecordingsForUser(userId: string): Promise<SessionRecordingMeta[]> {
+  const rows = await sql`
+    SELECT * FROM session_recordings
+    WHERE user_id = ${userId} AND status = 'recording'
     ORDER BY started_at DESC`;
   return rows.map((row: Record<string, unknown>) => rowToMeta(row));
 }
@@ -133,10 +153,33 @@ export async function getSessionRecordingMeta(id: string): Promise<SessionRecord
   return row ? rowToMeta(row as Record<string, unknown>) : null;
 }
 
+export async function getSessionRecordingMetaForUser(
+  id: string,
+  userId: string,
+): Promise<SessionRecordingMeta | null> {
+  const rows = await sql`
+    SELECT * FROM session_recordings WHERE id = ${id} AND user_id = ${userId}`;
+  const row = rows[0];
+  return row ? rowToMeta(row as Record<string, unknown>) : null;
+}
+
 export async function getActiveSessionRecording(chatJid: string): Promise<SessionRecordingMeta | null> {
   const rows = await sql`
     SELECT * FROM session_recordings
     WHERE chat_jid = ${chatJid} AND status = 'recording'
+    ORDER BY started_at DESC
+    LIMIT 1`;
+  const row = rows[0];
+  return row ? rowToMeta(row as Record<string, unknown>) : null;
+}
+
+export async function getActiveSessionRecordingForUser(
+  chatJid: string,
+  userId: string,
+): Promise<SessionRecordingMeta | null> {
+  const rows = await sql`
+    SELECT * FROM session_recordings
+    WHERE chat_jid = ${chatJid} AND user_id = ${userId} AND status = 'recording'
     ORDER BY started_at DESC
     LIMIT 1`;
   const row = rows[0];
@@ -161,7 +204,22 @@ export async function listSessionRecordingEvents(recordingId: string): Promise<S
   }));
 }
 
+export async function listSessionRecordingEventsForUser(
+  recordingId: string,
+  userId: string,
+): Promise<SessionTraceEvent[]> {
+  const owned = await getSessionRecordingMetaForUser(recordingId, userId);
+  if (!owned) return [];
+  return listSessionRecordingEvents(recordingId);
+}
+
 export async function deleteSessionRecording(id: string): Promise<boolean> {
   const rows = await sql`DELETE FROM session_recordings WHERE id = ${id} RETURNING id`;
+  return rows.length > 0;
+}
+
+export async function deleteSessionRecordingForUser(id: string, userId: string): Promise<boolean> {
+  const rows = await sql`
+    DELETE FROM session_recordings WHERE id = ${id} AND user_id = ${userId} RETURNING id`;
   return rows.length > 0;
 }

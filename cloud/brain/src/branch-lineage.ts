@@ -18,7 +18,6 @@ export interface BranchLineageRow {
   user_id: string;
   title: string;
   sandbox_id: string | null;
-  archived_at: string | null;
   parent_session_id: string | null;
   forked_from_message_id: number | null;
   inherited_message_count: number;
@@ -73,7 +72,7 @@ export async function mergeChatBranchIntoParent(chatJid: string, userId: string)
   if (additions.length > 0) {
     await store.appendMessagesToSession(parent.id, additions);
   }
-  const archived = await store.archiveSession(branch.id, userId);
+  const archived = await store.deleteSession(branch.id, userId);
   return {
     parent: sessionToBranchChat(parent),
     branch: sessionToBranchChat(archived),

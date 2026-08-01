@@ -16,6 +16,7 @@ import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox
 import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
 import { getAccessToken } from "../src/sandbox/auth.ts";
 import { readFile } from "../src/sandbox/fs.ts";
+import { hasLegacyHelloOutput } from "../src/e2e/arduino-output.ts";
 
 applyE2bEnv();
 
@@ -114,7 +115,11 @@ async function lastAssistantText(page: Page): Promise<string> {
 }
 
 async function getJson(path: string): Promise<Record<string, unknown>> {
-  return (await fetch(`${BASE}${path}`)).json();
+  const response = await fetch(`${BASE}${path}`);
+  if (!response.ok) {
+    throw new Error(`GET ${path} failed: ${response.status} ${await response.text()}`);
+  }
+  return response.json();
 }
 
 async function findInoFile(sandboxId: string): Promise<{ path: string; content: string } | null> {
@@ -149,6 +154,11 @@ if (MODE === "llm") {
     console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or use CLOUD_WEB_E2E_MODE=mock-tools.");
     process.exit(2);
   }
+}
+
+if (EXECUTABLE_PATH && !(await Bun.file(EXECUTABLE_PATH).exists())) {
+  console.error(`Chrome executable not found: ${EXECUTABLE_PATH}`);
+  process.exit(2);
 }
 
 const gaps = missingSandboxConfig();
@@ -187,9 +197,17 @@ let inoPath = "";
 try {
   console.log("\n[1] load Web UI + create session");
   {
+    const created = await fetch(`${BASE}/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: CHAT, title: "web-e2e" }),
+    });
+    check(created.ok, `Web E2E created session (${created.status})`);
     await page.goto(`${BASE}/?chat_jid=${encodeURIComponent(CHAT)}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     const title = await page.title();
     check(title.includes("PiClaw") || title.length > 0, `page loaded (title=${title.slice(0, 40)})`);
+    const createdSession = await getJson(`/sessions/${encodeURIComponent(CHAT)}`);
+    check((createdSession.session as { id?: string })?.id === CHAT, "page loads the created session");
     const timeline = await getJson(`/timeline?chat_jid=${encodeURIComponent(CHAT)}&limit=5`);
     check(Array.isArray(timeline.posts), "timeline API ok for session");
   }
@@ -211,6 +229,16 @@ try {
     check((await countUserPosts(page)) >= 1, "user post remains in timeline");
     const reply = await lastAssistantText(page);
     check(reply.length > 0, `assistant reply visible (${reply.slice(0, 60)})`);
+    const persisted = await getJson(`/sessions/${encodeURIComponent(CHAT)}/messages`);
+    const persistedMessages = (persisted.messages as Array<{ role: string; content: string }>) ?? [];
+    check(
+      persistedMessages.some((message) => message.role === "user" && message.content.includes(prompt)),
+      "first user message persisted",
+    );
+    check(
+      persistedMessages.some((message) => message.role === "assistant" && message.content.trim().length > 0),
+      "first assistant message persisted",
+    );
     if (MODE === "llm") {
       check(!reply.includes("mock-reply"), "not mock text");
     }
@@ -257,7 +285,10 @@ try {
   } else if (!sandboxId || !inoPath) {
     console.log("  ⚠ skipped — sandbox file steps unavailable");
   } else {
-    await sendMessage(page, "输出 hello world 改为输出“hello agent”");
+    await sendMessage(
+      page,
+      `请读取并修改 ${inoPath}。把所有非注释、用户可见的 “hello world” 或 “hello, world” 输出替换成恰好 “hello agent”，必须同时覆盖 Serial、TFT、LCD 等所有输出调用。保存后重新读取文件并确认没有遗留。`,
+    );
     await waitForPosts(page, 6, MESSAGE_TIMEOUT_MS);
     const session = await getJson(`/sessions/${encodeURIComponent(CHAT)}`);
     check((session.session as { sandbox_id?: string })?.sandbox_id === sandboxId, "same sandbox after edit");
@@ -266,16 +297,22 @@ try {
     if (ino) {
       const lower = ino.content.toLowerCase();
       check(lower.includes("hello agent"), "file contains hello agent");
+      check(!hasLegacyHelloOutput(ino.content), "hello world removed from executable output");
     }
   }
 
   console.log("\n[5] terminal WebSocket attach");
   {
-    await page.keyboard.press("Control+Backquote");
+    const workspaceMenu = page.locator(".workspace-menu-button").first();
+    await workspaceMenu.waitFor({ state: "visible", timeout: 30_000 });
+    await workspaceMenu.click();
+    const openTerminal = page.locator(".workspace-menu-item").filter({ hasText: /terminal|终端/i }).first();
+    await openTerminal.waitFor({ state: "visible", timeout: 10_000 });
+    await openTerminal.click();
     await page.waitForTimeout(1500);
     const terminal = page.locator(".xterm, .terminal-container, [data-testid='terminal']").first();
     if (!(await terminal.isVisible())) {
-      console.log("  ⚠ terminal pane not visible — skipped");
+      check(false, "terminal pane visible");
     } else {
       let passed = false;
       try {
@@ -283,18 +320,48 @@ try {
           const el = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement | null;
           el?.focus();
         });
-        await page.keyboard.type("echo WEB_TERMINAL_OK\n", { delay: 30 });
+        const marker = `WEB_TERMINAL_OK_${Date.now()}`;
+        await page.keyboard.type(`export PICLAW_WEB_MARKER=${marker}; echo ${marker}\n`, { delay: 30 });
         await page.waitForTimeout(3000);
         const text = await page.evaluate(() => {
           const layer = document.querySelector(".xterm-rows, .xterm-screen, [data-testid='terminal-output']");
           return layer?.textContent || "";
         });
-        passed = text.includes("WEB_TERMINAL_OK");
+        passed = text.includes(marker);
+        if (passed) {
+          const firstSession = await getJson(`/sessions/${encodeURIComponent(CHAT)}`);
+          const firstPid = Number((firstSession.session as { terminal_pid?: number })?.terminal_pid || 0);
+          check(firstPid > 0, `terminal session recorded PID (${firstPid})`);
+
+          await page.reload({ waitUntil: "domcontentloaded" });
+          await page.waitForTimeout(1500);
+          const reopenedWorkspaceMenu = page.locator(".workspace-menu-button").first();
+          await reopenedWorkspaceMenu.click();
+          const reopenedOpenTerminal = page.locator(".workspace-menu-item").filter({ hasText: /terminal|终端/i }).first();
+          await reopenedOpenTerminal.click();
+          await page.waitForTimeout(1000);
+          const reopenedTerminal = page.locator(".xterm, .terminal-container, [data-testid='terminal']").first();
+          check(await reopenedTerminal.isVisible(), "terminal pane reopens after page reload");
+          await page.evaluate(() => {
+            const el = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement | null;
+            el?.focus();
+          });
+          await page.keyboard.type("echo $PICLAW_WEB_MARKER\n", { delay: 30 });
+          await page.waitForTimeout(2500);
+          const reopenedText = await page.evaluate(() => {
+            const layer = document.querySelector(".xterm-rows, .xterm-screen, [data-testid='terminal-output']");
+            return layer?.textContent || "";
+          });
+          check(reopenedText.includes(marker), "reopened terminal retains shell marker");
+          const secondSession = await getJson(`/sessions/${encodeURIComponent(CHAT)}`);
+          const secondPid = Number((secondSession.session as { terminal_pid?: number })?.terminal_pid || 0);
+          check(secondPid === firstPid, `reopened terminal retains PID (${secondPid})`);
+        }
       } catch (error) {
         console.log(`  ⚠ terminal interaction failed (${String(error).slice(0, 80)})`);
       }
       if (passed) check(true, "terminal echo roundtrip");
-      else console.log("  ⚠ terminal echo not confirmed — sandbox may be slow");
+      else check(false, "terminal echo roundtrip");
     }
   }
 
@@ -305,6 +372,10 @@ try {
     await page.waitForTimeout(2000);
     const afterCount = await page.locator(POST).count();
     check(afterCount >= 2, `timeline restored after reload (${afterCount} posts, was ${beforeCount})`);
+    const restored = await getJson(`/sessions/${encodeURIComponent(CHAT)}/messages`);
+    const restoredMessages = (restored.messages as Array<{ role: string; content: string }>) ?? [];
+    check(restoredMessages.some((message) => message.role === "user"), "reload retains persisted user history");
+    check(restoredMessages.some((message) => message.role === "assistant"), "reload retains persisted assistant history");
   }
 } finally {
   await context.close();

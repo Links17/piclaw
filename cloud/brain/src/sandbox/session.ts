@@ -6,13 +6,15 @@ import {
   connectSandbox,
   createSandbox,
   createWorkspaceVolume,
+  deleteRemoteSandbox,
+  deleteWorkspaceVolume,
   SandboxUnavailableError,
   type Sandbox,
 } from "./client.ts";
 
 const live = new Map<string, Sandbox>();
 
-async function assertSandboxQuota(sessionId: string): Promise<void> {
+async function assertTurnQuota(sessionId: string): Promise<void> {
   const session = await store.getSession(sessionId);
   if (!session) throw new Error(`unknown session ${sessionId}`);
   const quota = await store.checkQuota(session.user_id, {
@@ -26,16 +28,9 @@ async function assertSandboxQuota(sessionId: string): Promise<void> {
       quota.dailyTokens ?? 0,
     );
   }
-  if (!session.sandbox_id && !quota.ok && quota.reason === "active_sandbox_limit") {
-    throw new QuotaExceededError(
-      "active_sandboxes",
-      config.maxActiveSandboxesPerUser,
-      quota.activeSandboxes ?? 0,
-    );
-  }
 }
 
-async function ensureWorkspaceVolume(sessionId: string): Promise<string | undefined> {
+async function ensureWorkspaceVolume(sessionId: string): Promise<string> {
   const session = await store.getSession(sessionId);
   if (!session) throw new Error(`unknown session ${sessionId}`);
 
@@ -44,15 +39,9 @@ async function ensureWorkspaceVolume(sessionId: string): Promise<string | undefi
     : "";
   if (existing) return existing;
 
-  try {
-    const volumeId = await createWorkspaceVolume(sessionId);
-    await store.setWorkspaceVolumeId(sessionId, volumeId);
-    return volumeId;
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn(`[sandbox] workspace volume unavailable for ${sessionId}: ${detail}`);
-    return undefined;
-  }
+  const volumeId = await createWorkspaceVolume(sessionId);
+  await store.setWorkspaceVolumeId(sessionId, volumeId);
+  return volumeId;
 }
 
 async function clearStaleSandboxBinding(sessionId: string, staleSandboxId: string): Promise<void> {
@@ -61,17 +50,34 @@ async function clearStaleSandboxBinding(sessionId: string, staleSandboxId: strin
   await store.clearSandboxId(sessionId);
 }
 
-async function recreateSandboxWithVolume(sessionId: string, volumeId?: string): Promise<Sandbox> {
-  const sbx = await createSandbox({ volumeId: volumeId ?? null });
-  await store.setSandboxId(sessionId, sbx.sandboxId);
-  live.set(sessionId, sbx);
-  return sbx;
+async function recreateSandboxWithVolume(sessionId: string, volumeId: string): Promise<Sandbox> {
+  const reservation = await store.reserveSandboxQuota(
+    sessionId,
+    config.maxActiveSandboxesPerUser,
+  );
+  if (!reservation.reserved) {
+    throw new QuotaExceededError(
+      "active_sandboxes",
+      config.maxActiveSandboxesPerUser,
+      reservation.activeSandboxes,
+    );
+  }
+
+  try {
+    const sbx = await createSandbox({ volumeId });
+    await store.setSandboxId(sessionId, sbx.sandboxId);
+    live.set(sessionId, sbx);
+    return sbx;
+  } catch (error) {
+    await store.releaseSandboxQuotaReservation(sessionId);
+    throw error;
+  }
 }
 
 async function connectOrRecreate(
   sessionId: string,
   sandboxId: string,
-  volumeId?: string,
+  volumeId: string,
 ): Promise<Sandbox> {
   try {
     return await connectSandbox(sandboxId);
@@ -100,7 +106,7 @@ export async function ensureSandbox(sessionId: string): Promise<Sandbox> {
   if (!config.sandboxEnabled) {
     throw new Error("sandbox disabled (CLOUD_SANDBOX_ENABLED=0)");
   }
-  await assertSandboxQuota(sessionId);
+  await assertTurnQuota(sessionId);
   const cached = live.get(sessionId);
   if (cached) return cached;
 
@@ -109,13 +115,15 @@ export async function ensureSandbox(sessionId: string): Promise<Sandbox> {
 
   const volumeId = await ensureWorkspaceVolume(sessionId);
 
+  const wasPaused = Boolean(session.sandbox_paused_at);
+  const reconnectingExistingSandbox = Boolean(session.sandbox_id);
   const sbx = session.sandbox_id
     ? await connectOrRecreate(sessionId, session.sandbox_id, volumeId)
     : await recreateSandboxWithVolume(sessionId, volumeId);
 
-  if (!session.sandbox_id) {
+  if (!reconnectingExistingSandbox) {
     await store.setSandboxId(sessionId, sbx.sandboxId);
-  } else if (!live.has(sessionId)) {
+  } else if (wasPaused || !live.has(sessionId)) {
     await store.clearSandboxPaused(sessionId);
   }
   live.set(sessionId, sbx);
@@ -136,6 +144,7 @@ export async function runBash(sessionId: string, command: string): Promise<strin
 export async function createTerminal(sessionId: string): Promise<{ sandbox: Sandbox; pid: number }> {
   const sbx = await ensureSandbox(sessionId);
   const terminal = await sbx.pty.create({ cols: 80, rows: 24, timeoutMs: 60_000, onData: () => {} });
+  await store.setTerminalPid(sessionId, terminal.pid);
   return { sandbox: sbx, pid: terminal.pid };
 }
 
@@ -147,6 +156,42 @@ export function dropLiveSandbox(sessionId: string): void {
   live.delete(sessionId);
 }
 
+export function createSessionResourceCleanup(deps: {
+  deleteSandbox: (sandboxId: string) => Promise<boolean>;
+  deleteVolume: (volumeId: string) => Promise<boolean>;
+}) {
+  return async (resource: {
+    id: string;
+    sandbox_id?: string | null;
+    workspace_volume_id?: string | null;
+  }): Promise<void> => {
+    dropLiveSandbox(resource.id);
+
+    const sandboxId = typeof resource.sandbox_id === "string" ? resource.sandbox_id.trim() : "";
+    const volumeId = typeof resource.workspace_volume_id === "string"
+      ? resource.workspace_volume_id.trim()
+      : "";
+
+    if (sandboxId && !(await deps.deleteSandbox(sandboxId))) {
+      throw new Error(`sandbox deletion failed: ${sandboxId}`);
+    }
+    if (volumeId && !(await deps.deleteVolume(volumeId))) {
+      throw new Error(`workspace volume deletion failed: ${volumeId}`);
+    }
+  };
+}
+
+export async function cleanupSessionResources(resource: {
+  id: string;
+  sandbox_id?: string | null;
+  workspace_volume_id?: string | null;
+}): Promise<void> {
+  await createSessionResourceCleanup({
+    deleteSandbox: deleteRemoteSandbox,
+    deleteVolume: deleteWorkspaceVolume,
+  })(resource);
+}
+
 export async function pauseSessionSandbox(sessionId: string): Promise<boolean> {
   const session = await store.getSession(sessionId);
   if (!session?.sandbox_id) return false;
@@ -156,6 +201,9 @@ export async function pauseSessionSandbox(sessionId: string): Promise<boolean> {
     if (!res.ok && res.status !== 404) {
       throw new Error(`pause failed: ${res.status}`);
     }
+    // A paused CubeSandbox does not retain PTYs. Clear the stale PID so the
+    // next terminal attachment creates a fresh PTY in the resumed sandbox.
+    await store.clearTerminalPid(sessionId);
     await store.markSandboxPaused(sessionId);
     return true;
   } catch {

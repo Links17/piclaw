@@ -1,5 +1,4 @@
 import * as store from "@piclaw-cloud/store";
-import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { config } from "../config.ts";
 
 function json(body: unknown, status = 200): Response {
@@ -10,9 +9,12 @@ function keychainEncryptionKey(): string {
   return config.devApiKey || "piclaw-cloud-keychain-dev";
 }
 
-export async function handleKeychainRoutes(req: Request, pathname: string): Promise<Response | null> {
+export async function handleKeychainRoutes(
+  req: Request,
+  pathname: string,
+  userId: string,
+): Promise<Response | null> {
   if (!pathname.startsWith("/agent/keychain")) return null;
-  const userId = DEFAULT_USER_ID;
   const encryptionKey = keychainEncryptionKey();
 
   if (req.method === "GET" && pathname === "/agent/keychain") {

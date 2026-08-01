@@ -17,7 +17,7 @@
   },
   "sandbox": {
     "enabled": true,
-    "apiUrl": "http://192.168.200.127:12088",
+    "apiUrl": "http://192.168.200.127:13000",
     "apiKey": "e2b_0000000000000000000000000000000000000000",
     "templateId": "tpl-474f7cc593f145f0bb4cf232",
     "proxyNodeIp": "192.168.200.127",
@@ -40,6 +40,13 @@
   "auth": {
     "required": false,
     "devApiKey": ""
+  },
+  "scheduler": {
+    "pollMs": 60000,
+    "serviceKey": "replace-with-a-shared-internal-service-key",
+    "leaseMs": 60000,
+    "heartbeatMs": 15000,
+    "idlePauseLeaseMs": 60000
   },
   "question": {
     "timeoutMs": 300000

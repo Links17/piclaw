@@ -34,7 +34,7 @@ function vapidDetails(keys: store.StoredVapidKeys) {
 export async function sendAgentReplyWebPush(options: {
   chatJid: string;
   body: string;
-  userId?: string;
+  userId: string;
 }): Promise<void> {
   const subscriptions = await store.listWebPushSubscriptions(options.userId);
   if (subscriptions.length === 0) return;
@@ -79,7 +79,7 @@ export async function sendAgentReplyWebPush(options: {
         body: requestDetails.body ?? undefined,
       });
       if (response.status === 404 || response.status === 410) {
-        await store.removeWebPushSubscription(subscription.endpoint);
+        await store.removeWebPushSubscription(subscription.endpoint, options.userId);
       }
     } catch (error) {
       console.warn("[push] delivery failed:", error instanceof Error ? error.message : error);

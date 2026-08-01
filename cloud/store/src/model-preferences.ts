@@ -53,8 +53,32 @@ export async function setSessionModelLabel(sessionId: string, modelLabel: string
     WHERE id = ${sessionId}`;
 }
 
+export async function setSessionModelLabelForUser(
+  sessionId: string,
+  userId: string,
+  modelLabel: string | null,
+): Promise<boolean> {
+  const rows = await sql`
+    UPDATE sessions SET model_label = ${modelLabel}, updated_at = now()
+    WHERE id = ${sessionId} AND user_id = ${userId}
+    RETURNING id`;
+  return rows.length > 0;
+}
+
 export async function setSessionThinkingLevel(sessionId: string, level: string | null): Promise<void> {
   await sql`
     UPDATE sessions SET thinking_level = ${level}, updated_at = now()
     WHERE id = ${sessionId}`;
+}
+
+export async function setSessionThinkingLevelForUser(
+  sessionId: string,
+  userId: string,
+  level: string | null,
+): Promise<boolean> {
+  const rows = await sql`
+    UPDATE sessions SET thinking_level = ${level}, updated_at = now()
+    WHERE id = ${sessionId} AND user_id = ${userId}
+    RETURNING id`;
+  return rows.length > 0;
 }

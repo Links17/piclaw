@@ -72,7 +72,7 @@ describe("message-map", () => {
       },
       stopReason: "toolUse",
       timestamp: 1,
-    });
+    }, { userMessageId: 42, operationId: "turn:web:abc:42", attempt: 1 });
     expect(row.content).toBe("running");
     expect(row.contentBlocks).toEqual({
       tool_calls: [
@@ -82,6 +82,22 @@ describe("message-map", () => {
           function: { name: "bash", arguments: "{\"command\":\"pwd\"}" },
         },
       ],
+      user_message_id: 42,
+      turn_operation_id: "turn:web:abc:42",
+      usage_receipt: {
+        version: 1,
+        user_message_id: 42,
+        operation_id: "turn:web:abc:42",
+        attempt: 1,
+        provider: "piclaw-cloud",
+        model: "gpt-test",
+        input_tokens: 1,
+        output_tokens: 1,
+        reasoning_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        status: "success",
+      },
     });
   });
 
@@ -93,11 +109,82 @@ describe("message-map", () => {
       content: [{ type: "text", text: "done" }],
       isError: false,
       timestamp: 1,
-    });
+    }, { userMessageId: 42, operationId: "turn:web:abc:42" });
     expect(row.content).toBe("done");
     expect(row.contentBlocks).toEqual({
       tool_call_id: "call_1",
       tool_name: "bash",
+      user_message_id: 42,
+      turn_operation_id: "turn:web:abc:42",
     });
+  });
+
+  test("compacts only explicitly selected tool results", () => {
+    const rows = [
+      {
+        id: 1,
+        session_id: "web:abc",
+        role: "assistant" as const,
+        content: "",
+        content_blocks: {
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "bash", arguments: "{}" },
+          }],
+        },
+        recovery_marker: false,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: 2,
+        session_id: "web:abc",
+        role: "tool" as const,
+        content: "x".repeat(500),
+        content_blocks: { tool_call_id: "call_1", tool_name: "bash" },
+        recovery_marker: false,
+        created_at: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: 3,
+        session_id: "web:abc",
+        role: "assistant" as const,
+        content: "",
+        content_blocks: {
+          tool_calls: [{
+            id: "call_2",
+            type: "function",
+            function: { name: "read", arguments: "{}" },
+          }],
+        },
+        recovery_marker: false,
+        created_at: "2026-01-01T00:00:02.000Z",
+      },
+      {
+        id: 4,
+        session_id: "web:abc",
+        role: "tool" as const,
+        content: "y".repeat(500),
+        content_blocks: { tool_call_id: "call_2", tool_name: "read" },
+        recovery_marker: false,
+        created_at: "2026-01-01T00:00:03.000Z",
+      },
+    ];
+
+    const messages = rowsToAgentMessages(rows, "gpt-test", {
+      toolResultMaxChars: 80,
+      toolResultCompactionTools: ["bash"],
+    });
+
+    expect(messages[1]?.role).toBe("toolResult");
+    expect(messages[1]?.role === "toolResult" && messages[1].content[0]?.type === "text"
+      ? messages[1].content[0].text.length
+      : 0)
+      .toBeLessThanOrEqual(80);
+    expect(messages[3]?.role).toBe("toolResult");
+    expect(messages[3]?.role === "toolResult" && messages[3].content[0]?.type === "text"
+      ? messages[3].content[0].text
+      : "")
+      .toBe("y".repeat(500));
   });
 });

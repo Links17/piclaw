@@ -129,7 +129,19 @@ export async function getGeneralSettingsSnapshot(userId = DEFAULT_USER_ID): Prom
 
 export async function getCompactionSettingsSnapshot(userId = DEFAULT_USER_ID): Promise<CompactionSettingsSnapshot> {
   const prefs = await readStoredSettings(userId);
-  return { ...defaultCompactionSettings(), ...prefs };
+  const snapshot = { ...defaultCompactionSettings(), ...prefs };
+  return {
+    ...snapshot,
+    smartCompactionMethod: "selective",
+    remoteCompactionEnabled: false,
+    toolResultSemanticSummaryEnabled: false,
+    toolResultCompactionTools: Array.isArray(snapshot.toolResultCompactionTools)
+      ? snapshot.toolResultCompactionTools
+        .filter((name): name is string => typeof name === "string")
+        .map((name) => name.trim().toLowerCase())
+        .filter(Boolean)
+      : [],
+  };
 }
 
 export async function saveGeneralSettingsPatch(
@@ -149,7 +161,13 @@ export async function saveCompactionSettingsPatch(
   userId = DEFAULT_USER_ID,
 ): Promise<CompactionSettingsSnapshot> {
   const current = await readStoredSettings(userId);
-  const next = { ...current, ...patch };
+  const safePatch = {
+    ...patch,
+    smartCompactionMethod: "selective" as const,
+    remoteCompactionEnabled: false,
+    toolResultSemanticSummaryEnabled: false,
+  };
+  const next = { ...current, ...safePatch };
   await sql`
     UPDATE users SET preferences = ${JSON.stringify(next)}::jsonb
     WHERE id = ${userId}`;

@@ -7,17 +7,18 @@
  *   - CubeSandbox cluster
  *   - subagent.codingWorkerMode=sandbox in config (recommended)
  */
-import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 import { ensureE2eSession } from "./e2e-session.ts";
-import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
-import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
-import { getAccessToken } from "../src/sandbox/auth.ts";
-import { readFile } from "../src/sandbox/fs.ts";
-
-applyE2bEnv();
 
 const EXAMPLE_CONFIG = new URL("../../brain.config.example.json", import.meta.url).pathname;
 process.env.CLOUD_CONFIG_PATH ||= EXAMPLE_CONFIG;
+
+const { getCloudConfig } = await import("@piclaw-cloud/shared/cloud-config");
+const { applyE2bEnv, missingSandboxConfig, sandboxConfig } = await import("../src/sandbox/config.ts");
+const { connectSandbox, healthCheck } = await import("../src/sandbox/client.ts");
+const { getAccessToken } = await import("../src/sandbox/auth.ts");
+const { readFile } = await import("../src/sandbox/fs.ts");
+
+applyE2bEnv();
 
 const BASE = process.env.CLOUD_E2E_BASE || "http://localhost:7801";
 const CHAT = `llm-subagent-e2e-${Date.now()}`;
@@ -122,8 +123,9 @@ async function reclaimSandboxQuota(): Promise<void> {
 
 async function preflightSandbox(): Promise<boolean> {
   try {
-    const { createSandbox } = await import("../src/sandbox/client.ts");
-    const sbx = await createSandbox();
+    const { createSandbox, createWorkspaceVolume } = await import("../src/sandbox/client.ts");
+    const volume = await createWorkspaceVolume(`llm-subagent-preflight-${Date.now()}`);
+    const sbx = await createSandbox({ volumeId: volume });
     const id = sbx.sandboxId;
     await sbx.kill().catch(() => {});
     console.log(`  sandbox preflight ok (${id})`);

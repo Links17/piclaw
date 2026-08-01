@@ -59,6 +59,8 @@ export function buildProviderRegistryEntries(
     models: [{
       id: cloud.openai.model,
       name: cloud.openai.model,
+      contextWindow: cloud.openai.contextWindow,
+      maxTokens: cloud.openai.maxTokens,
     }],
   };
   const additional = (cloud.providers ?? []).map((provider) => ({

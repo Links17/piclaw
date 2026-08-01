@@ -8,6 +8,7 @@ import {
   resolveUserProfileUpdate,
 } from './app-profile-events.js';
 import { shouldRefreshQueueStateFromResponse } from './app-followup-queue.js';
+import { setContextUserScope } from './app-status-refresh-orchestration.js';
 
 type StateSetter<T> = (next: T | ((prev: T) => T)) => void;
 
@@ -34,6 +35,7 @@ export async function loadAgentsBootstrap(options: LoadAgentsBootstrapOptions): 
 
   try {
     const data = await getAgents();
+    setContextUserScope(data?.account_scope ?? data?.accountScope);
     setAgents(buildAgentsMap(data));
 
     const nextUser = data?.user || {};

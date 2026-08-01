@@ -66,6 +66,12 @@ export interface ContextUsageSnapshot {
   tokens: number;
   contextWindow: number;
   percent: number;
+  model: string;
+  provider: string;
+  throughMessageId: number;
+  latestMessageId: number;
+  compactedThroughMessageId: number;
+  updatedAt: string;
 }
 
 const contextUsage = new Map<string, ContextUsageSnapshot>();

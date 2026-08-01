@@ -15,6 +15,7 @@ export {
   findCutPoint,
   prepareCompaction,
   generateSummary,
+  generateSummaryWithUsage,
   DEFAULT_COMPACTION_SETTINGS,
   type AgentContext,
   type AgentEvent,

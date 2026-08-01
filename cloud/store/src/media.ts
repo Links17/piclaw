@@ -6,8 +6,9 @@ export interface MediaRow {
   user_id: string;
   filename: string;
   content_type: string;
-  data: Uint8Array;
-  thumbnail: Uint8Array | null;
+  object_key: string;
+  object_size: number;
+  thumbnail_object_key: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
@@ -25,18 +26,20 @@ export async function createMedia(row: {
   userId?: string;
   filename: string;
   contentType: string;
-  data: Uint8Array;
-  thumbnail?: Uint8Array | null;
+  objectKey: string;
+  objectSize: number;
+  thumbnailObjectKey?: string | null;
   metadata?: Record<string, unknown> | null;
 }): Promise<number> {
   const rows = await sql`
-    INSERT INTO media (user_id, filename, content_type, data, thumbnail, metadata)
+    INSERT INTO media (user_id, filename, content_type, object_key, object_size, thumbnail_object_key, metadata)
     VALUES (
       ${row.userId ?? DEFAULT_USER_ID},
       ${row.filename},
       ${row.contentType},
-      ${row.data},
-      ${row.thumbnail ?? null},
+      ${row.objectKey},
+      ${row.objectSize},
+      ${row.thumbnailObjectKey ?? null},
       ${row.metadata ? JSON.stringify(row.metadata) : null}
     )
     RETURNING id`;
@@ -44,18 +47,31 @@ export async function createMedia(row: {
 }
 
 export async function getMediaById(id: number): Promise<MediaRow | null> {
-  const rows = await sql`SELECT * FROM media WHERE id = ${id}`;
-  const row = rows[0];
+  const rows = await sql`
+    SELECT id, user_id, filename, content_type, object_key, object_size,
+      thumbnail_object_key, metadata, created_at
+    FROM media WHERE id = ${id}`;
+  return mapMediaRow(rows[0]);
+}
+
+export async function getMediaByIdForUser(id: number, userId: string): Promise<MediaRow | null> {
+  const rows = await sql`
+    SELECT id, user_id, filename, content_type, object_key, object_size,
+      thumbnail_object_key, metadata, created_at
+    FROM media WHERE id = ${id} AND user_id = ${userId}`;
+  return mapMediaRow(rows[0]);
+}
+
+function mapMediaRow(row: Record<string, unknown> | undefined): MediaRow | null {
   if (!row) return null;
   return {
     id: Number(row.id),
     user_id: String(row.user_id),
     filename: String(row.filename),
     content_type: String(row.content_type),
-    data: row.data instanceof Uint8Array ? row.data : new Uint8Array(row.data as ArrayBuffer),
-    thumbnail: row.thumbnail
-      ? (row.thumbnail instanceof Uint8Array ? row.thumbnail : new Uint8Array(row.thumbnail as ArrayBuffer))
-      : null,
+    object_key: String(row.object_key ?? ""),
+    object_size: Number(row.object_size),
+    thumbnail_object_key: row.thumbnail_object_key ? String(row.thumbnail_object_key) : null,
     metadata: row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : null,
     created_at: String(row.created_at),
   };
@@ -63,9 +79,23 @@ export async function getMediaById(id: number): Promise<MediaRow | null> {
 
 export async function getMediaInfoById(id: number): Promise<MediaInfo | null> {
   const rows = await sql`
-    SELECT id, filename, content_type, octet_length(data) AS size, thumbnail IS NOT NULL AS has_thumbnail, created_at
+    SELECT id, filename, content_type,
+      object_size AS size,
+      (thumbnail_object_key IS NOT NULL) AS has_thumbnail, created_at
     FROM media WHERE id = ${id}`;
-  const row = rows[0];
+  return mapMediaInfo(rows[0]);
+}
+
+export async function getMediaInfoByIdForUser(id: number, userId: string): Promise<MediaInfo | null> {
+  const rows = await sql`
+    SELECT id, filename, content_type,
+      object_size AS size,
+      (thumbnail_object_key IS NOT NULL) AS has_thumbnail, created_at
+    FROM media WHERE id = ${id} AND user_id = ${userId}`;
+  return mapMediaInfo(rows[0]);
+}
+
+function mapMediaInfo(row: Record<string, unknown> | undefined): MediaInfo | null {
   if (!row) return null;
   return {
     id: Number(row.id),

@@ -1,11 +1,12 @@
 # PoC 2 — CubeSandbox execution layer
 
-Validated against `http://192.168.200.127:12088` with template `tpl-474f7cc593f145f0bb4cf232`.
+Validated against CubeAPI `http://192.168.200.127:13000` with template `tpl-474f7cc593f145f0bb4cf232`. The WebUI/ops gateway remains `http://192.168.200.127:12088/opsapi/v1`.
 
 ## Run
 
 ```bash
-export E2B_API_URL=http://192.168.200.127:12088
+export E2B_API_URL=http://192.168.200.127:13000
+export CUBE_OPS_URL=http://192.168.200.127:12088/opsapi/v1
 export CUBE_TEMPLATE_ID=tpl-474f7cc593f145f0bb4cf232
 export CUBE_PROXY_NODE_IP=192.168.200.127
 export CUBE_OPS_USER=admin
@@ -23,7 +24,6 @@ bun run scenario
 | PTY create + reattach | ✅ | `pty.create` + `pty.connect(samePid)` |
 | pause/resume FS | ✅ | marker file survives |
 | pause/resume memory | ✅ | `sleep 300` background PID alive after pause (`kill -0`) |
-| artifacts roundtrip | ✅ | archive → kill → new sandbox → restore |
 | resume p95 | ✅ 3161ms | budget 5000ms; first resume after cold create ~3–4s, subsequent ~1s |
 
 ## CubeSandbox-specific adaptations (`src/`)

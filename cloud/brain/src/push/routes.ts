@@ -15,7 +15,11 @@ function resolveDeviceId(value: unknown): string | null {
   return normalized || null;
 }
 
-export async function handleWebPushRoutes(req: Request, pathname: string): Promise<Response | null> {
+export async function handleWebPushRoutes(
+  req: Request,
+  pathname: string,
+  userId: string,
+): Promise<Response | null> {
   if (req.method === "GET" && pathname === "/agent/push/vapid-public-key") {
     const keys = await store.ensureStoredVapidKeys();
     return json({ publicKey: keys.publicKey });
@@ -26,6 +30,7 @@ export async function handleWebPushRoutes(req: Request, pathname: string): Promi
       const body = await req.json().catch(() => null) as Record<string, unknown> | null;
       const subscription = body && typeof body === "object" && body.subscription ? body.subscription : body;
       const stored = await store.upsertWebPushSubscription(subscription, {
+        userId,
         userAgent: resolveUserAgent(req),
         deviceId: resolveDeviceId(body?.device_id ?? body?.deviceId),
       });
@@ -45,7 +50,7 @@ export async function handleWebPushRoutes(req: Request, pathname: string): Promi
         ? body.endpoint.trim()
         : "";
     if (!endpoint) return json({ error: "Missing push subscription endpoint." }, 400);
-    const removed = await store.removeWebPushSubscription(endpoint);
+    const removed = await store.removeWebPushSubscription(endpoint, userId);
     return json({ ok: true, removed });
   }
 

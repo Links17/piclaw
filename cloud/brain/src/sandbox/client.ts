@@ -118,8 +118,10 @@ export async function healthCheck(): Promise<{ ok: boolean; detail: unknown }> {
   }
 }
 
-export async function createSandbox(options: { volumeId?: string | null } = {}): Promise<Sandbox> {
+export async function createSandbox(options: { volumeId: string }): Promise<Sandbox> {
   if (!sandboxConfig.templateId) throw new Error("CUBE_TEMPLATE_ID is required");
+  const volumeId = options.volumeId.trim();
+  if (!volumeId) throw new Error("CubeSandbox workspace volume is required");
 
   const body: Record<string, unknown> = {
     templateID: sandboxConfig.templateId,
@@ -129,10 +131,7 @@ export async function createSandbox(options: { volumeId?: string | null } = {}):
     // Pause is owned by cloud/scheduler (session idleMs), not Cube autoPause.
     autoPause: false,
   };
-  const volumeId = typeof options.volumeId === "string" ? options.volumeId.trim() : "";
-  if (volumeId) {
-    body.volumeMounts = buildWorkspaceVolumeMounts(volumeId);
-  }
+  body.volumeMounts = buildWorkspaceVolumeMounts(volumeId);
 
   const res = await cubeFetch("/sandboxes", {
     method: "POST",

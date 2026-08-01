@@ -16,6 +16,7 @@ import { FilePill } from './file-pill.js';
 import { refreshAgentModelStateBestEffort } from './compose-model-refresh.js';
 import { renderMarkdown } from '../markdown.js';
 import { requestOpenSettingsDialog } from './settings-dialog-events.js';
+import { resolveComposeTokenUsageMeta } from './token-usage-meta.ts';
 import {
     describeSpeechRecognitionError,
     extractSpeechRecognitionText,
@@ -1382,6 +1383,7 @@ export function ComposeBox({
     const modelThinkingLabel = modelHintSuffix.trim() ? `${thinkingLevel}` : '';
     const routedModelStatus = resolveComposeRoutedModelStatus(activeModel, agentModelsPayload);
     const cacheHitMeta = resolveComposeCacheHitMeta(contextUsage);
+    const tokenUsageMeta = resolveComposeTokenUsageMeta(contextUsage);
     const modelUsageLabel = typeof modelUsage?.hint_short === 'string' ? modelUsage.hint_short.trim() : '';
     const modelUsageSectionLabel = [
         modelThinkingLabel || null,
@@ -1403,7 +1405,7 @@ export function ComposeBox({
         : (modelUsageTitleParts.join(' • ') || (showModelPickerHint
             ? 'Select a model (tap to open model picker)'
             : `Current model: ${modelHintLabel}${modelHintSuffix} (tap to open model picker)`));
-    const showComposeMetaRow = !searchMode && (showModelPickerHint || cacheHitMeta || (contextUsage && contextUsage.percent != null));
+    const showComposeMetaRow = !searchMode && (showModelPickerHint || cacheHitMeta || tokenUsageMeta || (contextUsage && contextUsage.percent != null));
 
     const emitModelState = (payload) => {
         if (!payload || typeof payload !== 'object') return;
@@ -3464,6 +3466,21 @@ export function ComposeBox({
                                     `}
                                 </div>
                             </div>
+                        `}
+                        ${tokenUsageMeta && html`
+                            <button
+                                type="button"
+                                class="compose-token-usage"
+                                title=${tokenUsageMeta.title}
+                                data-tooltip=${tokenUsageMeta.title}
+                                aria-label=${tokenUsageMeta.title}
+                                onClick=${(event) => {
+                                    event.preventDefault();
+                                    event.currentTarget.classList.toggle('is-expanded');
+                                }}
+                            >
+                                ${tokenUsageMeta.label}
+                            </button>
                         `}
                         ${!searchMode && contextUsage && contextUsage.percent != null && html`
                             <${ContextPie}

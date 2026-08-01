@@ -40,7 +40,12 @@ export async function runCloudDreamMaintenance(options: {
   sessionId: string;
   prompt: string;
   mode?: "manual" | "auto";
+  signal?: AbortSignal;
 }): Promise<{ skipped: boolean; summary: string }> {
+  const throwIfAborted = () => {
+    if (options.signal?.aborted) throw options.signal.reason ?? new Error("dream maintenance aborted");
+  };
+  throwIfAborted();
   const token = parseDreamPromptToken(options.prompt);
   if (!token.matched) {
     return { skipped: true, summary: `Unknown internal task: ${options.prompt || "(empty)"}` };
@@ -49,11 +54,13 @@ export async function runCloudDreamMaintenance(options: {
   const days = token.days || (mode === "auto" ? AUTO_DREAM_DEFAULT_DAYS : MANUAL_DREAM_DEFAULT_DAYS);
 
   const recentCount = await countRecentUserMessages(options.sessionId, days);
+  throwIfAborted();
   if (mode === "auto" && recentCount === 0) {
     return { skipped: true, summary: "AutoDream skipped: no recent user messages." };
   }
 
   const sbx = await ensureSandbox(options.sessionId);
+  throwIfAborted();
   await sbx.commands.run(`mkdir -p ${shellQuote(DREAM_DAILY_DIR)} ${shellQuote(DREAM_MEMORY_DIR)}`);
 
   const rows = await store.listMessages(options.sessionId, 500);
@@ -69,6 +76,7 @@ export async function runCloudDreamMaintenance(options: {
 
   let completeDays = 0;
   for (const [day, messages] of byDay.entries()) {
+    throwIfAborted();
     if (messages.length === 0) continue;
     const notePath = `${DREAM_DAILY_DIR}/${day}.md`;
     await writeFile(sbx, notePath, formatDailyNote(options.sessionId, day, messages));
@@ -88,6 +96,7 @@ export async function runCloudDreamMaintenance(options: {
     "",
   ].join("\n");
   await writeFile(sbx, DREAM_MEMORY_PATH, memorySummary);
+  throwIfAborted();
 
   return {
     skipped: false,

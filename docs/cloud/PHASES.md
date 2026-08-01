@@ -1,7 +1,10 @@
 # Serverless 云端版 — 分阶段执行路线图
 
-状态：阶段 1 MVP 已验证（2026-07-29）
+状态：阶段 1 MVP 非 Terminal Agent Core 真实验收已通过；Terminal pause/resume 明确延期（2026-08-01）
 依据：[implementation-plan.md](implementation-plan.md) · [serverless-design.md](serverless-design.md)
+
+逐能力的迁移范围、实现状态、验收证据与已知风险见
+[runtime-to-cloud-migration-matrix.md](runtime-to-cloud-migration-matrix.md)。
 
 ## 总览
 
@@ -19,7 +22,7 @@ flowchart LR
 | 阶段 | 分支/PR | 验收 |
 |------|---------|------|
 | **0** PoC | （本地，未合 main） | turn-loop + sandbox scenario 全绿 ✅ |
-| **1a–1e** MVP | `cloud/phase-1-foundation` | 全部验收通过 ✅ |
+| **1a–1e** MVP | `cloud/phase-1-foundation` | 非 Terminal 真实验收通过；Terminal pause/resume 延期，详见迁移矩阵 |
 | **2** 多用户 | 多个 PR | OAuth、RLS、scheduler、配额 |
 | **3** 生产化 | 多个 PR | 计费、可观测、压测、安全 |
 
@@ -28,13 +31,13 @@ flowchart LR
 ## 阶段 0 — 已完成 ✅
 
 - [x] PoC 1 `cloud/poc/turn-loop`：PG advisory lock、Redis SSE、inflight 恢复
-- [x] PoC 2 `cloud/poc/sandbox`：CubeSandbox exec/PTY/pause/artifacts
+- [x] PoC 2 `cloud/poc/sandbox`：CubeSandbox exec/PTY/pause 与 Volume 持久化
 
 实测备注见各 PoC README（`files.write` fallback、JWT 认证、resume p95 ~3s 等）。
 
 ---
 
-## 阶段 1 — MVP（已完成 ✅）
+## 阶段 1 — MVP（实现完成，真实验收未完全通过）
 
 | 子阶段 | 状态 | 验收命令 |
 |--------|------|----------|
@@ -143,5 +146,6 @@ psql $POC_PG_URL -f migrations/001_core.sql
 |------|------|
 | `POC_PG_URL` | Postgres（本地 docker 25432 / `piclaw_cloud_poc`） |
 | `POC_REDIS_URL` | Redis db 5 @ 26379 |
-| `E2B_API_URL` / `CUBE_*` | CubeSandbox @ 192.168.200.127:12088 |
+| `E2B_API_URL` / `CUBE_API_URL` | CubeAPI control plane @ `192.168.200.127:13000` |
+| `CUBE_OPS_URL` | CubeSandbox WebUI/ops JWT API @ `192.168.200.127:12088/opsapi/v1` |
 | `POC_OPENAI_*` | NewAPI @ 192.168.1.190（cache 实测） |

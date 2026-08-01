@@ -23,6 +23,8 @@ export interface SubagentLoopOptions {
   maxTurns?: number;
   profileOverrides?: ProfileOverrides;
   parentSystemAppend?: string;
+  invocationId?: string;
+  signal?: AbortSignal;
 }
 
 export interface SubagentLoopResult {
@@ -75,7 +77,7 @@ export async function runSubagentLoop(
   }
 
   const loop = await runAgentSessionLoop({
-    persist: { kind: "subagent", sessionId, runId },
+    persist: { kind: "subagent", sessionId, runId, invocationId: options.invocationId },
     messages,
     systemPrompt: profile.systemPrompt,
     mode: profile.mode,
@@ -101,6 +103,7 @@ export async function runSubagentLoop(
             });
           }
         : undefined,
+    signal: options.signal,
   });
 
   const summary = loop.finalText.trim() || "Subagent completed.";

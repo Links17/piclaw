@@ -58,6 +58,81 @@ describe("cloud-config", () => {
     expect(getCloudConfig().openai.apiKey).toBe("real-environment-key");
   });
 
+  test("a real scheduler environment key overrides empty or placeholder file values", () => {
+    const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
+    const path = join(dir, "brain.config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        scheduler: {
+          serviceKey: "replace-with-a-shared-internal-service-key",
+        },
+      }),
+    );
+    process.env.CLOUD_SCHEDULER_SERVICE_KEY = "real-scheduler-key";
+
+    setCloudConfigPath(path);
+    expect(getCloudConfig().scheduler.serviceKey).toBe("real-scheduler-key");
+  });
+
+  test("a real scheduler environment key overrides an existing real file key", () => {
+    const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
+    const path = join(dir, "brain.config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        scheduler: {
+          serviceKey: "old-file-scheduler-key",
+        },
+      }),
+    );
+    process.env.CLOUD_SCHEDULER_SERVICE_KEY = "rotated-environment-key";
+
+    setCloudConfigPath(path);
+    expect(getCloudConfig().scheduler.serviceKey).toBe("rotated-environment-key");
+  });
+
+  test("scheduler placeholder key is normalized to unconfigured", () => {
+    const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
+    const path = join(dir, "brain.config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        scheduler: {
+          serviceKey: "replace-with-a-shared-internal-service-key",
+        },
+      }),
+    );
+
+    setCloudConfigPath(path);
+    expect(getCloudConfig().scheduler.serviceKey).toBe("");
+  });
+
+  test("scheduler lease and heartbeat durations are configurable from environment", () => {
+    const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
+    const path = join(dir, "missing.json");
+    process.env.CLOUD_SCHEDULER_LEASE_MS = "90000";
+    process.env.CLOUD_SCHEDULER_HEARTBEAT_MS = "15000";
+    process.env.CLOUD_SCHEDULER_IDLE_PAUSE_LEASE_MS = "45000";
+
+    setCloudConfigPath(path);
+    expect(getCloudConfig().scheduler).toMatchObject({
+      leaseMs: 90_000,
+      heartbeatMs: 15_000,
+      idlePauseLeaseMs: 45_000,
+    });
+  });
+
+  test("rejects non-positive or unsafe scheduler lease configuration", () => {
+    const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
+    const path = join(dir, "missing.json");
+    process.env.CLOUD_SCHEDULER_LEASE_MS = "1000";
+    process.env.CLOUD_SCHEDULER_HEARTBEAT_MS = "1000";
+
+    setCloudConfigPath(path);
+    expect(() => getCloudConfig()).toThrow("scheduler.heartbeatMs must be positive and less than scheduler.leaseMs");
+  });
+
   test("env fills gaps when config file is missing", () => {
     const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
     const path = join(dir, "missing.json");
@@ -76,7 +151,10 @@ describe("cloud-config", () => {
     const dir = mkdtempSync(join(tmpdir(), "piclaw-cloud-config-"));
     setCloudConfigPath(join(dir, "missing.json"));
     const cfg = getCloudConfig();
-    expect(cfg.sandbox.apiUrl).toBe("http://192.168.200.127:12088");
+    expect(cfg.sandbox.apiUrl).toBe("http://192.168.200.127:13000");
+    expect(cfg.sandbox.opsUrl).toBe("http://192.168.200.127:12088/opsapi/v1");
     expect(cfg.redis.url).toBe("redis://localhost:26379/5");
+    expect(cfg.storage.backend).toBe("local");
+    expect(cfg.storage.localDir).toBe("/tmp/piclaw-cloud-objects");
   });
 });

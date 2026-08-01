@@ -1,9 +1,6 @@
 export interface SessionRowCapabilities {
-  archived: boolean;
   isRoot: boolean;
   canEdit: boolean;
-  canPrune: boolean;
-  canPurgeArchived: boolean;
   canDelete: boolean;
   showMenu: boolean;
 }
@@ -28,44 +25,34 @@ export function getSessionRowCapabilities(
   options: {
     currentChatJid?: string | null;
     canDelete?: boolean;
-    canPurgeArchived?: boolean;
-    /** When true, any non-archived root session row may be archived/deleted. */
+    /** When true, any root session row may be deleted. */
     allowRootDelete?: boolean;
   } = {},
 ): SessionRowCapabilities {
-  const archived = Boolean(chat?.archived_at);
   const chatJid = typeof chat?.chat_jid === 'string' ? chat.chat_jid.trim() : '';
   const isRoot = chatJid === (chat?.root_chat_jid || chatJid);
   const isCurrent = Boolean(chatJid && chatJid === options.currentChatJid);
   const allowRootDelete = options.allowRootDelete !== false;
-  const canPruneInactive = Boolean(
+  const canDeleteInactive = Boolean(
     !isRoot
     && !chat?.is_active
-    && !archived
     && options.canDelete,
   );
   const canDeleteCurrent = Boolean(
     isCurrent
-    && !archived
     && options.canDelete,
   );
   const canDeleteRoot = Boolean(
     isRoot
-    && !archived
     && options.canDelete
     && allowRootDelete,
   );
-  const canPrune = canPruneInactive || canDeleteCurrent || canDeleteRoot;
-  const canPurgeArchived = Boolean(archived && options.canPurgeArchived);
-  const canEdit = !archived;
-  const canDelete = canPrune || canPurgeArchived;
+  const canDelete = canDeleteInactive || canDeleteCurrent || canDeleteRoot;
+  const canEdit = true;
   const showMenu = canEdit || canDelete;
   return {
-    archived,
     isRoot,
     canEdit,
-    canPrune,
-    canPurgeArchived,
     canDelete,
     showMenu,
   };

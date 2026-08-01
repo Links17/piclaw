@@ -20,7 +20,6 @@ function SessionSidebarRowMenu({
   onClose,
   onRenameSession,
   onDeleteSession,
-  onPurgeArchivedSession,
 }: {
   chat: any;
   anchor: MenuAnchor;
@@ -28,13 +27,11 @@ function SessionSidebarRowMenu({
   onClose: () => void;
   onRenameSession?: (chatJid: string) => void;
   onDeleteSession?: (chatJid: string, options?: { confirmed?: boolean }) => Promise<boolean | void>;
-  onPurgeArchivedSession?: (chatJid: string, options?: { confirmed?: boolean }) => Promise<boolean | void>;
 }) {
   const chatJid = String(chat?.chat_jid || '').trim();
   const caps = getSessionRowCapabilities(chat, {
     currentChatJid,
     canDelete: typeof onDeleteSession === 'function',
-    canPurgeArchived: typeof onPurgeArchivedSession === 'function',
     allowRootDelete: true,
   });
   const [deleteConfirming, setDeleteConfirming] = useState(false);
@@ -68,11 +65,7 @@ function SessionSidebarRowMenu({
       return;
     }
     onClose();
-    if (caps.canPurgeArchived) {
-      await onPurgeArchivedSession?.(chatJid, { confirmed: true });
-    } else if (caps.canPrune) {
-      await onDeleteSession?.(chatJid, { confirmed: true });
-    }
+    await onDeleteSession?.(chatJid, { confirmed: true });
   };
 
   return html`
@@ -98,7 +91,7 @@ function SessionSidebarRowMenu({
             role="menuitem"
             onClick=${() => { void handleDelete(); }}
           >
-            ${deleteConfirming ? (caps.canPurgeArchived ? 'Confirm delete' : 'Confirm delete') : 'Delete'}
+            ${deleteConfirming ? 'Confirm delete' : 'Delete'}
           </button>
         `}
       </div>
@@ -113,7 +106,6 @@ export function SessionSidebar({
   onCreateRootSession,
   onRenameSession,
   onDeleteSession,
-  onPurgeArchivedSession,
   collapsed = false,
   onToggleCollapsed,
 }: {
@@ -123,14 +115,13 @@ export function SessionSidebar({
   onCreateRootSession?: () => void;
   onRenameSession?: (chatJid: string) => void;
   onDeleteSession?: (chatJid: string, options?: { confirmed?: boolean }) => Promise<boolean | void>;
-  onPurgeArchivedSession?: (chatJid: string, options?: { confirmed?: boolean }) => Promise<boolean | void>;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<MenuAnchor | null>(null);
   const sessions = useMemo(() => {
     const all = resolveSessionPopupChats(activeChatAgents, currentChatJid, null);
-    return all.filter((chat) => !chat?.archived_at);
+    return all;
   }, [activeChatAgents, currentChatJid]);
   const openMenuChat = useMemo(
     () => (openMenu ? sessions.find((chat) => chat?.chat_jid === openMenu.chatJid) || null : null),
@@ -199,7 +190,6 @@ export function SessionSidebar({
   const caps = getSessionRowCapabilities(chat, {
     currentChatJid,
     canDelete: typeof onDeleteSession === 'function',
-    canPurgeArchived: typeof onPurgeArchivedSession === 'function',
     allowRootDelete: true,
   });
           return html`
@@ -250,7 +240,6 @@ export function SessionSidebar({
           onClose=${closeMenu}
           onRenameSession=${onRenameSession}
           onDeleteSession=${onDeleteSession}
-          onPurgeArchivedSession=${onPurgeArchivedSession}
         />
       `}
     </aside>

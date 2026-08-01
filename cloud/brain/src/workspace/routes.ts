@@ -27,8 +27,19 @@ function chatJidFromUrl(url: URL): string | null {
 }
 
 /** Handle workspace routes; returns null when pathname is not a workspace route. */
-export async function handleWorkspaceRoutes(req: Request, pathname: string): Promise<Response | null> {
+export async function handleWorkspaceRoutes(
+  req: Request,
+  pathname: string,
+  userId?: string,
+): Promise<Response | null> {
   const url = new URL(req.url);
+  if (userId) {
+    const chatJid = chatJidFromUrl(url);
+    if (!chatJid) return json({ error: "chat_jid required" }, 400);
+    if (!(await store.getSessionForUser(chatJidToSessionId(chatJid), userId))) {
+      return json({ error: "session access denied" }, 401);
+    }
+  }
 
   if (req.method === "GET" && pathname === "/workspace/tree") {
     try {

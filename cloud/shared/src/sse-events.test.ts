@@ -13,10 +13,39 @@ describe("@piclaw-cloud/shared sse-events", () => {
   });
 
   test("maps followup_queued with chat_jid", () => {
-    const mapped = mapInternalToSse(scope, { type: "followup_queued", content: "next" });
+    const mapped = mapInternalToSse(scope, { type: "followup_queued", content: "next", messageId: 43 });
     expect(mapped).toEqual({
       event: "agent_followup_queued",
-      data: { content: "next", chat_jid: "web:test", turn_id: "42" },
+        data: { content: "next", row_id: 43, chat_jid: "web:test", turn_id: "42" },
+    });
+  });
+
+  test("maps removed follow-up and applied steer with chat scope", () => {
+    expect(mapInternalToSse(scope, { type: "followup_removed", messageId: 43 })).toEqual({
+      event: "agent_followup_removed",
+      data: { row_id: 43, chat_jid: "web:test", turn_id: "42" },
+    });
+    expect(mapInternalToSse(scope, { type: "steer_applied", content: "use this instead", replica: "A" })).toEqual({
+      event: "agent_steer_queued",
+      data: { content: "use this instead", chat_jid: "web:test", turn_id: "42" },
+    });
+  });
+
+  test("maps recovery retries with chat scope", () => {
+    expect(mapInternalToSse(scope, {
+      type: "recovery",
+      messageId: 99,
+      action: "retried",
+      replica: "replica-b",
+    })).toEqual({
+      event: "agent_recovery",
+      data: {
+        message_id: 99,
+        action: "retried",
+        replica: "replica-b",
+        chat_jid: "web:test",
+        turn_id: "42",
+      },
     });
   });
 

@@ -5,7 +5,6 @@ import {
   buildProviderRegistryEntries,
   type ProviderModelConfig,
 } from "../kernel/provider-registry.ts";
-import { chatJidToSessionId } from "../web-adapter.ts";
 
 export interface AvailableModelOption {
   label: string;
@@ -37,6 +36,10 @@ export interface AvailableModelsResult {
 }
 
 const DEFAULT_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high"];
+
+function chatJidToSessionId(chatJid: string | null | undefined): string {
+  return typeof chatJid === "string" ? chatJid.trim() : "";
+}
 
 function modelLabel(provider: string, id: string): string {
   return `${provider}/${id}`;
@@ -86,7 +89,10 @@ function configuredModelOptions(): AvailableModelOption[] {
 
 export async function getAvailableModels(chatJid: string, userId = DEFAULT_USER_ID): Promise<AvailableModelsResult> {
   const sessionId = chatJidToSessionId(chatJid);
-  const prefs = sessionId ? await store.getSessionModelPrefs(sessionId) : { modelLabel: null, thinkingLevel: null };
+  const ownedSession = sessionId ? await store.getSessionForUser(sessionId, userId) : null;
+  const prefs = ownedSession
+    ? await store.getSessionModelPrefs(sessionId)
+    : { modelLabel: null, thinkingLevel: null };
   const userPrefs = await store.getUserPreferences(userId);
   const modelOptions = configuredModelOptions();
   const configuredProviders = buildProviderRegistryEntries({
@@ -136,26 +142,38 @@ export async function getAvailableModels(chatJid: string, userId = DEFAULT_USER_
   };
 }
 
-export async function switchSessionModel(chatJid: string, label: string): Promise<{ ok: boolean; message?: string }> {
+export async function switchSessionModel(
+  chatJid: string,
+  label: string,
+  userId: string,
+): Promise<{ ok: boolean; message?: string }> {
   const sessionId = chatJidToSessionId(chatJid);
   if (!sessionId) return { ok: false, message: "chat_jid is required" };
-  const available = await getAvailableModels(chatJid);
+  const available = await getAvailableModels(chatJid, userId);
   const match = available.model_options.find((option) => option.label === label.trim())
     ?? available.model_options.find((option) => option.id === label.trim());
   if (!match) return { ok: false, message: `Unknown model: ${label}` };
-  await store.setSessionModelLabel(sessionId, match.label);
+  if (!(await store.setSessionModelLabelForUser(sessionId, userId, match.label))) {
+    return { ok: false, message: "session access denied" };
+  }
   return { ok: true, message: `Model switched to ${match.label}` };
 }
 
-export async function switchSessionThinkingLevel(chatJid: string, level: string): Promise<{ ok: boolean; message?: string }> {
+export async function switchSessionThinkingLevel(
+  chatJid: string,
+  level: string,
+  userId: string,
+): Promise<{ ok: boolean; message?: string }> {
   const sessionId = chatJidToSessionId(chatJid);
   if (!sessionId) return { ok: false, message: "chat_jid is required" };
-  const available = await getAvailableModels(chatJid);
+  const available = await getAvailableModels(chatJid, userId);
   const normalized = level.trim().toLowerCase();
   if (!available.available_thinking_levels.includes(normalized)) {
     return { ok: false, message: `Unsupported thinking level: ${level}` };
   }
-  await store.setSessionThinkingLevel(sessionId, normalized);
+  if (!(await store.setSessionThinkingLevelForUser(sessionId, userId, normalized))) {
+    return { ok: false, message: "session access denied" };
+  }
   return { ok: true, message: `Thinking level set to ${normalized}` };
 }
 
@@ -195,7 +213,7 @@ export async function handleModelSlashCommand(
   }
 
   if (parsed.type === "model" && parsed.target) {
-    const result = await switchSessionModel(chatJid, parsed.target);
+    const result = await switchSessionModel(chatJid, parsed.target, userId);
     const next = await getAvailableModels(chatJid, userId);
     return {
       uiOnly: true,
@@ -225,7 +243,7 @@ export async function handleModelSlashCommand(
   }
 
   if (parsed.type === "thinking" && parsed.target) {
-    const result = await switchSessionThinkingLevel(chatJid, parsed.target);
+    const result = await switchSessionThinkingLevel(chatJid, parsed.target, userId);
     const next = await getAvailableModels(chatJid, userId);
     return {
       uiOnly: true,

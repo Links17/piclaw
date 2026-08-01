@@ -31,6 +31,8 @@ export async function initKernelRuntime(): Promise<CloudKernelRuntime | null> {
         baseUrl: config.openaiBaseUrl,
         apiKey: config.openaiApiKey,
         model: config.openaiModel,
+        contextWindow: config.openaiContextWindow,
+        maxTokens: config.openaiMaxTokens,
       });
       return runtime;
     })();

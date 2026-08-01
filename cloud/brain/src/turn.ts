@@ -64,6 +64,10 @@ export async function abortSessionTurn(sessionId: string): Promise<{ ok: boolean
   trackTurnFinished(sessionId);
   const cursor = await store.getCursor(sessionId);
   const inflightId = cursor?.inflight_message_id == null ? undefined : Number(cursor.inflight_message_id);
+  // Invalidate the durable inflight condition used by compaction transactions.
+  // If a compaction transaction already holds the cursor lock, it commits first
+  // and remains valid; otherwise this prevents a later compaction commit.
+  await store.clearInflight(sessionId);
   await publish(sessionId, {
     type: "turn_aborted",
     ...(inflightId != null && Number.isFinite(inflightId) ? { messageId: inflightId } : {}),
@@ -172,33 +176,51 @@ async function runTurnLocked(
         trackTurnDelta(sessionId, delta);
         await publish(sessionId, { type: "delta", text: delta, replica: config.replicaId });
       },
-      { recovery: options.recovery ?? false },
+      {
+        recovery: options.recovery ?? false,
+        // Queued follow-ups are persisted as user rows immediately; bound the
+        // active turn so recovery/replay cannot see later unprocessed prompts.
+        throughMessageId: messageId,
+      },
     );
 
     if (assistantMessageId == null) {
       throw new Error("turn completed without assistant message");
     }
 
-    await store.endTurn(sessionId, messageId, counter);
     const durationMs = Date.now() - startedAt;
     const sessionRuntime = await resolveSessionKernelModel(sessionId);
-    await store.logTokenUsage({
+    const owner = await store.getSession(sessionId);
+    if (!owner) throw new Error(`unknown session ${sessionId}`);
+    const receipt = {
       sessionId,
-      messageId: assistantMessageId,
+      assistantMessageId,
+      userMessageId: messageId,
+      operationId: `turn:${sessionId}:${messageId}`,
+      attempt: 1,
       model: resolveModelIdForLogging(sessionRuntime.model),
+      provider: sessionRuntime.providerId,
       inputTokens: usage.inputTokens ?? 0,
       outputTokens: usage.outputTokens ?? 0,
+      reasoningTokens: usage.reasoningTokens ?? 0,
       cacheReadTokens: usage.cachedTokens ?? 0,
+      cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+      status: "success" as const,
+    };
+    // Persist the provider receipt first. If the process dies before the atomic
+    // turn commit, recovery can replay this exact fact without inventing usage.
+    await store.persistAssistantUsageReceiptFromLedger({
+      sessionId,
+      assistantMessageId,
+      userMessageId: messageId,
+      operationId: receipt.operationId,
+    });
+    await store.commitTurnUsage({
+      ...receipt,
+      userId: owner.user_id,
+      userMessageId: messageId,
       durationMs,
     });
-    const owner = await store.getSession(sessionId);
-    if (owner) {
-      await store.incrementDailyTokenUsage(
-        owner.user_id,
-        usage.inputTokens ?? 0,
-        usage.outputTokens ?? 0,
-      );
-    }
     await publish(sessionId, {
       type: "message",
       id: assistantMessageId,
@@ -213,13 +235,34 @@ async function runTurnLocked(
       dbRoundtrips: counter.count,
       durationMs,
     });
+    console.log(JSON.stringify({
+      level: "info",
+      event: "turn_completed",
+      replicaId: config.replicaId,
+      sessionId,
+      messageId,
+      assistantMessageId,
+      durationMs,
+      dbRoundtrips: counter.count,
+      usage: {
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        cacheReadTokens: usage.cachedTokens ?? 0,
+      },
+    }));
     trackTurnFinished(sessionId);
-    void sendAgentReplyWebPush({ chatJid: sessionId, body: finalText }).catch((error) => {
+    void sendAgentReplyWebPush({
+      chatJid: sessionId,
+      body: finalText,
+      userId: owner.user_id,
+    }).catch((error) => {
       console.warn(`[${config.replicaId}] web push failed for ${sessionId}:`, error);
     });
   } catch (error) {
     if (error instanceof TurnAbortedError) {
-      await store.endTurn(sessionId, messageId, counter);
+      // Preserve the consumed provider-round ledger while leaving the aborted
+      // user message retryable under the existing failed-turn recovery model.
+      await store.endTurnAborted(sessionId, messageId, counter);
       trackTurnFinished(sessionId);
       return;
     }
@@ -255,7 +298,28 @@ export async function sweepInflight(): Promise<void> {
       if (inflightId === null) continue;
 
       if (await store.hasAssistantReplyAfter(row.session_id, inflightId)) {
-        await store.clearInflight(row.session_id);
+        const receipt = await store.getRecoverableAssistantUsage(row.session_id, inflightId);
+        const owner = await store.getSession(row.session_id);
+        if (receipt && owner) {
+          await store.commitTurnUsage({
+            sessionId: row.session_id,
+            userId: owner.user_id,
+            userMessageId: inflightId,
+            assistantMessageId: receipt.assistantMessageId,
+            provider: receipt.provider ?? undefined,
+            model: receipt.model ?? undefined,
+            inputTokens: receipt.inputTokens,
+            outputTokens: receipt.outputTokens,
+            reasoningTokens: receipt.reasoningTokens,
+            cacheReadTokens: receipt.cacheReadTokens,
+            cacheWriteTokens: receipt.cacheWriteTokens,
+            status: receipt.status,
+          });
+        } else {
+          // Legacy assistant rows have no provider receipt. Complete recovery,
+          // but deliberately do not fabricate token counts.
+          await store.endTurn(row.session_id, inflightId, newCounter());
+        }
         continue;
       }
 

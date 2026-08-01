@@ -21,6 +21,8 @@ export interface LlmUsage {
   inputTokens: number | null;
   cachedTokens: number | null;
   outputTokens: number | null;
+  reasoningTokens?: number | null;
+  cacheWriteTokens?: number | null;
 }
 
 export interface CompletionRound {
@@ -100,6 +102,8 @@ function isScenarioMockPrompt(prompt: string): boolean {
     prompt.includes("medium first") ||
     prompt.includes("second while busy") ||
     prompt.includes("slow doomed turn") ||
+    prompt.includes("drain controlled turn") ||
+    prompt.includes("recall context sentinel") ||
     prompt.includes("count me")
   );
 }
@@ -111,18 +115,26 @@ async function streamScenarioMockRound(
   options: StreamCompletionOptions = {},
 ): Promise<CompletionRound> {
   throwIfAborted(options.sessionId ?? "", options.signal);
+  const historicalText = messages
+    .filter((message) => message.role === "user" && "content" in message)
+    .map((message) => String(message.content ?? ""))
+    .join("\n");
   const text =
+    prompt.includes("recall context sentinel")
+      ? (historicalText.includes("CONTEXT_A_TO_B_OK") ? "CONTEXT_A_TO_B_OK" : "CONTEXT_SENTINEL_MISSING")
+      :
     prompt.includes("slow doomed turn") || prompt.includes("medium first")
       ? "Mock busy turn streaming output for abort testing."
       : prompt.includes("count me")
         ? "Counted."
         : "Mock quick reply.";
-  const slow = prompt.includes("slow doomed turn");
+  const slow = prompt.includes("slow doomed turn") || prompt.includes("drain controlled turn");
+  const delayMs = prompt.includes("drain controlled turn") ? 10 : 40;
   if (slow) {
     for (const char of text) {
       throwIfAborted(options.sessionId ?? "", options.signal);
       await onDelta(char);
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   } else {
     await streamMockTextWithAbortCheck(text, onDelta, options);

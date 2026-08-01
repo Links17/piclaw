@@ -1,13 +1,12 @@
 import { buildChatWindowUrl, describeBranchOpenError } from './chat-window.js';
 import { resolveNextChatJidAfterRemoval } from './chat-jid.js';
-import { describeBranchRestoreResult, getBranchHandleDraftState } from './branch-lifecycle.js';
+import { getBranchHandleDraftState } from './branch-lifecycle.js';
 import { RENAME_BRANCH_FORM_GUARD_MS, type RenameBranchFormLock } from './app-shell-state.js';
 
 interface BranchRecord {
   chat_jid?: string;
   root_chat_jid?: string;
   agent_name?: string;
-  archived_at?: string | null;
   is_active?: boolean;
 }
 
@@ -196,7 +195,7 @@ export interface PruneCurrentBranchOptions {
   confirm?: (message: string) => boolean;
 }
 
-/** Archive the selected branch and navigate back to its root chat. */
+/** Permanently delete the selected inactive branch and navigate away. */
 export async function pruneCurrentBranch(options: PruneCurrentBranchOptions): Promise<boolean> {
   const {
     hasWindow = typeof window !== 'undefined',
@@ -221,7 +220,7 @@ export async function pruneCurrentBranch(options: PruneCurrentBranchOptions): Pr
   const fallbackCurrentChatJid = typeof currentChatJid === 'string' && currentChatJid.trim() ? currentChatJid.trim() : '';
   const chatJid = requestedChatJid || currentBranchRecord?.chat_jid || fallbackCurrentChatJid;
   if (!chatJid) {
-    showIntentToast?.('Could not prune branch', 'No active session is selected yet.', 'warning', 4000);
+    showIntentToast?.('Could not delete session', 'No active session is selected yet.', 'warning', 4000);
     return false;
   }
 
@@ -230,29 +229,9 @@ export async function pruneCurrentBranch(options: PruneCurrentBranchOptions): Pr
     || activeChatAgents.find((item) => item?.chat_jid === chatJid)
     || null;
 
-  const isRootBranch = branch?.chat_jid === (branch?.root_chat_jid || branch?.chat_jid);
-  const hasActiveChildBranches = Boolean(
-    isRootBranch
-    && currentChatBranches.some((item) => {
-      const itemChatJid = typeof item?.chat_jid === 'string' ? item.chat_jid.trim() : '';
-      const itemRootChatJid = typeof item?.root_chat_jid === 'string' ? item.root_chat_jid.trim() : itemChatJid;
-      return itemChatJid
-        && itemChatJid !== chatJid
-        && itemRootChatJid === chatJid
-        && !item?.archived_at;
-    })
-  );
-
-  if (hasActiveChildBranches) {
-    showIntentToast?.('Cannot archive session', 'Archive or delete the child branch sessions first.', 'warning', 4500);
-    return false;
-  }
-
   const label = branch?.agent_name?.trim() || chatJid;
   const confirmed = confirm(
-    isRootBranch
-      ? `Archive ${label}?\n\nThis removes the session from the session picker. Chat history is preserved.`
-      : `Prune ${label}?\n\nThis archives the branch agent and removes it from the branch picker. Chat history is preserved.`
+    `Permanently delete ${label}?\n\nThis removes its chat history and session state. It cannot be undone.`
   );
   if (!confirmed) return false;
 
@@ -265,116 +244,13 @@ export async function pruneCurrentBranch(options: PruneCurrentBranchOptions): Pr
     const fallbackChatJid = isRootBranch
       ? resolveNextChatJidAfterRemoval(chatJid, activeChatAgents)
       : (branch?.root_chat_jid || resolveNextChatJidAfterRemoval(chatJid, activeChatAgents));
-    showIntentToast?.(isRootBranch ? 'Session archived' : 'Branch pruned', `${label} has been archived.`, 'info', 3000);
+    showIntentToast?.('Session deleted', `${label} was permanently deleted.`, 'info', 3000);
     const nextUrl = buildChatWindowUrl(baseHref, fallbackChatJid, { chatOnly: chatOnlyMode });
     navigate?.(nextUrl);
     return true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error || 'Could not prune branch.');
-    showIntentToast?.('Could not prune branch', message || 'Could not prune branch.', 'warning', 5000);
-    return false;
-  }
-}
-
-export interface PurgeArchivedBranchOptions {
-  targetChatJid?: string | null;
-  purgeChatBranch?: (chatJid: string) => Promise<{ branch?: BranchRecord | null }>;
-  currentChatBranches?: BranchRecord[];
-  refreshActiveChatAgents?: () => Promise<unknown> | unknown;
-  refreshCurrentChatBranches?: () => Promise<unknown> | unknown;
-  showIntentToast?: ToastFn;
-  confirm?: (message: string) => boolean;
-}
-
-/** Permanently delete an already archived session or branch after an explicit irreversible confirmation. */
-export async function purgeArchivedBranch(options: PurgeArchivedBranchOptions): Promise<boolean> {
-  const {
-    targetChatJid,
-    purgeChatBranch,
-    currentChatBranches = [],
-    refreshActiveChatAgents,
-    refreshCurrentChatBranches,
-    showIntentToast,
-    confirm = (message: string) => window.confirm(message),
-  } = options;
-
-  const normalized = typeof targetChatJid === 'string' ? targetChatJid.trim() : '';
-  if (!normalized || typeof purgeChatBranch !== 'function') return false;
-
-  const branch = currentChatBranches.find((item) => item?.chat_jid === normalized) || null;
-  // Do not trust the local branch cache for purge eligibility: the compose
-  // session list can include archived rows while currentChatBranches can be
-  // scoped to non-archived rows. The backend is the source of truth and rejects
-  // non-archived purge attempts.
-  const isRootSession = Boolean(branch?.chat_jid && branch.chat_jid === (branch.root_chat_jid || branch.chat_jid));
-  const label = `@${branch?.agent_name || normalized}`;
-  const targetLabel = isRootSession ? 'session' : 'branch';
-  const confirmed = confirm(
-    `Permanently delete ${label}?\n\nThis removes all chat history, token usage, cursor state, scheduled tasks, and session files for this ${targetLabel}. It cannot be undone.`
-  );
-  if (!confirmed) return false;
-
-  try {
-    await purgeChatBranch(normalized);
-    await Promise.allSettled([
-      refreshActiveChatAgents?.(),
-      refreshCurrentChatBranches?.(),
-    ]);
-    showIntentToast?.(isRootSession ? 'Archived session deleted' : 'Archived branch deleted', `${label} was permanently deleted.`, 'info', 4000);
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error || `Could not permanently delete archived ${isRootSession ? 'session' : 'branch'}.`);
-    showIntentToast?.('Could not delete branch', message || `Could not permanently delete archived ${isRootSession ? 'session' : 'branch'}.`, 'warning', 5000);
-    return false;
-  }
-}
-
-export interface RestoreBranchOptions {
-  targetChatJid?: string | null;
-  restoreChatBranch?: (chatJid: string) => Promise<{ branch?: BranchRecord | null }>;
-  currentChatBranches?: BranchRecord[];
-  refreshActiveChatAgents?: () => Promise<unknown> | unknown;
-  refreshCurrentChatBranches?: () => Promise<unknown> | unknown;
-  showIntentToast?: ToastFn;
-  baseHref: string;
-  chatOnlyMode?: boolean;
-  navigate?: NavigateFn;
-}
-
-/** Restore an archived branch and navigate to the restored chat window. */
-export async function restoreBranch(options: RestoreBranchOptions): Promise<boolean> {
-  const {
-    targetChatJid,
-    restoreChatBranch,
-    currentChatBranches = [],
-    refreshActiveChatAgents,
-    refreshCurrentChatBranches,
-    showIntentToast,
-    baseHref,
-    chatOnlyMode,
-    navigate,
-  } = options;
-
-  const normalized = typeof targetChatJid === 'string' ? targetChatJid.trim() : '';
-  if (!normalized || typeof restoreChatBranch !== 'function') return false;
-
-  try {
-    const previousBranch = currentChatBranches.find((item) => item?.chat_jid === normalized) || null;
-    const response = await restoreChatBranch(normalized);
-    await Promise.allSettled([
-      refreshActiveChatAgents?.(),
-      refreshCurrentChatBranches?.(),
-    ]);
-    const branch = response?.branch;
-    const nextChatJid = typeof branch?.chat_jid === 'string' && branch.chat_jid.trim() ? branch.chat_jid.trim() : normalized;
-    const restoreDetail = describeBranchRestoreResult(previousBranch?.agent_name, branch?.agent_name, nextChatJid);
-    showIntentToast?.('Branch restored', restoreDetail, 'info', 4200);
-    const nextUrl = buildChatWindowUrl(baseHref, nextChatJid, { chatOnly: chatOnlyMode });
-    navigate?.(nextUrl);
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error || 'Could not restore branch.');
-    showIntentToast?.('Could not restore branch', message || 'Could not restore branch.', 'warning', 5000);
+    const message = error instanceof Error ? error.message : String(error || 'Could not delete session.');
+    showIntentToast?.('Could not delete session', message || 'Could not delete session.', 'warning', 5000);
     return false;
   }
 }

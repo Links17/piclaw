@@ -35,20 +35,13 @@ export async function resolveRequestUser(req: Request): Promise<string> {
 export async function requireSessionAccess(sessionId: string, userId: string): Promise<void> {
   const session = await store.getSessionForUser(sessionId, userId);
   if (!session) {
-    const exists = await store.getSession(sessionId);
-    if (exists && config.authRequired) {
-      throw new AuthError("session access denied");
-    }
-    if (!exists) {
-      throw new Error("unknown session");
-    }
+    throw new AuthError("session access denied");
   }
 }
 
-/** Resolve user, set RLS context, and verify session access for a web chat_jid. */
+/** Resolve user and verify session access for a web chat_jid. */
 export async function authorizeChatAccess(req: Request, chatJid: string): Promise<string> {
   const userId = await resolveRequestUser(req);
-  await store.setUserContext(userId);
   const sessionId = chatJidToSessionId(chatJid);
   if (!sessionId) {
     throw new AuthError("chat_jid required");

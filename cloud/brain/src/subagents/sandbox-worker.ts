@@ -10,11 +10,85 @@ import type { CodingSubagentResult } from "./types.ts";
 const PICLAW_DIR = `${WORKSPACE_ROOT}/.seeed`;
 const WORKER_PATH = `${PICLAW_DIR}/coding-worker.py`;
 
+export interface SandboxUsageReceipt {
+  attempt: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  status: "success" | "failed" | "timed_out" | "stopped";
+}
+
+function sumReceipts(receipts: SandboxUsageReceipt[]) {
+  return receipts.reduce((total, receipt) => ({
+    inputTokens: total.inputTokens + receipt.inputTokens,
+    outputTokens: total.outputTokens + receipt.outputTokens,
+    reasoningTokens: total.reasoningTokens + receipt.reasoningTokens,
+    cacheReadTokens: total.cacheReadTokens + receipt.cacheReadTokens,
+    cacheWriteTokens: total.cacheWriteTokens + receipt.cacheWriteTokens,
+  }), {
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
+}
+
+export class SandboxWorkerError extends Error {
+  readonly receipts: SandboxUsageReceipt[];
+  readonly usage: ReturnType<typeof sumReceipts>;
+  readonly status: "failed" | "timed_out" | "stopped";
+
+  constructor(message: string, options: {
+    receipts: SandboxUsageReceipt[];
+    status: "failed" | "timed_out" | "stopped";
+    cause?: unknown;
+  }) {
+    super(message, { cause: options.cause });
+    this.name = "SandboxWorkerError";
+    this.receipts = options.receipts;
+    this.usage = sumReceipts(options.receipts);
+    this.status = options.status;
+  }
+}
+
+export function parseSandboxUsageReceipts(text: string): SandboxUsageReceipt[] {
+  const receipts: SandboxUsageReceipt[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const value = JSON.parse(line) as Record<string, unknown>;
+      const attempt = Number(value.attempt);
+      if (!Number.isInteger(attempt) || attempt <= 0) continue;
+      receipts.push({
+        attempt,
+        inputTokens: Math.max(0, Number(value.inputTokens ?? 0)),
+        outputTokens: Math.max(0, Number(value.outputTokens ?? 0)),
+        reasoningTokens: Math.max(0, Number(value.reasoningTokens ?? 0)),
+        cacheReadTokens: Math.max(0, Number(value.cacheReadTokens ?? 0)),
+        cacheWriteTokens: Math.max(0, Number(value.cacheWriteTokens ?? 0)),
+        status: value.status === "failed"
+          ? "failed"
+          : value.status === "timed_out"
+            ? "timed_out"
+            : value.status === "stopped"
+              ? "stopped"
+              : "success",
+      });
+    } catch {
+      // A process may die mid-append; ignore only the incomplete record.
+    }
+  }
+  return receipts;
+}
+
 export function buildCodingWorkerScript(): string {
   return `#!/usr/bin/env python3
 import json, os, subprocess, sys, urllib.request
 
-input_path, output_path = sys.argv[1], sys.argv[2]
+input_path, output_path, usage_receipts_path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(input_path, "r", encoding="utf-8") as f:
     cfg = json.load(f)
 
@@ -88,6 +162,21 @@ def chat(messages):
         payload = json.loads(resp.read().decode("utf-8"))
     return payload
 
+def append_usage_receipt(attempt, round_usage, status):
+    receipt = {
+        "attempt": attempt,
+        "inputTokens": round_usage.get("prompt_tokens", 0) or 0,
+        "outputTokens": round_usage.get("completion_tokens", 0) or 0,
+        "reasoningTokens": (round_usage.get("completion_tokens_details", {}) or {}).get("reasoning_tokens", 0) or 0,
+        "cacheReadTokens": (round_usage.get("prompt_tokens_details", {}) or {}).get("cached_tokens", 0) or 0,
+        "cacheWriteTokens": 0,
+        "status": status,
+    }
+    with open(usage_receipts_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(receipt) + "\\n")
+        f.flush()
+        os.fsync(f.fileno())
+
 def write_result(result):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f)
@@ -98,12 +187,21 @@ try:
         {"role": "system", "content": "You are a coding worker in /workspace. Use tools to complete the task, then reply with a brief summary."},
         {"role": "user", "content": prompt},
     ]
-    usage = {"inputTokens": 0, "outputTokens": 0}
+    usage = {"inputTokens": 0, "outputTokens": 0, "reasoningTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0}
     summary = ""
-    for _ in range(8):
-        payload = chat(messages)
+    for attempt in range(1, 9):
+        try:
+            payload = chat(messages)
+        except Exception:
+            raise
+        round_usage = payload.get("usage", {}) or {}
+        append_usage_receipt(attempt, round_usage, "success")
         usage["inputTokens"] += payload.get("usage", {}).get("prompt_tokens", 0)
         usage["outputTokens"] += payload.get("usage", {}).get("completion_tokens", 0)
+        details = payload.get("usage", {}).get("prompt_tokens_details", {}) or {}
+        completion_details = payload.get("usage", {}).get("completion_tokens_details", {}) or {}
+        usage["cacheReadTokens"] += details.get("cached_tokens", 0) or 0
+        usage["reasoningTokens"] += completion_details.get("reasoning_tokens", 0) or 0
         msg = payload["choices"][0]["message"]
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
@@ -119,7 +217,7 @@ try:
             messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": output})
     write_result({"status": "failed", "summary": summary, "artifacts": sorted(artifacts), "usage": usage, "error": "max rounds"})
 except Exception as e:
-    write_result({"status": "failed", "summary": "", "artifacts": sorted(artifacts), "usage": {"inputTokens": 0, "outputTokens": 0}, "error": str(e)})
+    write_result({"status": "failed", "summary": "", "artifacts": sorted(artifacts), "usage": usage if "usage" in locals() else {}, "error": str(e)})
 `;
 }
 
@@ -133,52 +231,101 @@ export async function runSandboxPiWorker(
     openaiBaseUrl: string;
     openaiApiKey: string;
     openaiModel: string;
+    signal?: AbortSignal;
   },
 ): Promise<CodingSubagentResult> {
   const sbx = await ensureSandbox(sessionId);
   const runDir = `${PICLAW_DIR}/runs/${runId}`;
   const inputPath = `${runDir}/input.json`;
   const outputPath = `${runDir}/output.json`;
+  const receiptsPath = `${runDir}/usage.ndjson`;
 
-  await sbx.commands.run(`mkdir -p ${shellQuote(runDir)}`);
-  await writeFile(sbx, WORKER_PATH, buildCodingWorkerScript());
-  await writeFile(
-    sbx,
-    inputPath,
-    JSON.stringify({
-      task: options.task,
-      constraints: options.constraints,
-      openaiBaseUrl: options.openaiBaseUrl,
-      openaiApiKey: options.openaiApiKey,
-      openaiModel: options.openaiModel,
+  let terminalOutput = "";
+  let terminal: Awaited<ReturnType<typeof sbx.pty.create>> | null = null;
+  let abortListener: (() => void) | null = null;
+  let executionError: unknown;
+  try {
+    await sbx.commands.run(`mkdir -p ${shellQuote(runDir)}`);
+    await writeFile(sbx, WORKER_PATH, buildCodingWorkerScript());
+    await writeFile(
+      sbx,
+      inputPath,
+      JSON.stringify({
+        task: options.task,
+        constraints: options.constraints,
+        openaiBaseUrl: options.openaiBaseUrl,
+        openaiApiKey: options.openaiApiKey,
+        openaiModel: options.openaiModel,
+        timeoutMs: options.timeoutMs,
+      }),
+    );
+    const command = `python3 ${WORKER_PATH} ${inputPath} ${outputPath} ${receiptsPath}`;
+    if (options.signal?.aborted) throw options.signal.reason ?? new Error("subagent aborted");
+    const onData = (chunk: string | Uint8Array) => {
+      terminalOutput += typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+    };
+    terminal = await sbx.pty.create({
+      cols: 80,
+      rows: 24,
       timeoutMs: options.timeoutMs,
-    }),
-  );
-
-  const command = `python3 ${WORKER_PATH} ${inputPath} ${outputPath}`;
-  const result = await sbx.commands.run(command, { timeoutMs: options.timeoutMs });
+      onData,
+    });
+    if (options.signal) {
+      abortListener = () => void terminal?.kill?.();
+      options.signal.addEventListener("abort", abortListener, { once: true });
+    }
+    await sbx.pty.sendInput(terminal.pid, new TextEncoder().encode(`exec ${command}\n`));
+    await sbx.pty.connect(terminal.pid, { onData });
+    if (options.signal?.aborted) throw options.signal.reason ?? new Error("subagent aborted");
+  } catch (error) {
+    executionError = error;
+  } finally {
+    if (abortListener) options.signal?.removeEventListener("abort", abortListener);
+    if (options.signal?.aborted) await terminal?.kill?.().catch(() => {});
+  }
 
   let payload: {
     status?: string;
     summary?: string;
     artifacts?: string[];
-    usage?: { inputTokens?: number; outputTokens?: number };
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      reasoningTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+    };
     error?: string;
   } = {};
+  let durableReceipts: SandboxUsageReceipt[] = [];
+  try {
+    durableReceipts = parseSandboxUsageReceipts(String(await readFile(sbx, receiptsPath)));
+  } catch {
+    durableReceipts = [];
+  }
+  const durableUsage = sumReceipts(durableReceipts);
+  if (executionError) {
+    const status = options.signal?.aborted
+      ? "stopped"
+      : String(executionError).toLowerCase().includes("timeout")
+        ? "timed_out"
+        : "failed";
+    throw new SandboxWorkerError(
+      terminalOutput.slice(-2_000) || (executionError instanceof Error
+        ? executionError.message
+        : String(executionError)),
+      { status, receipts: durableReceipts, cause: executionError },
+    );
+  }
 
   try {
     const raw = await readFile(sbx, outputPath);
     payload = JSON.parse(String(raw));
-  } catch {
-    const tail = [result.stdout, result.stderr].filter(Boolean).join("\n").slice(-2000);
-    return {
-      runId,
-      status: "failed",
-      summary: "",
-      artifacts: [],
-      usage: { inputTokens: 0, outputTokens: 0 },
-      error: tail || `worker exit ${result.exitCode}`,
-    };
+  } catch (error) {
+    throw new SandboxWorkerError(
+      terminalOutput.slice(-2_000) || "sandbox worker output unavailable",
+      { status: options.signal?.aborted ? "stopped" : "failed", receipts: durableReceipts, cause: error },
+    );
   }
 
   const status =
@@ -194,9 +341,25 @@ export async function runSandboxPiWorker(
     summary: payload.summary ?? "",
     artifacts: Array.isArray(payload.artifacts) ? payload.artifacts.map(String) : [],
     usage: {
-      inputTokens: payload.usage?.inputTokens ?? 0,
-      outputTokens: payload.usage?.outputTokens ?? 0,
+      inputTokens: Math.max(payload.usage?.inputTokens ?? 0, durableUsage.inputTokens),
+      outputTokens: Math.max(payload.usage?.outputTokens ?? 0, durableUsage.outputTokens),
+      reasoningTokens: Math.max(payload.usage?.reasoningTokens ?? 0, durableUsage.reasoningTokens),
+      cacheReadTokens: Math.max(payload.usage?.cacheReadTokens ?? 0, durableUsage.cacheReadTokens),
+      cacheWriteTokens: Math.max(payload.usage?.cacheWriteTokens ?? 0, durableUsage.cacheWriteTokens),
     },
+    usageEntries: durableReceipts.map((receipt) => ({
+      invocationId: runId,
+      attempt: receipt.attempt,
+      stage: "sandbox_worker" as const,
+      provider: "openai",
+      model: options.openaiModel,
+      inputTokens: receipt.inputTokens,
+      outputTokens: receipt.outputTokens,
+      reasoningTokens: receipt.reasoningTokens,
+      cacheReadTokens: receipt.cacheReadTokens,
+      cacheWriteTokens: receipt.cacheWriteTokens,
+      status: receipt.status,
+    })),
     error: payload.error,
   };
 }

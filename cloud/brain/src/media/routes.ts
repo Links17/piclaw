@@ -1,4 +1,5 @@
 import * as store from "@piclaw-cloud/store";
+import { getObjectStorage } from "../storage/object-storage.ts";
 
 const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 
@@ -20,7 +21,11 @@ function normalizeContentType(value: string | undefined, fallback?: string): str
   return type || "application/octet-stream";
 }
 
-export async function handleMediaRoutes(req: Request, pathname: string): Promise<Response | null> {
+export async function handleMediaRoutes(
+  req: Request,
+  pathname: string,
+  userId = "default-user",
+): Promise<Response | null> {
   if (req.method === "POST" && pathname === "/media/upload") {
     let form: FormData;
     try {
@@ -35,12 +40,18 @@ export async function handleMediaRoutes(req: Request, pathname: string): Promise
     }
     const data = new Uint8Array(await file.arrayBuffer());
     const contentType = normalizeContentType(file.type, undefined);
+    const objectKey = `media/${encodeURIComponent(userId)}/${crypto.randomUUID()}/${encodeURIComponent(file.name || "upload.bin")}`;
+    const storage = getObjectStorage();
+    await storage.put(objectKey, data, contentType);
     const id = await store.createMedia({
+      userId,
       filename: file.name || "upload.bin",
       contentType,
-      data,
+      objectKey,
+      objectSize: data.byteLength,
+      metadata: { storage_backend: "object", object_key: objectKey },
     });
-    const info = await store.getMediaInfoById(id);
+    const info = await store.getMediaInfoByIdForUser(id, userId);
     return json({
       id,
       filename: info?.filename ?? file.name,
@@ -57,26 +68,39 @@ export async function handleMediaRoutes(req: Request, pathname: string): Promise
   if (!Number.isFinite(id)) return json({ error: "Invalid media id" }, 400);
 
   if (req.method === "GET" && parts.length === 2) {
-    const row = await store.getMediaById(id);
+    const row = await store.getMediaByIdForUser(id, userId);
     if (!row) return json({ error: "Media not found" }, 404);
     const headers: Record<string, string> = { "Content-Type": row.content_type };
     if (!INLINE_SAFE_TYPES.has(row.content_type)) {
       headers["Content-Disposition"] = "attachment";
     }
-    return new Response(Buffer.from(row.data), { status: 200, headers });
+    if (!row.object_key) return json({ error: "Media object not found" }, 404);
+    let data: Uint8Array;
+    try {
+      data = await getObjectStorage().get(row.object_key);
+    } catch {
+      return json({ error: "Media object not found" }, 404);
+    }
+    return new Response(Buffer.from(data), { status: 200, headers });
   }
 
   if (req.method === "GET" && parts[2] === "thumbnail") {
-    const row = await store.getMediaById(id);
-    if (!row?.thumbnail) return json({ error: "Thumbnail not found" }, 404);
-    return new Response(Buffer.from(row.thumbnail), {
+    const row = await store.getMediaByIdForUser(id, userId);
+    if (!row?.thumbnail_object_key) return json({ error: "Thumbnail not found" }, 404);
+    let thumbnail: Uint8Array;
+    try {
+      thumbnail = await getObjectStorage().get(row.thumbnail_object_key);
+    } catch {
+      return json({ error: "Thumbnail not found" }, 404);
+    }
+    return new Response(Buffer.from(thumbnail), {
       status: 200,
       headers: { "Content-Type": "image/jpeg" },
     });
   }
 
   if (req.method === "GET" && parts[2] === "info") {
-    const info = await store.getMediaInfoById(id);
+    const info = await store.getMediaInfoByIdForUser(id, userId);
     if (!info) return json({ error: "Media not found" }, 404);
     return json(info);
   }

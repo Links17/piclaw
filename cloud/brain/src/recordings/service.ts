@@ -22,6 +22,7 @@ export type SessionTraceEventKind =
 
 interface ActiveRecordingState {
   meta: SessionRecordingMeta;
+  userId: string;
   startedMs: number;
   seq: number;
 }
@@ -75,7 +76,8 @@ export async function startSessionRecording(options: {
   title?: unknown;
   mode?: unknown;
   redaction?: unknown;
-} = {}): Promise<SessionRecordingMeta> {
+  userId: string;
+}): Promise<SessionRecordingMeta> {
   const chatJid = normalizeChatJid(options.chatJid);
   const existing = activeByChat.get(chatJid);
   if (existing) return { ...existing.meta };
@@ -87,8 +89,9 @@ export async function startSessionRecording(options: {
     title: normalizeTitle(options.title, chatJid),
     mode: normalizeMode(options.mode),
     redaction: normalizeRedactionOptions(options.redaction),
+    userId: options.userId,
   });
-  const state: ActiveRecordingState = { meta, startedMs: Date.now(), seq: 0 };
+  const state: ActiveRecordingState = { meta, userId: options.userId, startedMs: Date.now(), seq: 0 };
   activeByChat.set(chatJid, state);
   await appendEvent(state, "recording_started", {
     title: meta.title,
@@ -98,19 +101,23 @@ export async function startSessionRecording(options: {
   return { ...state.meta };
 }
 
-export async function stopSessionRecording(chatJidOrId: string): Promise<SessionRecordingMeta | null> {
+export async function stopSessionRecording(
+  chatJidOrId: string,
+  userId: string,
+): Promise<SessionRecordingMeta | null> {
   const key = String(chatJidOrId || "").trim();
   let state = activeByChat.get(key) || null;
+  if (state?.userId !== userId) state = null;
   if (!state) {
     for (const candidate of activeByChat.values()) {
-      if (candidate.meta.id === key) {
+      if (candidate.meta.id === key && candidate.userId === userId) {
         state = candidate;
         break;
       }
     }
   }
   if (!state) {
-    const byId = await store.getSessionRecordingMeta(key);
+    const byId = await store.getSessionRecordingMetaForUser(key, userId);
     if (byId?.status === "recording") {
       const byChat = activeByChat.get(byId.chatJid);
       state = byChat?.meta.id === byId.id ? byChat : null;
@@ -126,37 +133,41 @@ export async function stopSessionRecording(chatJidOrId: string): Promise<Session
   return { ...state.meta };
 }
 
-export async function listSessionRecordings(): Promise<SessionRecordingMeta[]> {
-  return store.listSessionRecordings();
+export async function listSessionRecordings(userId: string): Promise<SessionRecordingMeta[]> {
+  return store.listSessionRecordingsForUser(userId);
 }
 
 export async function getSessionRecording(
   id: string,
+  userId: string,
 ): Promise<{ meta: SessionRecordingMeta; events: SessionTraceEvent[] } | null> {
-  const meta = await store.getSessionRecordingMeta(id);
+  const meta = await store.getSessionRecordingMetaForUser(id, userId);
   if (!meta) return null;
-  const events = await store.listSessionRecordingEvents(id);
+  const events = await store.listSessionRecordingEventsForUser(id, userId);
   return { meta, events };
 }
 
-export async function deleteSessionRecording(id: string): Promise<boolean> {
+export async function deleteSessionRecording(id: string, userId: string): Promise<boolean> {
   for (const [chatJid, state] of activeByChat) {
-    if (state.meta.id === id) activeByChat.delete(chatJid);
+    if (state.meta.id === id && state.userId === userId) activeByChat.delete(chatJid);
   }
-  return store.deleteSessionRecording(id);
+  return store.deleteSessionRecordingForUser(id, userId);
 }
 
-export async function getActiveSessionRecording(chatJid: string): Promise<SessionRecordingMeta | null> {
+export async function getActiveSessionRecording(
+  chatJid: string,
+  userId: string,
+): Promise<SessionRecordingMeta | null> {
   const state = activeByChat.get(normalizeChatJid(chatJid));
-  if (state) return { ...state.meta };
-  return store.getActiveSessionRecording(normalizeChatJid(chatJid));
+  if (state?.userId === userId) return { ...state.meta };
+  return store.getActiveSessionRecordingForUser(normalizeChatJid(chatJid), userId);
 }
 
-export async function listActiveSessionRecordings(): Promise<SessionRecordingMeta[]> {
-  const active = await store.listActiveSessionRecordings();
+export async function listActiveSessionRecordings(userId: string): Promise<SessionRecordingMeta[]> {
+  const active = await store.listActiveSessionRecordingsForUser(userId);
   const seen = new Set(active.map((row) => row.chatJid));
   for (const state of activeByChat.values()) {
-    if (!seen.has(state.meta.chatJid)) active.push({ ...state.meta });
+    if (state.userId === userId && !seen.has(state.meta.chatJid)) active.push({ ...state.meta });
   }
   return active;
 }

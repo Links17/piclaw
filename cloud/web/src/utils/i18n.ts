@@ -604,6 +604,7 @@ type MessageKey =
   | 'settings.compaction.processingMethod'
   | 'settings.compaction.methodSelective'
   | 'settings.compaction.methodSelectiveHint'
+  | 'settings.compaction.cloudSelectiveHint'
   | 'settings.compaction.methodPipelined'
   | 'settings.compaction.methodPipelinedHint'
   | 'settings.compaction.remoteNative'
@@ -615,6 +616,7 @@ type MessageKey =
   | 'settings.compaction.enableToolResultHint'
   | 'settings.compaction.semanticSummaries'
   | 'settings.compaction.semanticSummariesHint'
+  | 'settings.compaction.unavailableHint'
   | 'settings.compaction.inputLimit'
   | 'settings.compaction.inputLimitAria'
   | 'settings.compaction.inputLimitHint'
@@ -1232,6 +1234,7 @@ const EN: Record<MessageKey, string> = {
   'settings.compaction.processingMethod': 'Processing method',
   'settings.compaction.methodSelective': 'Selective',
   'settings.compaction.methodSelectiveHint': 'Extract high-value continuity excerpts, using complete progressive coverage whenever a bounded prompt cannot represent every discarded source event.',
+  'settings.compaction.cloudSelectiveHint': 'Cloud uses selective compaction.',
   'settings.compaction.methodPipelined': 'Pipelined',
   'settings.compaction.methodPipelinedHint': 'Canonicalize and classify every discarded source event with an auditable coverage ledger before summarizing.',
   'settings.compaction.remoteNative': 'Provider-native compaction',
@@ -1243,6 +1246,7 @@ const EN: Record<MessageKey, string> = {
   'settings.compaction.enableToolResultHint': 'When disabled, large tool results stay inline and are not externalized into searchable tool-output handles.',
   'settings.compaction.semanticSummaries': 'Semantic summaries for compacted tool results',
   'settings.compaction.semanticSummariesHint': 'When enabled, compacted outputs include a semantic summary generated with the active model (preview fallback on failure).',
+  'settings.compaction.unavailableHint': 'Not implemented in the cloud runtime; this setting is forced off.',
   'settings.compaction.inputLimit': 'Semantic summary input limit (chars)',
   'settings.compaction.inputLimitAria': 'semantic summary input limit',
   'settings.compaction.inputLimitHint': 'Maximum characters sampled from full tool output for semantic summarization.',
@@ -1860,6 +1864,7 @@ const ZH_CN: Partial<Record<MessageKey, string>> = {
   'settings.compaction.processingMethod': '处理方法',
   'settings.compaction.methodSelective': '选择性',
   'settings.compaction.methodSelectiveHint': '提取高价值的连续性片段；当有界提示无法表示所有被丢弃的源事件时，使用完整的渐进式覆盖。',
+  'settings.compaction.cloudSelectiveHint': 'Cloud 使用 selective 压缩。',
   'settings.compaction.methodPipelined': '流水线',
   'settings.compaction.methodPipelinedHint': '在摘要前，对每个被丢弃的源事件进行规范化和分类，并生成可审计的覆盖账本。',
   'settings.compaction.remoteNative': '提供商原生压缩',
@@ -1871,6 +1876,7 @@ const ZH_CN: Partial<Record<MessageKey, string>> = {
   'settings.compaction.enableToolResultHint': '禁用时，大型工具结果保持内联，不会外部化为可搜索的工具输出句柄。',
   'settings.compaction.semanticSummaries': '压缩工具结果的语义摘要',
   'settings.compaction.semanticSummariesHint': '启用时，压缩输出包含使用活动模型生成的语义摘要（失败时回退到预览）。',
+  'settings.compaction.unavailableHint': '云端运行时尚未实现；此设置已强制关闭。',
   'settings.compaction.inputLimit': '语义摘要输入限制（字符）',
   'settings.compaction.inputLimitAria': '语义摘要输入限制',
   'settings.compaction.inputLimitHint': '用于语义摘要的完整工具输出采样的最大字符数。',
@@ -2488,6 +2494,7 @@ const JA: Partial<Record<MessageKey, string>> = {
   'settings.compaction.processingMethod': '処理方式',
   'settings.compaction.methodSelective': '選択型',
   'settings.compaction.methodSelectiveHint': '重要な継続情報を抽出し、制限付きプロンプトですべての破棄対象イベントを表現できない場合は完全な段階的カバレッジを使用します。',
+  'settings.compaction.cloudSelectiveHint': 'Cloud は selective compaction を使用します。',
   'settings.compaction.methodPipelined': 'パイプライン',
   'settings.compaction.methodPipelinedHint': '要約前に、破棄対象の各ソースイベントを正規化・分類し、監査可能なカバレッジ台帳を作成します。',
   'settings.compaction.remoteNative': 'プロバイダー・ネイティブ圧縮',
@@ -2499,6 +2506,7 @@ const JA: Partial<Record<MessageKey, string>> = {
   'settings.compaction.enableToolResultHint': '無効にすると、大きなツール結果はインラインのまま残り、検索可能なツール出力ハンドルに外部化されません。',
   'settings.compaction.semanticSummaries': '圧縮されたツール結果のセマンティック要約',
   'settings.compaction.semanticSummariesHint': '有効にすると、圧縮された出力にアクティブモデルで生成されたセマンティック要約が含まれます（失敗時はプレビューにフォールバック）。',
+  'settings.compaction.unavailableHint': 'クラウドランタイムでは未実装のため、この設定は強制的に無効化されます。',
   'settings.compaction.inputLimit': 'セマンティック要約の入力上限（文字）',
   'settings.compaction.inputLimitAria': 'セマンティック要約の入力上限',
   'settings.compaction.inputLimitHint': 'セマンティック要約のために完全なツール出力からサンプリングする最大文字数。',

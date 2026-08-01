@@ -1,6 +1,43 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { agentResponseSsePayload, messageToPost, sessionToBranchChat, userPostPayload } from "./web-adapter.ts";
 
+const getSessionForUser = mock<() => Promise<{
+  id: string;
+  user_id: string;
+  title: string;
+  sandbox_id: string | null;
+  workspace_volume_id: string | null;
+} | null>>(async () => ({
+  id: "web:owned",
+  user_id: "user-a",
+  title: "Owned chat",
+  sandbox_id: "sandbox-123",
+  workspace_volume_id: "volume-123",
+}));
+const isSessionLocked = mock(async () => false);
+const deleteSession = mock(async () => ({
+  id: "web:owned",
+  user_id: "user-a",
+  title: "Owned chat",
+  sandbox_id: "sandbox-123",
+  workspace_volume_id: "volume-123",
+}));
+const listSessions = mock(async (userId?: string) => [{
+  id: `web:${userId}`,
+  user_id: userId ?? "default-user",
+  title: userId ?? "default-user",
+  sandbox_id: null,
+  workspace_volume_id: null,
+}]);
+mock.module("@piclaw-cloud/store", () => ({
+  getSessionForUser,
+  isSessionLocked,
+  deleteSession,
+  listSessions,
+}));
+mock.module("./agent-run-state.ts", () => ({
+  getInflightTurn: () => undefined,
+}));
 describe("web-adapter post shapes", () => {
   test("messageToPost sets data.type for user and assistant", () => {
     const user = messageToPost(
@@ -45,20 +82,89 @@ describe("web-adapter post shapes", () => {
 });
 
 describe("sessionToBranchChat", () => {
-  test("includes archived_at when present", () => {
+  test("does not expose archive state", () => {
     const branch = sessionToBranchChat({
       id: "web:test",
       title: "Test Chat",
-      archived_at: "2026-07-30T00:00:00.000Z",
     });
     expect(branch.chat_jid).toBe("web:test");
     expect(branch.agent_name).toBe("Test Chat");
-    expect(branch.archived_at).toBe("2026-07-30T00:00:00.000Z");
+    expect(branch).not.toHaveProperty("archived_at");
     expect(branch.is_root).toBe(true);
   });
+});
 
-  test("defaults archived_at to null", () => {
-    const branch = sessionToBranchChat({ id: "web:test", title: "Test Chat" });
-    expect(branch.archived_at).toBeNull();
+describe("getActiveChatAgents ownership", () => {
+  test("passes authenticated user to session listing", async () => {
+    const { getActiveChatAgents } = await import("./web-adapter.ts");
+    const result = await getActiveChatAgents("user-a");
+    expect(listSessions).toHaveBeenCalledWith("user-a");
+    expect(result.chats[0]?.chat_jid).toBe("web:user-a");
+  });
+});
+
+describe("deleteChatBranch lifecycle", () => {
+  beforeEach(() => {
+    getSessionForUser.mockClear();
+    isSessionLocked.mockClear();
+    deleteSession.mockClear();
+    getSessionForUser.mockResolvedValue({
+      id: "web:owned",
+      user_id: "user-a",
+      title: "Owned chat",
+      sandbox_id: "sandbox-123",
+      workspace_volume_id: "volume-123",
+    });
+    isSessionLocked.mockResolvedValue(false);
+    deleteSession.mockResolvedValue({
+      id: "web:owned",
+      user_id: "user-a",
+      title: "Owned chat",
+      sandbox_id: "sandbox-123",
+      workspace_volume_id: "volume-123",
+    });
+  });
+
+  test("cleans owned remote resources before deleting the session row", async () => {
+    const { deleteChatBranch } = await import("./web-adapter.ts");
+    const cleanupSessionResources = mock(async () => {});
+
+    await deleteChatBranch("web:owned", "user-a", cleanupSessionResources);
+
+    expect(cleanupSessionResources).toHaveBeenCalledWith({
+      id: "web:owned",
+      sandbox_id: "sandbox-123",
+      workspace_volume_id: "volume-123",
+    });
+    expect(deleteSession).toHaveBeenCalledWith("web:owned", "user-a");
+    expect(cleanupSessionResources.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteSession.mock.invocationCallOrder[0],
+    );
+  });
+
+  test("does not delete the database row when remote cleanup fails", async () => {
+    const { deleteChatBranch } = await import("./web-adapter.ts");
+    const cleanupSessionResources = mock(async () => {
+      throw new Error("sandbox deletion failed");
+    });
+
+    await expect(deleteChatBranch("web:owned", "user-a", cleanupSessionResources)).rejects.toThrow(
+      "sandbox deletion failed",
+    );
+
+    expect(deleteSession).not.toHaveBeenCalled();
+  });
+
+  test("does not clean resources from another user's session", async () => {
+    getSessionForUser.mockResolvedValueOnce(null);
+    const { deleteChatBranch } = await import("./web-adapter.ts");
+    const cleanupSessionResources = mock(async () => {});
+
+    await expect(deleteChatBranch("web:other-user", "user-a", cleanupSessionResources)).rejects.toThrow(
+      "Unknown chat branch",
+    );
+
+    expect(cleanupSessionResources).not.toHaveBeenCalled();
+    expect(deleteSession).not.toHaveBeenCalled();
   });
 });

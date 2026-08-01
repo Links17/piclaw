@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { historyToOpenAi } from "./messages.ts";
+import { BASE_SYSTEM_PROMPT, historyToOpenAi } from "./messages.ts";
 import type { MessageRow } from "@piclaw-cloud/store";
 
 describe("historyToOpenAi", () => {
+  test("tells the agent to discover and activate optional tools", () => {
+    expect(BASE_SYSTEM_PROMPT).toContain("list_tools");
+    expect(BASE_SYSTEM_PROMPT).toContain("activate_tools");
+    expect(BASE_SYSTEM_PROMPT).toContain("coding_agent");
+  });
+
   test("includes assistant tool_calls and tool results", () => {
     const rows: MessageRow[] = [
       {

@@ -10,9 +10,10 @@ import { resolveSessionKernelModel, resolveModelIdForLogging } from "./resolve-m
 import { buildSystemPrompt } from "../llm/messages.ts";
 import { buildSkillsPromptSection } from "../skills/registry.ts";
 import { getDispatchMcpTools } from "../tools/dispatcher.ts";
-import { getToolDefinitionsForMode } from "../tools/schemas.ts";
+import { getAllToolDefinitions } from "../tools/schemas.ts";
 import { pollSessionSteerMessage } from "../subagents/channels.ts";
 import type { LlmUsage } from "../llm.ts";
+import { hydrateWithCompaction } from "./smart-compaction.ts";
 
 async function buildTurnContext(sessionId: string) {
   const session = await store.getSession(sessionId);
@@ -27,7 +28,7 @@ async function buildTurnContext(sessionId: string) {
     mode,
     planText,
     skillsSection,
-    tools: getToolDefinitionsForMode(mode, mcpTools),
+    tools: getAllToolDefinitions(mcpTools),
   };
 }
 
@@ -35,15 +36,26 @@ export async function runKernelToolLoop(
   sessionId: string,
   counter: ReturnType<typeof newCounter>,
   onDelta: (text: string) => Promise<void>,
-  options: { recovery?: boolean } = {},
+  options: { recovery?: boolean; throughMessageId?: number } = {},
 ): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
   const session = await store.getSession(sessionId);
   const userId = session?.user_id ?? "default-user";
   const turnContext = await buildTurnContext(sessionId);
   const sessionRuntime = await resolveSessionKernelModel(sessionId);
   const sessionModel = sessionRuntime.model;
-  const rows = await store.hydrate(sessionId, counter);
-  const messages = rowsToAgentMessages(rows, resolveModelIdForLogging(sessionModel));
+  const latestCompaction = await store.getLatestCompaction(sessionId, options.throughMessageId);
+  const boundedRows = await store.hydrate(sessionId, counter, {
+    afterMessageId: latestCompaction?.compactedThroughMessageId,
+    throughMessageId: options.throughMessageId,
+  });
+  const rows = hydrateWithCompaction(boundedRows, latestCompaction);
+  const compactionSettings = await store.getCompactionSettingsSnapshot(userId);
+  const messages = rowsToAgentMessages(rows, resolveModelIdForLogging(sessionModel), {
+    toolResultMaxChars: compactionSettings.toolResultCompactionEnabled
+      ? compactionSettings.toolResultSemanticSummaryMaxInputChars
+      : undefined,
+    toolResultCompactionTools: compactionSettings.toolResultCompactionTools,
+  });
   if (messages.length === 0 || messages[messages.length - 1]?.role === "assistant") {
     throw new Error("Cannot start kernel loop: context must end with user or toolResult message");
   }
@@ -55,7 +67,14 @@ export async function runKernelToolLoop(
   });
 
   const result = await runAgentSessionLoop({
-    persist: { kind: "session", sessionId, counter, recovery: options.recovery },
+    persist: {
+      kind: "session",
+      sessionId,
+      counter,
+      recovery: options.recovery,
+      userMessageId: options.throughMessageId ?? 0,
+      operationId: `turn:${sessionId}:${options.throughMessageId ?? 0}`,
+    },
     messages,
     systemPrompt,
     mode: turnContext.mode,
@@ -64,6 +83,8 @@ export async function runKernelToolLoop(
     models: sessionRuntime.models,
     apiKey: sessionRuntime.apiKey,
     userId,
+    sourceRows: boundedRows,
+    sourceBoundaryMessageId: options.throughMessageId,
     maxTurns: config.maxToolRounds,
     onDelta,
     limitQuestionPerTurn: true,

@@ -1,19 +1,21 @@
 import * as store from "@piclaw-cloud/store";
 import type { GeneralSettingsSnapshot, CompactionSettingsSnapshot } from "@piclaw-cloud/store";
-import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { getAvailableModels } from "./service.ts";
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
 }
 
-function readRequestChatJid(url: URL): string {
-  return url.searchParams.get("chat_jid")?.trim() || "web:default";
+function readRequestChatJid(url: URL): string | null {
+  return url.searchParams.get("chat_jid")?.trim() || null;
 }
 
-export async function handleModelsRoute(req: Request, url: URL): Promise<Response> {
+export async function handleModelsRoute(req: Request, url: URL, userId: string): Promise<Response> {
   const chatJid = readRequestChatJid(url);
-  const payload = await getAvailableModels(chatJid);
+  if (chatJid && !(await store.getSessionForUser(chatJid, userId))) {
+    return json({ error: "session access denied" }, 401);
+  }
+  const payload = await getAvailableModels(chatJid ?? "", userId);
   return json({
     ...payload,
     oobe: {
@@ -23,8 +25,7 @@ export async function handleModelsRoute(req: Request, url: URL): Promise<Respons
   });
 }
 
-export async function handleGeneralSettingsRoute(req: Request): Promise<Response> {
-  const userId = DEFAULT_USER_ID;
+export async function handleGeneralSettingsRoute(req: Request, userId: string): Promise<Response> {
   if (req.method === "GET") {
     return json(await store.getGeneralSettingsSnapshot(userId));
   }
@@ -34,8 +35,7 @@ export async function handleGeneralSettingsRoute(req: Request): Promise<Response
   return json({ ok: true, settings: saved });
 }
 
-export async function handleCompactionSettingsRoute(req: Request): Promise<Response> {
-  const userId = DEFAULT_USER_ID;
+export async function handleCompactionSettingsRoute(req: Request, userId: string): Promise<Response> {
   if (req.method === "GET") {
     return json({ ok: true, settings: await store.getCompactionSettingsSnapshot(userId) });
   }

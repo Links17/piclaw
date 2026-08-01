@@ -10,11 +10,11 @@ function normalizeSmartCompactionMethod(value) {
     return normalized === 'pipelined' || normalized === 'traditional_pipelined' ? 'pipelined' : 'selective';
 }
 
-function normalizeCompactionSettings(data: Record<string, any> = {}) {
+export function normalizeCompactionSettings(data: Record<string, any> = {}) {
     return {
         autoCompactionEnabled: Boolean(data.autoCompactionEnabled ?? true),
-        smartCompactionMethod: normalizeSmartCompactionMethod(data.smartCompactionMethod),
-        remoteCompactionEnabled: Boolean(data.remoteCompactionEnabled ?? false),
+        smartCompactionMethod: 'selective',
+        remoteCompactionEnabled: false,
         remoteCompactionTimeoutSec: data.remoteCompactionTimeoutSec ?? 300,
         remoteCompactionSupportedProviders: Array.isArray(data.remoteCompactionSupportedProviders) ? data.remoteCompactionSupportedProviders : ['openai', 'openai-codex'],
         compactionTimeoutSec: data.compactionTimeoutSec ?? 300,
@@ -23,7 +23,7 @@ function normalizeCompactionSettings(data: Record<string, any> = {}) {
         compactionThresholdPercent: data.compactionThresholdPercent ?? 80,
         compactionBackoffDecayFactor: data.compactionBackoffDecayFactor ?? 0.5,
         toolResultCompactionEnabled: Boolean(data.toolResultCompactionEnabled ?? true),
-        toolResultSemanticSummaryEnabled: Boolean(data.toolResultSemanticSummaryEnabled ?? true),
+        toolResultSemanticSummaryEnabled: false,
         toolResultSemanticSummaryMaxInputChars: data.toolResultSemanticSummaryMaxInputChars ?? 12000,
         toolResultSemanticSummaryMaxTokens: data.toolResultSemanticSummaryMaxTokens ?? 320,
         toolResultSemanticSummaryTimeoutSec: data.toolResultSemanticSummaryTimeoutSec ?? 12,
@@ -31,6 +31,15 @@ function normalizeCompactionSettings(data: Record<string, any> = {}) {
         progressWatchdogTimeoutSec: data.progressWatchdogTimeoutSec ?? 300,
         compactionBackoffs: Array.isArray(data.compactionBackoffs) ? data.compactionBackoffs : [],
         progressWatchdogPhases: Array.isArray(data.progressWatchdogPhases) ? data.progressWatchdogPhases : [],
+    };
+}
+
+export function compactionCapabilityHints(settings: ReturnType<typeof normalizeCompactionSettings>) {
+    return {
+        selective: settings.smartCompactionMethod === 'selective' ? 'cloud_selective' : 'disabled',
+        pipelined: 'disabled',
+        remote: settings.remoteCompactionEnabled ? 'enabled' : 'disabled',
+        semantic: settings.toolResultSemanticSummaryEnabled ? 'enabled' : 'disabled',
     };
 }
 
@@ -231,22 +240,19 @@ export function CompactionSection({ settingsData, setStatus, mergeSettingsData }
             </div>
             <div class="settings-row">
                 <label>${t('settings.compaction.processingMethod')}</label>
-                <select id="smartCompactionMethod" value=${smartCompactionMethod} onChange=${e => setSmartCompactionMethod(normalizeSmartCompactionMethod(e.target.value))}>
+                <select id="smartCompactionMethod" value=${smartCompactionMethod} disabled>
                     <option value="selective">${t('settings.compaction.methodSelective')}</option>
-                    <option value="pipelined">${t('settings.compaction.methodPipelined')}</option>
                 </select>
                 <span class="settings-hint" style="margin:0">
-                    ${smartCompactionMethod === 'pipelined'
-                        ? t('settings.compaction.methodPipelinedHint')
-                        : t('settings.compaction.methodSelectiveHint')}
+                    ${t('settings.compaction.cloudSelectiveHint')}
                 </span>
             </div>
             <div class="settings-row">
                 <label>${t('settings.compaction.remoteNative')}</label>
                 <div style="display:flex; align-items:center; gap:10px;">
-                    <input id="remoteCompactionEnabled" type="checkbox" checked=${remoteCompactionEnabled} onChange=${e => setRemoteCompactionEnabled(Boolean(e.target.checked))} />
+                    <input id="remoteCompactionEnabled" type="checkbox" checked=${remoteCompactionEnabled} disabled />
                     <span class="settings-hint" style="margin:0">
-                        ${t('settings.compaction.remoteNativeHint', { providers: remoteCompactionSupportedProviders.join(', ') })}
+                        ${t('settings.compaction.unavailableHint')}
                     </span>
                 </div>
             </div>
@@ -274,8 +280,8 @@ export function CompactionSection({ settingsData, setStatus, mergeSettingsData }
             <div class="settings-row">
                 <label>${t('settings.compaction.semanticSummaries')}</label>
                 <div style="display:flex; align-items:center; gap:10px;">
-                    <input type="checkbox" checked=${toolResultSemanticSummaryEnabled} onChange=${e => setToolResultSemanticSummaryEnabled(Boolean(e.target.checked))} />
-                    <span class="settings-hint" style="margin:0">${t('settings.compaction.semanticSummariesHint')}</span>
+                    <input type="checkbox" checked=${toolResultSemanticSummaryEnabled} disabled />
+                    <span class="settings-hint" style="margin:0">${t('settings.compaction.unavailableHint')}</span>
                 </div>
             </div>
             <div class="settings-row">

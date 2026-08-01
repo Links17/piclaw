@@ -30,16 +30,16 @@ export function chatJidsMatch(left: unknown, right: unknown): boolean {
   return (a === legacy && !b) || (b === legacy && !a);
 }
 
-/** Resolve the next active session after archive/delete. */
+/** Resolve the next session after deletion. */
 export function resolveNextChatJidAfterRemoval(
   removedChatJid: string,
-  sessions: Array<{ chat_jid?: string; archived_at?: string | null }> | null | undefined,
+  sessions: Array<{ chat_jid?: string }> | null | undefined,
 ): string {
   const removed = normalizeActiveChatJid(removedChatJid);
   const list = Array.isArray(sessions) ? sessions : [];
   for (const row of list) {
     const jid = normalizeActiveChatJid(row?.chat_jid);
-    if (!jid || jid === removed || row?.archived_at) continue;
+    if (!jid || jid === removed) continue;
     return jid;
   }
   return legacyDefaultChatJid();

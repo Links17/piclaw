@@ -8,11 +8,40 @@ import {
   type FollowupQueueItemLike,
 } from './app-followup-queue.js';
 import { isMainTimelineView } from './app-realtime-timeline.js';
-import { getLocalStorageJSON, setLocalStorageItem } from '../utils/storage.js';
+import { getLocalStorageJSON, removeLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 
 type StateSetter<T> = (next: T | ((prev: T) => T)) => void;
 
 const CONTEXT_STORAGE_PREFIX = 'piclaw:ctx:';
+export const CONTEXT_SCOPE_READY_EVENT = 'piclaw:context-scope-ready';
+let currentContextUserScope: string | null = null;
+
+export function setContextUserScope(userScope: unknown): void {
+  const next = typeof userScope === 'string' && userScope.trim() ? userScope.trim() : null;
+  if (currentContextUserScope === next) return;
+  currentContextUserScope = next;
+  if (
+    next
+    && typeof window !== 'undefined'
+    && typeof window.dispatchEvent === 'function'
+  ) {
+    window.dispatchEvent(new CustomEvent(CONTEXT_SCOPE_READY_EVENT, { detail: { userScope: next } }));
+  }
+}
+
+export function getContextUserScope(): string | null {
+  return currentContextUserScope;
+}
+
+function hasOwn(data: Record<string, unknown>, camel: string, snake?: string): boolean {
+  return Object.prototype.hasOwnProperty.call(data, camel)
+    || Boolean(snake && Object.prototype.hasOwnProperty.call(data, snake));
+}
+
+function readAliased(data: Record<string, unknown>, camel: string, snake?: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(data, camel)) return data[camel];
+  return snake ? data[snake] : undefined;
+}
 
 function finiteOrNull(value: unknown): number | null {
   if (value == null) return null;
@@ -27,22 +56,30 @@ function stringOrNull(value: unknown): string | null {
 function normalizeTokenUsageRecord(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== 'object') return null;
   const data = payload as Record<string, unknown>;
-  return {
-    inputTokens: finiteOrNull(data.inputTokens),
-    outputTokens: finiteOrNull(data.outputTokens),
-    cacheReadTokens: finiteOrNull(data.cacheReadTokens),
-    cacheWriteTokens: finiteOrNull(data.cacheWriteTokens),
-    totalTokens: finiteOrNull(data.totalTokens),
-    costTotal: finiteOrNull(data.costTotal),
-    runs: finiteOrNull(data.runs),
-    cacheHitRate: finiteOrNull(data.cacheHitRate),
-    model: stringOrNull(data.model),
-    responseModel: stringOrNull(data.responseModel),
-    provider: stringOrNull(data.provider),
-    api: stringOrNull(data.api),
-    turns: finiteOrNull(data.turns),
-    runAt: stringOrNull(data.runAt),
-  };
+  const result: Record<string, unknown> = {};
+  for (const [camel, snake] of [
+    ['inputTokens', 'input_tokens'],
+    ['outputTokens', 'output_tokens'],
+    ['cacheReadTokens', 'cache_read_tokens'],
+    ['cacheWriteTokens', 'cache_write_tokens'],
+    ['totalTokens', 'total_tokens'],
+    ['costTotal', 'cost_total'],
+    ['runs', 'runs'],
+    ['cacheHitRate', 'cache_hit_rate'],
+    ['turns', 'turns'],
+  ] as const) {
+    if (hasOwn(data, camel, snake)) result[camel] = finiteOrNull(readAliased(data, camel, snake));
+  }
+  for (const [camel, snake] of [
+    ['model', 'model'],
+    ['responseModel', 'response_model'],
+    ['provider', 'provider'],
+    ['api', 'api'],
+    ['runAt', 'run_at'],
+  ] as const) {
+    if (hasOwn(data, camel, snake)) result[camel] = stringOrNull(readAliased(data, camel, snake));
+  }
+  return result;
 }
 
 function normalizeCacheUsage(payload: unknown): Record<string, unknown> | null {
@@ -53,19 +90,114 @@ function normalizeCacheUsage(payload: unknown): Record<string, unknown> | null {
   return latest || totals ? { latest, totals } : null;
 }
 
+function normalizeContextSection(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const data = payload as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const key of ['used', 'total', 'remaining', 'percent'] as const) {
+    if (hasOwn(data, key)) result[key] = finiteOrNull(data[key]);
+  }
+  for (const key of ['kind', 'model', 'provider'] as const) {
+    if (hasOwn(data, key)) result[key] = stringOrNull(data[key]);
+  }
+  for (const [camel, snake] of [
+    ['updatedAt', 'updated_at'],
+    ['throughMessageId', 'through_message_id'],
+    ['latestMessageId', 'latest_message_id'],
+    ['compactedThroughMessageId', 'compacted_through_message_id'],
+  ] as const) {
+    if (hasOwn(data, camel, snake)) {
+      result[camel] = camel === 'updatedAt'
+        ? stringOrNull(readAliased(data, camel, snake))
+        : finiteOrNull(readAliased(data, camel, snake));
+    }
+  }
+  return result;
+}
+
+function normalizeDailyQuota(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const data = payload as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const key of ['used', 'total', 'remaining', 'percent'] as const) {
+    if (hasOwn(data, key)) result[key] = finiteOrNull(data[key]);
+  }
+  for (const [camel, snake] of [['inputTokens', 'input_tokens'], ['outputTokens', 'output_tokens']] as const) {
+    if (hasOwn(data, camel, snake)) result[camel] = finiteOrNull(readAliased(data, camel, snake));
+  }
+  if (hasOwn(data, 'kind')) result.kind = stringOrNull(data.kind);
+  return result;
+}
+
+function normalizeSessionUsage(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const data = payload as Record<string, unknown>;
+  const rawBySource = data.bySource ?? data.by_source;
+  const bySource = rawBySource && typeof rawBySource === 'object'
+    ? Object.fromEntries(Object.entries(rawBySource).map(([source, usage]) => [
+        source,
+        normalizeTokenUsageRecord(usage),
+      ]))
+    : {};
+  const result: Record<string, unknown> = {};
+  if (hasOwn(data, 'totals')) result.totals = normalizeTokenUsageRecord(data.totals);
+  if (hasOwn(data, 'latest')) result.latest = normalizeTokenUsageRecord(data.latest);
+  if (hasOwn(data, 'bySource', 'by_source')) result.bySource = bySource;
+  if (hasOwn(data, 'kind')) result.kind = stringOrNull(data.kind);
+  return result;
+}
+
+function mergeRecord(previous: unknown, incoming: unknown): Record<string, unknown> | null {
+  if (incoming === null) return null;
+  if (!incoming || typeof incoming !== 'object') {
+    return previous && typeof previous === 'object' ? previous as Record<string, unknown> : null;
+  }
+  const prev = previous && typeof previous === 'object' ? previous as Record<string, unknown> : {};
+  const next = incoming as Record<string, unknown>;
+  const result = { ...prev };
+  for (const [key, value] of Object.entries(next)) {
+    if (
+      value && typeof value === 'object' && !Array.isArray(value)
+      && prev[key] && typeof prev[key] === 'object' && !Array.isArray(prev[key])
+    ) {
+      result[key] = mergeRecord(prev[key], value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 export function normalizeContextUsage(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== 'object') return null;
   const data = payload as Record<string, unknown>;
-  const tokens = finiteOrNull(data.tokens);
-  const contextWindow = finiteOrNull(data.contextWindow);
-  const percent = finiteOrNull(data.percent);
-  const cacheUsage = normalizeCacheUsage(data.cacheUsage);
-  return {
+  const context = hasOwn(data, 'context') ? normalizeContextSection(data.context) : null;
+  const tokens = finiteOrNull(data.tokens) ?? finiteOrNull(context?.used);
+  const contextWindow = finiteOrNull(data.contextWindow ?? data.context_window) ?? finiteOrNull(context?.total);
+  const percent = finiteOrNull(data.percent) ?? finiteOrNull(context?.percent);
+  const result: Record<string, unknown> = {
     tokens,
     contextWindow,
     percent,
-    cacheUsage,
   };
+  if (context || tokens != null || contextWindow != null || percent != null) {
+    result.context = {
+      ...(tokens != null ? { used: tokens } : {}),
+      ...(contextWindow != null ? { total: contextWindow } : {}),
+      ...(percent != null ? { percent } : {}),
+      ...(context ?? {}),
+    };
+  }
+  if (hasOwn(data, 'dailyQuota', 'daily_quota')) {
+    result.dailyQuota = normalizeDailyQuota(readAliased(data, 'dailyQuota', 'daily_quota'));
+  }
+  if (hasOwn(data, 'sessionUsage', 'session_usage')) {
+    result.sessionUsage = normalizeSessionUsage(readAliased(data, 'sessionUsage', 'session_usage'));
+  }
+  if (hasOwn(data, 'cacheUsage', 'cache_usage')) {
+    result.cacheUsage = normalizeCacheUsage(readAliased(data, 'cacheUsage', 'cache_usage'));
+  }
+  return result;
 }
 
 export function mergeContextUsage(previous: unknown, incoming: unknown): Record<string, unknown> | null {
@@ -76,7 +208,10 @@ export function mergeContextUsage(previous: unknown, incoming: unknown): Record<
     tokens: next.tokens ?? prev?.tokens ?? null,
     contextWindow: next.contextWindow ?? prev?.contextWindow ?? null,
     percent: next.percent ?? prev?.percent ?? null,
-    cacheUsage: next.cacheUsage ?? prev?.cacheUsage ?? null,
+    context: mergeRecord(prev?.context, next.context),
+    dailyQuota: mergeRecord(prev?.dailyQuota, next.dailyQuota),
+    sessionUsage: mergeRecord(prev?.sessionUsage, next.sessionUsage),
+    cacheUsage: mergeRecord(prev?.cacheUsage, next.cacheUsage),
   };
 }
 
@@ -88,20 +223,39 @@ export function haveSameContextUsage(a: unknown, b: unknown): boolean {
   return left.tokens === right.tokens
     && left.contextWindow === right.contextWindow
     && left.percent === right.percent
+    && JSON.stringify(left.context ?? null) === JSON.stringify(right.context ?? null)
+    && JSON.stringify(left.dailyQuota ?? null) === JSON.stringify(right.dailyQuota ?? null)
+    && JSON.stringify(left.sessionUsage ?? null) === JSON.stringify(right.sessionUsage ?? null)
     && JSON.stringify(left.cacheUsage ?? null) === JSON.stringify(right.cacheUsage ?? null);
 }
 
 export function hasRenderableContextUsage(payload: unknown): boolean {
   const normalized = normalizeContextUsage(payload);
-  return Boolean(normalized && (normalized.percent != null || normalized.cacheUsage != null));
+  return Boolean(normalized && (
+    normalized.percent != null
+    || normalized.context != null
+    || normalized.dailyQuota != null
+    || normalized.sessionUsage != null
+    || normalized.cacheUsage != null
+  ));
 }
 
-export function persistContextUsage(chatJid: string, payload: unknown): void {
-  if (!chatJid || !payload || typeof payload !== 'object') return;
+function contextStorageKey(chatJid: string, userScope: string): string {
+  return `${CONTEXT_STORAGE_PREFIX}${encodeURIComponent(userScope)}:${chatJid}`;
+}
+
+export function persistContextUsage(chatJid: string, userScope: string, payload: unknown): void {
+  if (!chatJid || !userScope || !payload || typeof payload !== 'object') return;
   const data = payload as Record<string, unknown>;
-  if (data.percent == null && data.cacheUsage == null) return;
+  if (
+    data.percent == null
+    && data.context == null
+    && data.dailyQuota == null
+    && data.sessionUsage == null
+    && data.cacheUsage == null
+  ) return;
   try {
-    setLocalStorageItem(CONTEXT_STORAGE_PREFIX + chatJid, JSON.stringify(payload));
+    setLocalStorageItem(contextStorageKey(chatJid, userScope), JSON.stringify(payload));
   } catch (error) {
     console.debug('[app-status-refresh] Ignoring best-effort context usage persistence failure.', error, {
       chatJid,
@@ -109,9 +263,14 @@ export function persistContextUsage(chatJid: string, payload: unknown): void {
   }
 }
 
-export function restoreContextUsage(chatJid: string): Record<string, unknown> | null {
-  if (!chatJid) return null;
-  return getLocalStorageJSON<Record<string, unknown>>(CONTEXT_STORAGE_PREFIX + chatJid);
+export function restoreContextUsage(chatJid: string, userScope: string): Record<string, unknown> | null {
+  if (!chatJid || !userScope) return null;
+  return getLocalStorageJSON<Record<string, unknown>>(contextStorageKey(chatJid, userScope));
+}
+
+export function clearContextUsage(chatJid: string, userScope: string): void {
+  if (!chatJid || !userScope) return;
+  removeLocalStorageItem(contextStorageKey(chatJid, userScope));
 }
 
 
@@ -203,7 +362,8 @@ export async function refreshContextUsageForChat(options: RefreshContextUsageFor
       setContextUsage((prev: unknown) => {
         const merged = mergeContextUsage(prev, contextPayload);
         if (!hasRenderableContextUsage(merged) || haveSameContextUsage(prev, merged)) return prev;
-        persistContextUsage(targetChatJid, merged);
+        const userScope = getContextUserScope();
+        if (userScope) persistContextUsage(targetChatJid, userScope, merged);
         return merged;
       });
     }

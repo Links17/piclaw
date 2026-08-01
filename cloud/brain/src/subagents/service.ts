@@ -10,14 +10,26 @@ import { publishWorkspaceUpdates } from "../workspace/publish.ts";
 import { notifySubagentCompletion } from "./channels.ts";
 import { discoverCustomAgentTypes, scheduleAgentTask } from "./custom-types.ts";
 import { allocateSubagentRunId, normalizeSubagentRunId } from "./run-id.ts";
+import { isDeferredSchedule } from "./schedule.ts";
 import { buildSkillPreloadSection } from "../skills/registry.ts";
 import { runSubagentLoop } from "./subagent-loop.ts";
-import { runSandboxPiWorker } from "./sandbox-worker.ts";
+import { runSandboxPiWorker, SandboxWorkerError } from "./sandbox-worker.ts";
 import type { ProfileOverrides } from "./profiles.ts";
-import type { AgentToolOptions, CodingSubagentOptions, CodingSubagentResult, SubagentRunOutcome } from "./types.ts";
+import type {
+  AgentToolOptions,
+  CodingSubagentOptions,
+  CodingSubagentResult,
+  SubagentRunOutcome,
+} from "./types.ts";
 import { TurnAbortedError } from "../turn-abort.ts";
+import { realtimeKernelUsageEntry, usageEntriesForSubagentOutcome } from "./usage-ledger.ts";
+import { beginOperation, beginOperationIfAccepting } from "../operations.ts";
+import { QuotaExceededError } from "../quota.ts";
+
+export { usageEntriesForSubagentOutcome } from "./usage-ledger.ts";
 
 const runningBySession = new Map<string, Set<string>>();
+const runningControls = new Map<string, { controller: AbortController; done: Promise<void> }>();
 
 function trackRun(sessionId: string, runId: string): void {
   const set = runningBySession.get(sessionId) ?? new Set<string>();
@@ -51,15 +63,59 @@ async function finishSubagentOutcome(
   sessionId: string,
   runId: string,
   outcome: SubagentRunOutcome,
+  invocationId?: string,
+  invocationFence?: { ownerToken: string; generation: number },
 ): Promise<SubagentRunOutcome> {
-  await store.finishSubagentRun(runId, {
-    status: outcome.status,
-    summary: outcome.summary,
-    artifacts: outcome.artifacts,
-    error: outcome.error ?? null,
-    inputTokens: outcome.usage.inputTokens,
-    outputTokens: outcome.usage.outputTokens,
-  });
+  const session = await store.getSession(sessionId);
+  const expectedUsageEntries = outcome.usageEntries ?? [];
+  if (session && invocationId && invocationFence) {
+    await store.completeSubagentInvocation({
+      sessionId,
+      userId: session.user_id,
+      runId,
+      invocationId,
+      ...invocationFence,
+      status: outcome.status === "completed"
+        ? "completed"
+        : outcome.status === "timed_out"
+          ? "timed_out"
+          : outcome.status === "stopped"
+            ? "stopped"
+            : "failed",
+      summary: outcome.summary,
+      artifacts: outcome.artifacts,
+      error: outcome.error ?? null,
+      // Kernel provider rounds are persisted in real time. Sandbox/fallback
+      // stage entries remain here because the worker cannot call Store.
+      usageEntries: usageEntriesForSubagentOutcome(runId, outcome)
+        .filter((usage) =>
+          !usage.realtimeLedger && (usage.inputTokens > 0 || usage.outputTokens > 0)
+        )
+        .map((usage) => ({ ...usage, operationId: usage.invocationId })),
+    });
+  } else {
+    await store.finishSubagentRun(runId, {
+      status: outcome.status,
+      summary: outcome.summary,
+      artifacts: outcome.artifacts,
+      error: outcome.error ?? null,
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+    });
+  }
+  if (
+    expectedUsageEntries.length > 0 &&
+    expectedUsageEntries.every((entry) => entry.inputTokens <= 0 && entry.outputTokens <= 0) &&
+    outcome.status !== "completed"
+  ) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "subagent_failed_usage_unavailable",
+      runId,
+      status: outcome.status,
+      reason: "worker/provider interface returned no failed-stage usage; no usage was fabricated",
+    }));
+  }
   await publish(sessionId, {
     type: "subagent_done",
     runId,
@@ -72,9 +128,65 @@ async function finishSubagentOutcome(
 }
 
 async function executeRun(sessionId: string, runId: string, options: AgentToolOptions): Promise<SubagentRunOutcome> {
-  trackRun(sessionId, runId);
-  await store.markSubagentRunning(runId);
-  await publish(sessionId, {
+  const operation = beginOperation("subagent");
+  const controller = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+  let resolveDone!: () => void;
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  runningControls.set(runId, { controller, done });
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let heartbeatPending: Promise<void> | null = null;
+  let tracked = false;
+  let invocationId: string | undefined;
+  let invocationFence: { ownerToken: string; generation: number } | undefined;
+  let leaseLost = false;
+  try {
+    invocationId = crypto.randomUUID();
+    const owner = await store.getSession(sessionId);
+    if (!owner) throw new Error(`unknown session ${sessionId}`);
+    const claim = await store.claimSubagentInvocation({
+    runId,
+    sessionId,
+    userId: owner.user_id,
+    invocationId,
+    leaseMs: Math.max(config.subagentTimeoutMs, 60_000),
+  });
+  if (!claim.claimed) {
+    throw new Error(`subagent run ${runId} already has an active invocation`);
+  }
+    invocationFence = {
+    ownerToken: claim.ownerToken!,
+    generation: claim.generation!,
+  };
+    const activeInvocationId = invocationId;
+    const activeInvocationFence = invocationFence;
+    const reservationOperationId = `sandbox-worker:${activeInvocationId}`;
+    let sandboxReservation: Awaited<ReturnType<typeof store.reserveTokenBudget>> | null = null;
+    heartbeat = setInterval(() => {
+      if (heartbeatPending || controller.signal.aborted) return;
+      heartbeatPending = store.renewSubagentInvocation(
+        activeInvocationId,
+        activeInvocationFence.ownerToken,
+        activeInvocationFence.generation,
+        Math.max(config.subagentTimeoutMs, 60_000),
+      ).then((renewed) => {
+        if (!renewed) {
+          leaseLost = true;
+          controller.abort(new Error("subagent invocation lease lost"));
+        }
+      }).catch((error) => {
+        leaseLost = true;
+        controller.abort(error);
+      }).finally(() => {
+        heartbeatPending = null;
+      });
+    }, Math.max(10_000, Math.min(60_000, Math.floor(config.subagentTimeoutMs / 3))));
+    trackRun(sessionId, runId);
+    tracked = true;
+    await store.markSubagentRunning(runId);
+    await publish(sessionId, {
     type: "subagent_started",
     runId,
     agentType: options.subagentType,
@@ -83,7 +195,6 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
     replica: config.replicaId,
   });
 
-  try {
     if (
       options.subagentType === "explore" ||
       options.subagentType === "plan" ||
@@ -95,6 +206,8 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
         constraints: options.description,
         maxTurns: options.maxTurns,
         profileOverrides: options.profileOverrides,
+        invocationId: activeInvocationId,
+        signal,
       });
       const outcome: SubagentRunOutcome = {
         runId,
@@ -105,33 +218,130 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
           inputTokens: loop.usage.inputTokens ?? 0,
           outputTokens: loop.usage.outputTokens ?? 0,
         },
+        usageEntries: [{
+          invocationId: activeInvocationId,
+          attempt: 1,
+          stage: "kernel",
+          provider: "cloud-kernel",
+          model: config.openaiModel,
+          inputTokens: loop.usage.inputTokens ?? 0,
+          outputTokens: loop.usage.outputTokens ?? 0,
+          reasoningTokens: loop.usage.reasoningTokens ?? 0,
+          cacheReadTokens: loop.usage.cachedTokens ?? 0,
+          cacheWriteTokens: loop.usage.cacheWriteTokens ?? 0,
+          status: "success",
+          realtimeLedger: true,
+        }],
         background: options.runInBackground,
       };
       await store.updateSubagentRunMeta(runId, { toolCount: loop.toolCount });
-      return finishSubagentOutcome(sessionId, runId, outcome);
+      return finishSubagentOutcome(sessionId, runId, outcome, invocationId, invocationFence);
     }
 
-    const coding = await runCodingSubagent(sessionId, {
-      task: options.prompt,
-      constraints: options.description,
-      timeoutMs: options.timeoutMs,
-      runId,
-      agentType: options.subagentType === "general-purpose" ? "general-purpose" : "coding",
-      description: options.description,
-      skipLifecycleEvents: true,
-    });
+    if (shouldUseSandboxWorker(options.prompt)) {
+      sandboxReservation = await store.reserveTokenBudget({
+        userId: owner.user_id,
+        operationId: reservationOperationId,
+        estimatedTokens: Math.max(1, Math.floor(config.maxDailyTokensPerUser * 0.1)),
+        maxDailyTokens: config.maxDailyTokensPerUser,
+        leaseMs: Math.max(config.subagentTimeoutMs, 60_000),
+        ownerToken: activeInvocationFence.ownerToken,
+      });
+      if (
+        !sandboxReservation.reserved
+        || !sandboxReservation.reservationId
+        || !sandboxReservation.ownerToken
+        || !sandboxReservation.generation
+      ) {
+        throw new QuotaExceededError(
+          "daily_tokens",
+          config.maxDailyTokensPerUser,
+          sandboxReservation.dailyTokens + sandboxReservation.reservedTokens,
+        );
+      }
+    }
+    let coding: CodingSubagentResult;
+    try {
+      coding = await runCodingSubagent(sessionId, {
+        task: options.prompt,
+        constraints: options.description,
+        timeoutMs: options.timeoutMs,
+        runId,
+        agentType: options.subagentType === "general-purpose" ? "general-purpose" : "coding",
+        description: options.description,
+        skipLifecycleEvents: true,
+        invocationId: activeInvocationId,
+        signal,
+      });
+    } catch (error) {
+      if (!(error instanceof SandboxWorkerError)) throw error;
+      coding = {
+        runId,
+        status: error.status,
+        summary: error.status === "stopped" ? "Stopped by user." : "",
+        artifacts: [],
+        usage: error.usage,
+        usageEntries: error.receipts.map((receipt) => ({
+          invocationId: activeInvocationId,
+          attempt: receipt.attempt,
+          stage: "sandbox_worker",
+          provider: "openai",
+          model: config.openaiModel,
+          inputTokens: receipt.inputTokens,
+          outputTokens: receipt.outputTokens,
+          reasoningTokens: receipt.reasoningTokens,
+          cacheReadTokens: receipt.cacheReadTokens,
+          cacheWriteTokens: receipt.cacheWriteTokens,
+          status: error.status,
+        })),
+        error: error.message,
+      };
+    }
     const outcome: SubagentRunOutcome = {
       runId: coding.runId,
       status: coding.status,
       summary: coding.summary,
       artifacts: coding.artifacts,
       usage: coding.usage,
+      usageEntries: coding.usageEntries?.map((entry) => ({ ...entry, invocationId: activeInvocationId })),
       error: coding.error,
       background: options.runInBackground,
     };
-    return outcome;
+    const completed = await finishSubagentOutcome(
+      sessionId,
+      runId,
+      outcome,
+      invocationId,
+      invocationFence,
+    );
+    if (
+      sandboxReservation?.reservationId
+      && sandboxReservation.ownerToken
+      && sandboxReservation.generation
+    ) {
+      if (coding.usage.inputTokens > 0 || coding.usage.outputTokens > 0) {
+        await store.settleTokenBudget({
+          reservationId: sandboxReservation.reservationId,
+          ownerToken: sandboxReservation.ownerToken,
+          generation: sandboxReservation.generation,
+          actualInputTokens: coding.usage.inputTokens,
+          actualOutputTokens: coding.usage.outputTokens,
+        });
+      } else {
+        await store.releaseTokenBudget({
+          reservationId: sandboxReservation.reservationId,
+          ownerToken: sandboxReservation.ownerToken,
+          generation: sandboxReservation.generation,
+        });
+      }
+    }
+    return completed;
   } catch (error) {
-    if (error instanceof TurnAbortedError) {
+    if (!invocationId || !invocationFence) throw error;
+    if (leaseLost) {
+      throw new Error(`subagent invocation lease lost for ${runId}`);
+    }
+    if (error instanceof TurnAbortedError || signal.aborted) {
       const outcome: SubagentRunOutcome = {
         runId,
         status: "stopped",
@@ -140,16 +350,7 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
         usage: { inputTokens: 0, outputTokens: 0 },
         background: options.runInBackground,
       };
-      await store.markSubagentStopped(runId, "Stopped by user.");
-      await publish(sessionId, {
-        type: "subagent_done",
-        runId,
-        status: "stopped",
-        summary: "Stopped by user.",
-        artifacts: [],
-        replica: config.replicaId,
-      });
-      return outcome;
+      return finishSubagentOutcome(sessionId, runId, outcome, invocationId, invocationFence);
     }
     const message = error instanceof Error ? error.message : String(error);
     const outcome: SubagentRunOutcome = {
@@ -161,29 +362,40 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
       error: message,
       background: options.runInBackground,
     };
-    await store.finishSubagentRun(runId, {
-      status: "failed",
-      summary: "",
-      artifacts: [],
-      error: message,
-    });
-    await publish(sessionId, {
-      type: "subagent_done",
-      runId,
-      status: "failed",
-      summary: "",
-      artifacts: [],
-      replica: config.replicaId,
-    });
-    return outcome;
+    return finishSubagentOutcome(sessionId, runId, outcome, invocationId, invocationFence);
   } finally {
-    untrackRun(sessionId, runId);
-    await notifySubagentCompletion(sessionId, runId);
-    void drainQueuedRuns(sessionId);
+    operation.finish();
+    if (heartbeat) clearInterval(heartbeat);
+    const pendingRenewal = heartbeatPending as Promise<void> | null;
+    await pendingRenewal?.catch(() => {});
+    if (tracked) untrackRun(sessionId, runId);
+    runningControls.delete(runId);
+    resolveDone();
+    if (leaseLost) {
+      console.warn(JSON.stringify({
+        level: "warn",
+        event: "subagent_invocation_lease_lost",
+        sessionId,
+        runId,
+      }));
+    } else if (tracked) {
+      await notifySubagentCompletion(sessionId, runId);
+      void drainQueuedRuns(sessionId).catch((error) => {
+        console.error(JSON.stringify({
+          level: "error",
+          event: "subagent_queue_drain_failed",
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+      });
+    }
   }
 }
 
 async function drainQueuedRuns(sessionId: string): Promise<void> {
+  const admission = beginOperationIfAccepting("subagent_queue_drain");
+  if (!admission.accepted) return;
+  try {
   const active = await store.countActiveSubagents(sessionId);
   if (active >= config.subagentMaxConcurrent) return;
   const queued = (await store.listSubagentRuns(sessionId, 50)).filter((run) => run.status === "queued");
@@ -194,18 +406,30 @@ async function drainQueuedRuns(sessionId: string): Promise<void> {
       subagentType: (run.agent_type as AgentToolOptions["subagentType"]) ?? "general-purpose",
       maxTurns: run.max_turns ?? undefined,
       runInBackground: run.background,
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        level: "error",
+        event: "subagent_background_failed",
+        sessionId,
+        runId: run.id,
+        error: error instanceof Error ? error.message : String(error),
+      }));
     });
+  }
+  } finally {
+    admission.operation.finish();
   }
 }
 
 export async function spawnAgent(sessionId: string, options: AgentToolOptions): Promise<SubagentRunOutcome> {
-  if (options.schedule) {
+  const deferredSchedule = options.schedule?.trim() ?? "";
+  if (isDeferredSchedule(deferredSchedule)) {
     const taskId = `sched-${crypto.randomUUID()}`;
     await scheduleAgentTask(sessionId, {
       id: taskId,
       prompt: options.prompt,
-      scheduleType: options.schedule.includes("cron") ? "cron" : "interval",
-      scheduleValue: options.schedule,
+      scheduleType: deferredSchedule.includes("cron") ? "cron" : "interval",
+      scheduleValue: deferredSchedule,
       nextRun: new Date(Date.now() + 60_000),
     });
     return {
@@ -244,16 +468,38 @@ export async function spawnAgent(sessionId: string, options: AgentToolOptions): 
   const runId = allocateSubagentRunId(resumeId);
 
   if (resumeId) {
-    const existing = await store.getSubagentRun(resumeId);
-    if (!existing) throw new Error(`unknown subagent run ${resumeId}`);
+    const existing = await store.getSubagentRunForUser(resumeId, session.user_id);
+    if (!existing || existing.session_id !== sessionId) {
+      throw new Error(`subagent run access denied`);
+    }
   } else {
-    await store.createSubagentRun({
+    const run = {
       id: runId,
       sessionId,
       task: resolvedOptions.prompt,
       agentType: resolvedOptions.subagentType,
       sandboxId: session.sandbox_id,
-    });
+    };
+    if (
+      resolvedOptions.requireImmediateStart
+      && !(await store.createSubagentRunIfCapacity({
+        ...run,
+        maxActive: config.subagentMaxConcurrent,
+      }))
+    ) {
+      return {
+        runId,
+        status: "queued",
+        summary: "Subagent capacity unavailable",
+        artifacts: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        error: "subagent capacity unavailable",
+        background: false,
+      };
+    }
+    if (!resolvedOptions.requireImmediateStart) {
+      await store.createSubagentRun(run);
+    }
     await store.updateSubagentRunMeta(runId, {
       description: resolvedOptions.description,
       maxTurns: resolvedOptions.maxTurns ?? null,
@@ -270,7 +516,7 @@ export async function spawnAgent(sessionId: string, options: AgentToolOptions): 
   }
 
   const active = await store.countActiveSubagents(sessionId);
-  if (active >= config.subagentMaxConcurrent) {
+  if (!resolvedOptions.requireImmediateStart && active >= config.subagentMaxConcurrent) {
     await store.markSubagentQueued(runId);
     return {
       runId,
@@ -287,6 +533,14 @@ export async function spawnAgent(sessionId: string, options: AgentToolOptions): 
       if (outcome.background) {
         await notifyBackgroundCompletion(sessionId, outcome);
       }
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        level: "error",
+        event: "subagent_background_failed",
+        sessionId,
+        runId,
+        error: error instanceof Error ? error.message : String(error),
+      }));
     });
     return {
       runId,
@@ -380,17 +634,10 @@ export function formatAgentToolResult(outcome: SubagentRunOutcome): string {
 export async function stopSubagent(sessionId: string, runId: string): Promise<{ ok: boolean; error?: string }> {
   const run = await store.getSubagentRun(runId);
   if (!run || run.session_id !== sessionId) return { ok: false, error: "unknown run" };
-  untrackRun(sessionId, runId);
-  await store.markSubagentStopped(runId, "Stopped by user.");
-  await publish(sessionId, {
-    type: "subagent_done",
-    runId,
-    status: "stopped",
-    summary: "Stopped by user.",
-    artifacts: [],
-    replica: config.replicaId,
-  });
-  await notifySubagentCompletion(sessionId, runId);
+  const control = runningControls.get(runId);
+  control?.controller.abort(new TurnAbortedError("Stopped by user."));
+  if (control) await control.done;
+  else await store.markSubagentStopped(runId, "Stopped by user.");
   return { ok: true };
 }
 
@@ -452,8 +699,13 @@ async function runSandboxWorkerWithFallback(
   runId: string,
   options: CodingSubagentOptions,
   timeoutMs: number,
+  invocationId?: string,
+  signal?: AbortSignal,
 ): Promise<CodingSubagentResult> {
   let workerError: string | undefined;
+  let workerUsage: CodingSubagentResult["usage"] | undefined;
+  let workerStatus: "failed" | "timed_out" | "stopped" = "failed";
+  let workerEntries: NonNullable<CodingSubagentResult["usageEntries"]> = [];
   try {
     const workerOutcome = await runSandboxPiWorker(sessionId, runId, {
       task: options.task,
@@ -462,20 +714,47 @@ async function runSandboxWorkerWithFallback(
       openaiBaseUrl: config.openaiBaseUrl,
       openaiApiKey: config.openaiApiKey,
       openaiModel: config.openaiModel,
+      signal,
     });
     workerOutcome.runId = runId;
     if (workerOutcome.status === "completed") {
       return workerOutcome;
     }
+    workerUsage = workerOutcome.usage;
+    workerEntries = workerOutcome.usageEntries ?? [];
+    workerStatus = workerOutcome.status === "timed_out"
+      ? "timed_out"
+      : workerOutcome.status === "stopped" || workerOutcome.status === "cancelled"
+        ? "stopped"
+        : "failed";
     workerError = workerOutcome.error;
   } catch (error) {
     workerError = error instanceof Error ? error.message : String(error);
+    if (error instanceof SandboxWorkerError) {
+      workerUsage = error.usage;
+      workerStatus = error.status;
+      workerEntries = error.receipts.map((receipt) => ({
+        invocationId: runId,
+        attempt: receipt.attempt,
+        stage: "sandbox_worker",
+        provider: "openai",
+        model: config.openaiModel,
+        inputTokens: receipt.inputTokens,
+        outputTokens: receipt.outputTokens,
+        reasoningTokens: receipt.reasoningTokens,
+        cacheReadTokens: receipt.cacheReadTokens,
+        cacheWriteTokens: receipt.cacheWriteTokens,
+        status: error.status,
+      }));
+    }
   }
 
   const loop = await runSubagentLoop(sessionId, runId, {
     agentType: "general-purpose",
     prompt: options.task,
     constraints: options.constraints,
+    invocationId,
+    signal,
   });
   return {
     runId,
@@ -483,9 +762,26 @@ async function runSandboxWorkerWithFallback(
     summary: loop.summary,
     artifacts: loop.artifacts,
     usage: {
-      inputTokens: loop.usage.inputTokens ?? 0,
-      outputTokens: loop.usage.outputTokens ?? 0,
+      inputTokens: (workerUsage?.inputTokens ?? 0) + (loop.usage.inputTokens ?? 0),
+      outputTokens: (workerUsage?.outputTokens ?? 0) + (loop.usage.outputTokens ?? 0),
     },
+    usageEntries: [
+      ...workerEntries.map((entry) => ({ ...entry, invocationId: runId, status: workerStatus })),
+      {
+        invocationId: runId,
+        attempt: workerEntries.length + 1,
+        stage: "fallback",
+        provider: "cloud-kernel",
+        model: config.openaiModel,
+        inputTokens: loop.usage.inputTokens ?? 0,
+        outputTokens: loop.usage.outputTokens ?? 0,
+        reasoningTokens: loop.usage.reasoningTokens ?? 0,
+        cacheReadTokens: loop.usage.cachedTokens ?? 0,
+        cacheWriteTokens: loop.usage.cacheWriteTokens ?? 0,
+        status: "success",
+        realtimeLedger: Boolean(invocationId),
+      },
+    ],
     ...(workerError ? { error: `sandbox worker fallback: ${workerError}` } : {}),
   };
 }
@@ -497,6 +793,8 @@ export async function runCodingSubagent(
     agentType?: string;
     description?: string;
     skipLifecycleEvents?: boolean;
+    invocationId?: string;
+    signal?: AbortSignal;
   },
 ): Promise<CodingSubagentResult> {
   const parentRunId = normalizeSubagentRunId(options.runId);
@@ -536,7 +834,14 @@ export async function runCodingSubagent(
 
   try {
     if (mode === "sandbox") {
-      outcome = await runSandboxWorkerWithFallback(sessionId, runId, options, timeoutMs);
+      outcome = await runSandboxWorkerWithFallback(
+        sessionId,
+        runId,
+        options,
+        timeoutMs,
+        options.invocationId,
+        options.signal,
+      );
     } else {
       const task =
         mode === "mock" && !options.task.startsWith("mock-coding:")
@@ -546,6 +851,8 @@ export async function runCodingSubagent(
         agentType: "general-purpose",
         prompt: task,
         constraints: options.constraints,
+        invocationId: options.invocationId,
+        signal: options.signal,
       });
       outcome = {
         runId,
@@ -556,6 +863,20 @@ export async function runCodingSubagent(
           inputTokens: loop.usage.inputTokens ?? 0,
           outputTokens: loop.usage.outputTokens ?? 0,
         },
+        usageEntries: [{
+          invocationId: runId,
+          attempt: 1,
+          stage: "kernel",
+          provider: "cloud-kernel",
+          model: config.openaiModel,
+          inputTokens: loop.usage.inputTokens ?? 0,
+          outputTokens: loop.usage.outputTokens ?? 0,
+          reasoningTokens: loop.usage.reasoningTokens ?? 0,
+          cacheReadTokens: loop.usage.cachedTokens ?? 0,
+          cacheWriteTokens: loop.usage.cacheWriteTokens ?? 0,
+          status: "success",
+          realtimeLedger: Boolean(options.invocationId),
+        }],
       };
     }
   } catch (error) {
@@ -566,6 +887,8 @@ export async function runCodingSubagent(
           agentType: "general-purpose",
           prompt: options.task,
           constraints: options.constraints,
+          invocationId: options.invocationId,
+          signal: options.signal,
         });
         outcome = {
           runId,
@@ -576,6 +899,9 @@ export async function runCodingSubagent(
             inputTokens: loop.usage.inputTokens ?? 0,
             outputTokens: loop.usage.outputTokens ?? 0,
           },
+          usageEntries: options.invocationId
+            ? [realtimeKernelUsageEntry(options.invocationId, loop.usage, config.openaiModel)]
+            : undefined,
           error: `sandbox worker fallback: ${message}`,
         };
       } catch (fallbackError) {
@@ -601,23 +927,25 @@ export async function runCodingSubagent(
     }
   }
 
-  await store.finishSubagentRun(runId, {
-    status: outcome.status,
-    summary: outcome.summary,
-    artifacts: outcome.artifacts,
-    error: outcome.error ?? null,
-    inputTokens: outcome.usage.inputTokens,
-    outputTokens: outcome.usage.outputTokens,
-  });
+  if (!options.skipLifecycleEvents) {
+    await store.finishSubagentRun(runId, {
+      status: outcome.status,
+      summary: outcome.summary,
+      artifacts: outcome.artifacts,
+      error: outcome.error ?? null,
+      inputTokens: outcome.usage.inputTokens,
+      outputTokens: outcome.usage.outputTokens,
+    });
 
-  await publish(sessionId, {
-    type: "subagent_done",
-    runId,
-    status: outcome.status,
-    summary: outcome.summary,
-    artifacts: outcome.artifacts,
-    replica: config.replicaId,
-  });
+    await publish(sessionId, {
+      type: "subagent_done",
+      runId,
+      status: outcome.status,
+      summary: outcome.summary,
+      artifacts: outcome.artifacts,
+      replica: config.replicaId,
+    });
+  }
 
   if (outcome.status === "completed" && outcome.artifacts.length > 0) {
     await publishWorkspaceUpdates(sessionId, outcome.artifacts);

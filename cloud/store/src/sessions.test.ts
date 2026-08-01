@@ -1,23 +1,23 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { applyMigrations } from "./db.ts";
 import {
-  archiveSession,
   appendMessagesToSession,
   createForkedSession,
   createSession,
+  deleteSession,
   getSessionForUser,
+  hydrate,
   insertMessage,
   listMessages,
   listSessions,
-  purgeSession,
   renameSessionTitle,
   renameSessionTitleIfTemporary,
-  restoreSession,
   UNTITLED_SESSION_TITLE,
 } from "./index.ts";
+import { newCounter } from "./db.ts";
 
 const TEST_USER = "default-user";
-const TEST_SESSION = `web:test-archive-${Date.now()}`;
+const TEST_SESSION = `web:test-session-${Date.now()}`;
 
 let pgAvailable = false;
 
@@ -32,16 +32,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!pgAvailable) return;
-  const row = await getSessionForUser(TEST_SESSION, TEST_USER);
-  if (!row) return;
-  if (!row.archived_at) {
-    await archiveSession(TEST_SESSION, TEST_USER);
-  }
-  await purgeSession(TEST_SESSION, TEST_USER).catch(() => undefined);
+  await deleteSession(TEST_SESSION, TEST_USER).catch(() => undefined);
 });
 
-describe("session archive lifecycle", () => {
-  it("archives, hides from default list, restores, renames, and purges", async () => {
+describe("session lifecycle", () => {
+  it("lists, renames, and deletes sessions without archive state", async () => {
     if (!pgAvailable) {
       console.warn("Skipping session archive lifecycle test: PostgreSQL unavailable");
       return;
@@ -49,17 +44,8 @@ describe("session archive lifecycle", () => {
 
     await createSession(TEST_SESSION, "Archive Test", TEST_USER);
 
-    const archived = await archiveSession(TEST_SESSION, TEST_USER);
-    expect(archived.archived_at).toBeTruthy();
-
-    const activeOnly = await listSessions(TEST_USER);
-    expect(activeOnly.some((row) => row.id === TEST_SESSION)).toBe(false);
-
-    const withArchived = await listSessions(TEST_USER, { includeArchived: true });
-    expect(withArchived.some((row) => row.id === TEST_SESSION)).toBe(true);
-
-    const restored = await restoreSession(TEST_SESSION, TEST_USER);
-    expect(restored.archived_at).toBeNull();
+    const sessions = await listSessions(TEST_USER);
+    expect(sessions.some((row) => row.id === TEST_SESSION)).toBe(true);
 
     const renamed = await renameSessionTitle(TEST_SESSION, "Renamed Chat", TEST_USER);
     expect(renamed.title).toBe("Renamed Chat");
@@ -72,25 +58,13 @@ describe("session archive lifecycle", () => {
     const blocked = await renameSessionTitleIfTemporary(`${TEST_SESSION}-temp`, "Should not apply", TEST_USER);
     expect(blocked).toBeNull();
 
-    await archiveSession(`${TEST_SESSION}-temp`, TEST_USER);
-    await purgeSession(`${TEST_SESSION}-temp`, TEST_USER);
+    await deleteSession(`${TEST_SESSION}-temp`, TEST_USER);
 
-    await archiveSession(TEST_SESSION, TEST_USER);
-    const purged = await purgeSession(TEST_SESSION, TEST_USER);
-    expect(purged.id).toBe(TEST_SESSION);
+    const deleted = await deleteSession(TEST_SESSION, TEST_USER);
+    expect(deleted.id).toBe(TEST_SESSION);
 
     const gone = await getSessionForUser(TEST_SESSION, TEST_USER);
     expect(gone).toBeNull();
-  });
-
-  it("rejects purge when session is not archived", async () => {
-    if (!pgAvailable) return;
-
-    const id = `${TEST_SESSION}-active`;
-    await createSession(id, "Active", TEST_USER);
-    await expect(purgeSession(id, TEST_USER)).rejects.toThrow("not archived");
-    await archiveSession(id, TEST_USER);
-    await purgeSession(id, TEST_USER);
   });
 
   it("copies fork history and appends merged branch messages", async () => {
@@ -129,9 +103,32 @@ describe("session archive lifecycle", () => {
       "Branch-only prompt",
     ]);
 
-    for (const id of [branchId, parentId]) {
-      await archiveSession(id, TEST_USER);
-      await purgeSession(id, TEST_USER);
+    for (const id of [branchId, parentId]) await deleteSession(id, TEST_USER);
+  });
+
+  it("hydrates the complete bounded uncompacted interval beyond 500 rows", async () => {
+    if (!pgAvailable) return;
+
+    const sessionId = `${TEST_SESSION}-hydrate-bound`;
+    await createSession(sessionId, "Hydrate Bound", TEST_USER);
+    const ids: number[] = [];
+    for (let index = 0; index < 620; index += 1) {
+      ids.push(await insertMessage(
+        sessionId,
+        index % 2 === 0 ? "user" : "assistant",
+        `message-${index + 1}`,
+      ));
     }
+
+    const rows = await hydrate(sessionId, newCounter(), {
+      afterMessageId: ids[19],
+      throughMessageId: ids[599],
+    });
+
+    expect(rows).toHaveLength(580);
+    expect(rows[0]?.id).toBe(ids[20]);
+    expect(rows.at(-1)?.id).toBe(ids[599]);
+
+    await deleteSession(sessionId, TEST_USER);
   });
 });

@@ -33,6 +33,8 @@ export async function resolveSessionKernelModel(sessionId: string): Promise<Sess
         baseUrl: config.openaiBaseUrl,
         apiKey: config.openaiApiKey,
         model: config.openaiModel,
+        contextWindow: config.openaiContextWindow,
+        maxTokens: config.openaiMaxTokens,
       },
       providers: config.providers,
     }),

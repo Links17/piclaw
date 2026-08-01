@@ -8,8 +8,11 @@ import {
   updateUserProfileFromEvent,
 } from './app-auth-bootstrap.js';
 import {
+  clearContextUsage,
+  CONTEXT_SCOPE_READY_EVENT,
   hasRenderableContextUsage,
   haveSameContextUsage,
+  getContextUserScope,
   mergeContextUsage,
   normalizeContextUsage,
   persistContextUsage,
@@ -24,7 +27,7 @@ import {
   markAppPerfTrace,
 } from './app-perf-tracing.js';
 import { prewarmTimelineSnapshots, resolveRecentTimelinePrewarmChatJids } from './app-timeline-cache.js';
-import { getTimeline } from '../api.js';
+import { getTimeline, PICLAW_AUTH_FAILURE_EVENT } from '../api.js';
 import {
   noteAppChatActivation,
   runCoalescedAppRefresh,
@@ -255,7 +258,8 @@ export function useChatRefreshLifecycle(options: UseChatRefreshLifecycleOptions)
             setContextUsage((prev) => {
               const merged = mergeContextUsage(prev, contextPayload);
               if (!hasRenderableContextUsage(merged) || haveSameContextUsage(prev, merged)) return prev;
-              persistContextUsage(targetChatJid, merged);
+              const userScope = getContextUserScope();
+              if (userScope) persistContextUsage(targetChatJid, userScope, merged);
               return merged;
             });
           }
@@ -293,7 +297,8 @@ export function useChatRefreshLifecycle(options: UseChatRefreshLifecycleOptions)
 
     // Restore the last known context usage for this chat from localStorage
     // so the context indicator shows immediately without waiting for the API.
-    const stored = restoreContextUsage(currentChatJid);
+    const userScope = getContextUserScope();
+    const stored = userScope ? restoreContextUsage(currentChatJid, userScope) : null;
     if (stored) {
       setContextUsage(stored);
     } else {
@@ -301,6 +306,33 @@ export function useChatRefreshLifecycle(options: UseChatRefreshLifecycleOptions)
     }
     void refreshModelState();
   }, [currentChatJid, refreshModelState, setActiveModel, setActiveModelUsage, setActiveThinkingLevel, setAgentModelsPayload, setContextUsage, setExtensionWorkingState, setHasLoadedAgentModels, setSupportsThinking]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const clearUnauthorizedContext = () => {
+      const userScope = getContextUserScope();
+      if (userScope) clearContextUsage(currentChatJid, userScope);
+      setContextUsage(null);
+    };
+    window.addEventListener(PICLAW_AUTH_FAILURE_EVENT, clearUnauthorizedContext);
+    return () => window.removeEventListener(PICLAW_AUTH_FAILURE_EVENT, clearUnauthorizedContext);
+  }, [currentChatJid, setContextUsage]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const restoreReadyScope = () => {
+      setContextUsage(null);
+      const userScope = getContextUserScope();
+      const stored = userScope ? restoreContextUsage(currentChatJid, userScope) : null;
+      if (stored) {
+        setContextUsage(stored);
+      } else {
+        void refreshContextUsage();
+      }
+    };
+    window.addEventListener(CONTEXT_SCOPE_READY_EVENT, restoreReadyScope);
+    return () => window.removeEventListener(CONTEXT_SCOPE_READY_EVENT, restoreReadyScope);
+  }, [currentChatJid, refreshContextUsage, setContextUsage]);
 
   const updateAgentProfile = useCallback((payload: any) => {
     updateAgentProfileFromEvent({

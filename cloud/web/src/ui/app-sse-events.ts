@@ -48,6 +48,7 @@ import { isAppChatActivationRecent } from './app-refresh-coordination.js';
 import {
   hasRenderableContextUsage,
   haveSameContextUsage,
+  getContextUserScope,
   mergeContextUsage,
   normalizeContextUsage,
   persistContextUsage,
@@ -364,12 +365,16 @@ export function handleAppSseEvent(
       setContextUsage((prev) => {
         const merged = mergeContextUsage(prev, liveContextUsage);
         if (!hasRenderableContextUsage(merged) || haveSameContextUsage(prev, merged)) return prev;
-        persistContextUsage(currentChatJid, merged);
+        const userScope = getContextUserScope();
+        if (userScope) persistContextUsage(currentChatJid, userScope, merged);
         return merged;
       });
     }
     if (data.type === 'context_usage') {
       return;
+    }
+    if (data.type === 'compaction') {
+      void refreshContextUsage();
     }
 
     if (data.type === 'done' || data.type === 'error') {
@@ -650,7 +655,8 @@ export function handleAppSseEvent(
           setContextUsage((prev) => {
             const merged = mergeContextUsage(prev, nextContextUsage);
             if (!hasRenderableContextUsage(merged) || haveSameContextUsage(prev, merged)) return prev;
-            persistContextUsage(targetChatJid, merged);
+            const userScope = getContextUserScope();
+            if (userScope) persistContextUsage(targetChatJid, userScope, merged);
             return merged;
           });
         }

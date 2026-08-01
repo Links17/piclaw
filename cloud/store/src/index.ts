@@ -7,6 +7,7 @@ export * from "./quota.ts";
 export * from "./rls.ts";
 export * from "./scheduler.ts";
 export * from "./scheduled-tasks.ts";
+export * from "./autoresearch.ts";
 export * from "./media.ts";
 export * from "./web-push.ts";
 export * from "./session-recordings.ts";
@@ -21,6 +22,8 @@ export type { ComputeNextRunOptions } from "./compute-next-run.ts";
 export * from "./subagent-runs.ts";
 export * from "./session-capabilities.ts";
 export * from "./skills.ts";
+export * from "./token-usage.ts";
+export * from "./context-snapshots.ts";
 export type { SessionMode, TodoItem, TodoState } from "./session-capabilities.ts";
 export type { SkillScope, SkillSource, SkillRow, SkillPublicRow, SkillCatalogRow } from "./skills.ts";
 
@@ -40,14 +43,11 @@ export interface SessionRow {
   title: string;
   sandbox_id: string | null;
   workspace_volume_id: string | null;
-  archived_at: string | null;
+  sandbox_paused_at: string | null;
   parent_session_id: string | null;
   forked_from_message_id: number | null;
   inherited_message_count: number;
-}
-
-export interface ListSessionsOptions {
-  includeArchived?: boolean;
+  terminal_pid: number | null;
 }
 
 /** Default title for newly created sessions before async title generation. */
@@ -130,28 +130,18 @@ export async function appendMessagesToSession(
   });
 }
 
-export async function listSessions(
-  userId = DEFAULT_USER_ID,
-  options: ListSessionsOptions = {},
-): Promise<SessionRow[]> {
-  const includeArchived = Boolean(options.includeArchived);
-  const rows = includeArchived
-    ? await sql`
-        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
-          parent_session_id, forked_from_message_id, inherited_message_count
-        FROM sessions WHERE user_id = ${userId}
-        ORDER BY updated_at DESC`
-    : await sql`
-        SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
-          parent_session_id, forked_from_message_id, inherited_message_count
-        FROM sessions WHERE user_id = ${userId} AND archived_at IS NULL
-        ORDER BY updated_at DESC`;
+export async function listSessions(userId = DEFAULT_USER_ID): Promise<SessionRow[]> {
+  const rows = await sql`
+    SELECT id, user_id, title, sandbox_id, workspace_volume_id, sandbox_paused_at, terminal_pid,
+      parent_session_id, forked_from_message_id, inherited_message_count
+    FROM sessions WHERE user_id = ${userId}
+    ORDER BY updated_at DESC`;
   return rows as SessionRow[];
 }
 
 export async function getSession(id: string): Promise<SessionRow | null> {
   const rows = await sql`
-    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+    SELECT id, user_id, title, sandbox_id, workspace_volume_id, sandbox_paused_at, terminal_pid,
       parent_session_id, forked_from_message_id, inherited_message_count
     FROM sessions WHERE id = ${id}`;
   return (rows[0] as SessionRow) ?? null;
@@ -159,45 +149,11 @@ export async function getSession(id: string): Promise<SessionRow | null> {
 
 export async function getSessionForUser(id: string, userId: string): Promise<SessionRow | null> {
   const rows = await sql`
-    SELECT id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+    SELECT id, user_id, title, sandbox_id, workspace_volume_id, sandbox_paused_at, terminal_pid,
       parent_session_id, forked_from_message_id, inherited_message_count
     FROM sessions
     WHERE id = ${id} AND user_id = ${userId}`;
   return (rows[0] as SessionRow) ?? null;
-}
-
-export async function archiveSession(id: string, userId = DEFAULT_USER_ID): Promise<SessionRow> {
-  const existing = await getSessionForUser(id, userId);
-  if (!existing) throw new Error(`Unknown chat branch: ${id}`);
-  if (existing.archived_at) return existing;
-
-  const rows = await sql`
-    UPDATE sessions
-    SET archived_at = now(), updated_at = now()
-    WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
-      parent_session_id, forked_from_message_id, inherited_message_count`;
-  return rows[0] as SessionRow;
-}
-
-export async function restoreSession(
-  id: string,
-  userId = DEFAULT_USER_ID,
-  title?: string,
-): Promise<SessionRow> {
-  const existing = await getSessionForUser(id, userId);
-  if (!existing) throw new Error(`Unknown chat branch: ${id}`);
-
-  const nextTitle = typeof title === "string" && title.trim() ? title.trim() : null;
-  const rows = await sql`
-    UPDATE sessions
-    SET archived_at = NULL,
-        title = COALESCE(${nextTitle}, title),
-        updated_at = now()
-    WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
-      parent_session_id, forked_from_message_id, inherited_message_count`;
-  return rows[0] as SessionRow;
 }
 
 export async function renameSessionTitle(
@@ -215,7 +171,7 @@ export async function renameSessionTitle(
     UPDATE sessions
     SET title = ${nextTitle}, updated_at = now()
     WHERE id = ${id} AND user_id = ${userId}
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id,
       parent_session_id, forked_from_message_id, inherited_message_count`;
   return rows[0] as SessionRow;
 }
@@ -238,7 +194,7 @@ export async function renameSessionTitleIfTemporary(
     WHERE id = ${id}
       AND user_id = ${userId}
       AND title IN (${UNTITLED_SESSION_TITLE}, 'Chat')
-    RETURNING id, user_id, title, sandbox_id, workspace_volume_id, archived_at,
+    RETURNING id, user_id, title, sandbox_id, workspace_volume_id,
       parent_session_id, forked_from_message_id, inherited_message_count`;
   return (rows[0] as SessionRow) ?? null;
 }
@@ -251,21 +207,17 @@ export async function countUserMessages(sessionId: string): Promise<number> {
   return Number(rows[0]?.count ?? 0);
 }
 
-export async function purgeSession(
+export async function deleteSession(
   id: string,
   userId = DEFAULT_USER_ID,
 ): Promise<SessionRow> {
   const existing = await getSessionForUser(id, userId);
   if (!existing) throw new Error(`Unknown chat branch: ${id}`);
-  if (!existing.archived_at) {
-    throw new Error(`Cannot permanently delete a branch that is not archived: ${id}`);
-  }
-
   await sql.begin(async (tx) => {
     await tx`DELETE FROM session_cursors WHERE session_id = ${id}`;
     await tx`
       DELETE FROM sessions
-      WHERE id = ${id} AND user_id = ${userId} AND archived_at IS NOT NULL`;
+      WHERE id = ${id} AND user_id = ${userId}`;
   });
   return existing;
 }
@@ -284,7 +236,19 @@ export async function setWorkspaceVolumeId(sessionId: string, volumeId: string):
 
 export async function clearSandboxId(sessionId: string): Promise<void> {
   await sql`
-    UPDATE sessions SET sandbox_id = NULL, sandbox_paused_at = NULL, updated_at = now()
+    UPDATE sessions SET sandbox_id = NULL, sandbox_paused_at = NULL, terminal_pid = NULL, updated_at = now()
+    WHERE id = ${sessionId}`;
+}
+
+export async function setTerminalPid(sessionId: string, pid: number): Promise<void> {
+  await sql`
+    UPDATE sessions SET terminal_pid = ${pid}, updated_at = now()
+    WHERE id = ${sessionId}`;
+}
+
+export async function clearTerminalPid(sessionId: string): Promise<void> {
+  await sql`
+    UPDATE sessions SET terminal_pid = NULL, updated_at = now()
     WHERE id = ${sessionId}`;
 }
 
@@ -321,18 +285,98 @@ export async function listMessages(sessionId: string, limit = 50): Promise<Messa
   return rows as MessageRow[];
 }
 
+export async function listMessagesForUser(
+  sessionId: string,
+  userId: string,
+  limit = 50,
+): Promise<MessageRow[]> {
+  const rows = await sql`
+    SELECT m.id, m.session_id, m.role, m.content, m.content_blocks, m.recovery_marker, m.created_at
+    FROM messages m
+    JOIN sessions s ON s.id = m.session_id
+    WHERE m.session_id = ${sessionId} AND s.user_id = ${userId}
+    ORDER BY m.id ASC
+    LIMIT ${limit}`;
+  return rows as MessageRow[];
+}
+
 export async function hydrate(
   sessionId: string,
   counter: RoundtripCounter,
-  limit = 50,
+  options: {
+    afterMessageId?: number;
+    throughMessageId?: number;
+  } = {},
 ): Promise<MessageRow[]> {
   const rows = await counted(counter)`
-    SELECT * FROM (
-      SELECT id, session_id, role, content, content_blocks, recovery_marker, created_at
-      FROM messages WHERE session_id = ${sessionId}
-      ORDER BY id DESC LIMIT ${limit}
-    ) sub ORDER BY id ASC`;
-  return rows as MessageRow[];
+    SELECT id, session_id, role, content, content_blocks, recovery_marker, created_at
+    FROM messages
+    WHERE session_id = ${sessionId}
+      AND (${options.afterMessageId ?? null}::bigint IS NULL
+        OR id > ${options.afterMessageId ?? null})
+      AND (${options.throughMessageId ?? null}::bigint IS NULL
+        OR id <= ${options.throughMessageId ?? null})
+    ORDER BY id ASC`;
+  return rows.map((row: Record<string, unknown>) => ({
+    ...row,
+    id: Number(row.id),
+  })) as MessageRow[];
+}
+
+/**
+ * Select committed context rows without assuming turn rows are contiguous.
+ * Persisted queued user IDs and rows explicitly associated with those future
+ * turns are excluded until that user becomes the active/cursor turn.
+ */
+export async function hydrateCommittedContext(
+  sessionId: string,
+  counter: RoundtripCounter,
+  options: {
+    activeUserMessageId: number;
+    afterMessageId?: number;
+  },
+): Promise<MessageRow[]> {
+  const activeOperationId = `turn:${sessionId}:${options.activeUserMessageId}`;
+  const rows = await counted(counter)`
+    WITH queued AS (
+      SELECT elem->>'message_id' AS message_id,
+             ${`turn:${sessionId}:`} || (elem->>'message_id') AS operation_id
+      FROM session_cursors c,
+        jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(c.queued_followups) = 'array' THEN c.queued_followups
+            ELSE '[]'::jsonb
+          END
+        ) AS elem
+      WHERE c.session_id = ${sessionId}
+    )
+    SELECT m.id, m.session_id, m.role, m.content, m.content_blocks, m.recovery_marker, m.created_at
+    FROM messages m
+    WHERE m.session_id = ${sessionId}
+      AND (${options.afterMessageId ?? null}::bigint IS NULL
+        OR m.id > ${options.afterMessageId ?? null})
+      AND (
+        m.id = ${options.activeUserMessageId}
+        OR m.content_blocks->>'user_message_id' = ${String(options.activeUserMessageId)}
+        OR m.content_blocks->'usage_receipt'->>'user_message_id' = ${String(options.activeUserMessageId)}
+        OR m.content_blocks->>'turn_operation_id' = ${activeOperationId}
+        OR m.content_blocks->'usage_receipt'->>'operation_id' = ${activeOperationId}
+        OR NOT EXISTS (
+          SELECT 1
+          FROM queued q
+          WHERE
+            (m.role = 'user' AND m.id::text = q.message_id)
+            OR m.content_blocks->>'user_message_id' = q.message_id
+            OR m.content_blocks->'usage_receipt'->>'user_message_id' = q.message_id
+            OR m.content_blocks->>'turn_operation_id' = q.operation_id
+            OR m.content_blocks->'usage_receipt'->>'operation_id' = q.operation_id
+        )
+      )
+    ORDER BY m.id ASC`;
+  return rows.map((row: Record<string, unknown>) => ({
+    ...row,
+    id: Number(row.id),
+  })) as MessageRow[];
 }
 
 // ── advisory lock ─────────────────────────────────────────────────────
@@ -416,6 +460,22 @@ export async function endTurnWithError(
       failed_message_id = ${messageId},
       failed_at = now(),
       failed_error = ${error},
+      inflight_prev_cursor = NULL,
+      inflight_message_id = NULL,
+      inflight_started_at = NULL
+    WHERE session_id = ${sessionId}`;
+}
+
+export async function endTurnAborted(
+  sessionId: string,
+  messageId: number,
+  counter: RoundtripCounter,
+): Promise<void> {
+  await counted(counter)`
+    UPDATE session_cursors SET
+      failed_message_id = ${messageId},
+      failed_at = now(),
+      failed_error = 'aborted',
       inflight_prev_cursor = NULL,
       inflight_message_id = NULL,
       inflight_started_at = NULL
@@ -586,28 +646,4 @@ export async function deleteMessage(
 export async function getCursor(sessionId: string): Promise<Record<string, unknown> | null> {
   const rows = await sql`SELECT * FROM session_cursors WHERE session_id = ${sessionId}`;
   return rows[0] ?? null;
-}
-
-// ── token usage ───────────────────────────────────────────────────────
-
-export async function logTokenUsage(row: {
-  sessionId: string;
-  messageId?: number;
-  model?: string;
-  provider?: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  durationMs?: number;
-}): Promise<void> {
-  await sql`
-    INSERT INTO token_usage (
-      session_id, message_id, model, provider,
-      input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, duration_ms
-    ) VALUES (
-      ${row.sessionId}, ${row.messageId ?? null}, ${row.model ?? null}, ${row.provider ?? null},
-      ${row.inputTokens}, ${row.outputTokens},
-      ${row.cacheReadTokens ?? 0}, ${row.cacheWriteTokens ?? 0}, ${row.durationMs ?? null}
-    )`;
 }

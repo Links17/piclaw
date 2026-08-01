@@ -8,6 +8,7 @@ import { resolveScreenSizeHint } from './ui/screen-size-hint.js';
 
 declare const __PICLAW_API_BASE__: string | undefined;
 const API_BASE = typeof __PICLAW_API_BASE__ !== 'undefined' ? __PICLAW_API_BASE__ : '';
+export const PICLAW_AUTH_FAILURE_EVENT = 'piclaw:auth-failure';
 
 function readActiveChatJidFromUrl() {
     if (typeof window === 'undefined') return null;
@@ -91,7 +92,18 @@ async function request(url, options: RequestInit & ApiOptions = {}) {
     
     if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(error.error || `HTTP ${response.status}`);
+        if (
+            (response.status === 401 || response.status === 403)
+            && typeof window !== 'undefined'
+            && typeof window.dispatchEvent === 'function'
+        ) {
+            window.dispatchEvent(new CustomEvent(PICLAW_AUTH_FAILURE_EVENT, {
+                detail: { status: response.status },
+            }));
+        }
+        const apiError = new Error(error.error || `HTTP ${response.status}`) as ApiError;
+        apiError.status = response.status;
+        throw apiError;
     }
     
     return response.json();
@@ -405,7 +417,6 @@ export async function getActiveChatAgents() {
 export async function getChatBranches(rootChatJid = null, options: ApiOptions = {}) {
     const params = new URLSearchParams();
     if (rootChatJid) params.set('root_chat_jid', String(rootChatJid));
-    if (options?.includeArchived) params.set('include_archived', '1');
     const query = params.toString() ? `?${params.toString()}` : '';
     return deduplicatedGet(`/agent/branches${query}`);
 }
@@ -456,25 +467,16 @@ export async function mergeChatBranchIntoParent(chatJid) {
     });
 }
 
-/**
- * Archive/prune a registry-backed chat branch / agent identity.
- */
-export async function pruneChatBranch(chatJid) {
-    return request('/agent/branch-prune', {
+/** Permanently delete a chat branch and its durable session state. */
+export async function deleteChatBranch(chatJid) {
+    return request('/agent/branch-delete', {
         method: 'POST',
         body: JSON.stringify({ chat_jid: chatJid }),
     });
 }
 
-/**
- * Permanently delete an already archived chat branch and its durable state.
- */
-export async function purgeChatBranch(chatJid) {
-    return request('/agent/branch-purge', {
-        method: 'POST',
-        body: JSON.stringify({ chat_jid: chatJid }),
-    });
-}
+export const pruneChatBranch = deleteChatBranch;
+export const purgeChatBranch = deleteChatBranch;
 
 /**
  * Rename a chat's JID across all tables and session directories.
@@ -483,19 +485,6 @@ export async function renameChatJid(oldJid, newJid) {
     return request('/agent/rename-jid', {
         method: 'POST',
         body: JSON.stringify({ old_jid: oldJid, new_jid: newJid }),
-    });
-}
-
-/**
- * Restore/reopen an archived branch into active discovery.
- */
-export async function restoreChatBranch(chatJid, options: ApiOptions = {}) {
-    return request('/agent/branch-restore', {
-        method: 'POST',
-        body: JSON.stringify({
-            chat_jid: chatJid,
-            ...(options && Object.prototype.hasOwnProperty.call(options, 'agentName') ? { agent_name: options.agentName } : {}),
-        }),
     });
 }
 

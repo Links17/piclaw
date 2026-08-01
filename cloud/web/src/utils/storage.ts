@@ -18,6 +18,15 @@ export function setLocalStorageItem(key, value) {
   }
 }
 
+export function removeLocalStorageItem(key) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    return;
+  }
+}
+
 export function getLocalStorageBoolean(key, defaultValue = false) {
   const raw = getLocalStorageItem(key);
   if (raw === null) return defaultValue;

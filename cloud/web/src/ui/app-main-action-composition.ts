@@ -161,9 +161,7 @@ interface ComposeBranchPaneActionOptionsInput {
   showIntentToast: (title: string, detail?: string | null, kind?: string, durationMs?: number) => void;
   currentChatBranches: any[];
   activeChatAgents: any[];
-  pruneChatBranch: (chatJid: string) => Promise<any>;
-  purgeChatBranch: (chatJid: string) => Promise<any>;
-  restoreChatBranch: (chatJid: string) => Promise<any>;
+  deleteChatBranch: (chatJid: string) => Promise<any>;
   branchLoaderMode: boolean;
   branchLoaderSourceChatJid: string;
   forkChatBranch: (chatJid: string) => Promise<any>;
@@ -218,9 +216,7 @@ export function composeBranchPaneActionOptions(input: ComposeBranchPaneActionOpt
     showIntentToast: input.showIntentToast,
     currentChatBranches: input.currentChatBranches,
     activeChatAgents: input.activeChatAgents,
-    pruneChatBranch: input.pruneChatBranch,
-    purgeChatBranch: input.purgeChatBranch,
-    restoreChatBranch: input.restoreChatBranch,
+    deleteChatBranch: input.deleteChatBranch,
     branchLoaderMode: input.branchLoaderMode,
     branchLoaderSourceChatJid: input.branchLoaderSourceChatJid,
     forkChatBranch: input.forkChatBranch,

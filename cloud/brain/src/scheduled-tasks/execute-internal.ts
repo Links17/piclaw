@@ -9,7 +9,8 @@ export async function executeInternalScheduledTask(task: {
   prompt: string;
   schedule_type: string;
   schedule_value: string;
-}): Promise<{ ok: boolean; summary: string; error?: string }> {
+}, signal?: AbortSignal): Promise<{ ok: boolean; summary: string; error?: string }> {
+  if (signal?.aborted) throw signal.reason ?? new Error("scheduled execution aborted");
   const dreamToken = parseDreamPromptToken(task.prompt);
   if (dreamToken.matched) {
     try {
@@ -17,6 +18,7 @@ export async function executeInternalScheduledTask(task: {
         sessionId: task.session_id,
         prompt: task.prompt,
         mode: dreamToken.mode,
+        signal,
       });
       return { ok: !result.skipped, summary: result.summary };
     } catch (error) {
@@ -29,6 +31,7 @@ export async function executeInternalScheduledTask(task: {
 
 export async function finalizeScheduledTaskRun(task: {
   id: string;
+  claim_token: string;
   schedule_type: string;
   schedule_value: string;
 }, startedAt: number, outcome: { ok: boolean; summary: string; error?: string }): Promise<void> {
@@ -51,5 +54,9 @@ export async function finalizeScheduledTaskRun(task: {
   const nextRun = task.schedule_type === "once"
     ? null
     : computeNextRun(task.schedule_type, task.schedule_value, { currentDate: new Date() });
-  await store.markScheduledTaskRan(task.id, nextRun, outcome.ok ? outcome.summary : null);
+  if (outcome.ok) {
+    await store.completeScheduledTaskClaim(task.id, task.claim_token, nextRun, outcome.summary);
+  } else {
+    await store.failScheduledTaskClaim(task.id, task.claim_token, outcome.error || outcome.summary || "Task failed");
+  }
 }
