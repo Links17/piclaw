@@ -4,6 +4,7 @@
 import { Redis } from "ioredis";
 import type { InternalSessionEvent } from "@piclaw-cloud/shared/sse-events";
 import { config } from "./config.ts";
+import { recordInternalSessionEvent } from "./recordings/service.ts";
 
 export type SessionEvent = InternalSessionEvent;
 
@@ -15,6 +16,9 @@ export function channelFor(sessionId: string): string {
 
 export async function publish(sessionId: string, event: SessionEvent): Promise<void> {
   await publisher.publish(channelFor(sessionId), JSON.stringify(event));
+  void recordInternalSessionEvent(sessionId, event).catch((error) => {
+    console.warn(`[recordings] hook failed for ${sessionId}:`, error);
+  });
 }
 
 export function subscribe(sessionId: string, onEvent: (event: SessionEvent) => void): () => void {

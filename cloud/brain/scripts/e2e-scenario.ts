@@ -84,6 +84,15 @@ async function postAgent(chatJid: string, content: string, wait = false): Promis
   return res.json();
 }
 
+async function createSession(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, title: "Phase 1e acceptance" }),
+  });
+  if (!res.ok) throw new Error(`failed to create session ${id}: ${res.status} ${await res.text()}`);
+}
+
 async function getJson(path: string): Promise<Record<string, unknown>> {
   return (await fetch(`${BASE}${path}`)).json();
 }
@@ -131,15 +140,13 @@ try {
   process.exit(2);
 }
 
+console.log("[1] create session (native API)");
+await createSession(CHAT);
+check(true, "session created");
+
 const events: SseEvent[] = [];
 const sse = collectWebSse(CHAT, events);
 await Bun.sleep(400);
-
-console.log("[1] create session (via timeline bootstrap)");
-{
-  const timeline = await fetch(`${BASE}/timeline?chat_jid=${encodeURIComponent(CHAT)}&limit=5`).then((r) => r.json());
-  check(Array.isArray(timeline.posts), "timeline endpoint ok");
-}
 
 console.log("\n[2] chat + streaming + user message SSE");
 {
@@ -186,8 +193,22 @@ console.log("\n[3] sandbox tool execution (mock-tools)");
 console.log("\n[4] terminal WebSocket attach");
 {
   const wsUrl = BASE.replace(/^http/, "ws") + `/terminal/ws?chat_jid=${encodeURIComponent(CHAT)}`;
+  const first = await runTerminalCommand(wsUrl, "echo TERMINAL_MARKER_BEFORE_RECONNECT\n", "TERMINAL_MARKER_BEFORE_RECONNECT");
+  check(first.output.includes("TERMINAL_MARKER_BEFORE_RECONNECT"), "terminal shell marker persisted");
+  check(first.pid > 0, `terminal pid recorded (${first.pid})`);
+
+  const second = await runTerminalCommand(wsUrl, "echo TERMINAL_MARKER_AFTER_RECONNECT\n", "TERMINAL_MARKER_AFTER_RECONNECT");
+  check(second.output.includes("TERMINAL_MARKER_AFTER_RECONNECT"), "terminal command works after WebSocket reopen");
+  check(second.pid === first.pid, `same terminal pid after WebSocket reopen (${second.pid})`);
+}
+
+async function runTerminalCommand(
+  wsUrl: string,
+  command: string,
+  marker: string,
+): Promise<{ pid: number; output: string }> {
   const chunks: string[] = [];
-  let passed = false;
+  let pid = 0;
   try {
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(wsUrl);
@@ -196,12 +217,18 @@ console.log("\n[4] terminal WebSocket attach");
         reject(new Error("terminal ws timeout"));
       }, 90000);
       ws.onmessage = (ev) => {
-        chunks.push(String(ev.data));
-        if (chunks.join("").includes("[connected]") && !chunks.join("").includes("TERMINAL_OK")) {
-          ws.send("echo TERMINAL_OK\n");
+        const message = String(ev.data);
+        chunks.push(message);
+        try {
+          const frame = JSON.parse(message) as { type?: string; process_pid?: number };
+          if (frame.type === "session" && typeof frame.process_pid === "number") pid = frame.process_pid;
+        } catch {
+          // terminal output is raw text for backwards compatibility
         }
-        if (chunks.join("").includes("TERMINAL_OK")) {
-          passed = true;
+        if (chunks.join("").includes("[connected]") && !chunks.join("").includes(marker)) {
+          ws.send(JSON.stringify({ type: "input", data: command }));
+        }
+        if (chunks.join("").includes(marker)) {
           clearTimeout(timer);
           ws.close();
           resolve();
@@ -210,14 +237,9 @@ console.log("\n[4] terminal WebSocket attach");
       ws.onerror = () => reject(new Error("terminal ws error"));
     });
   } catch (error) {
-    const msg = String(error);
-    if (msg.includes("terminal ws") || msg.includes("sandbox")) {
-      console.log(`  ⚠ terminal skipped (${msg.slice(0, 80)})`);
-    } else {
-      check(false, `terminal ws (${msg})`);
-    }
+    throw new Error(`terminal websocket (${String(error)})`);
   }
-  if (passed) check(true, "terminal echo roundtrip");
+  return { pid, output: chunks.join("") };
 }
 
 console.log("\n[5] SSE disconnect/reconnect catch-up");
@@ -246,7 +268,54 @@ console.log("\n[6] follow-up queue while busy");
   sse2.abort();
 }
 
-console.log("\n[7] question tool (mock-tools:question)");
+console.log("\n[7] queue steer removes follow-up and applies it to active mock turn");
+{
+  const steerChat = `${CHAT}-steer`;
+  const steerEvents: SseEvent[] = [];
+  const steerSse = collectWebSse(steerChat, steerEvents);
+  await Bun.sleep(300);
+  void postAgent(steerChat, "mock-tools: medium busy turn");
+  await waitFor(
+    () => steerEvents.some((e) => e.event === "agent_status" && e.data.type === "thinking"),
+    "active turn before queue steer",
+  );
+  const queued = await postAgent(steerChat, "steer this follow-up");
+  check(queued.outcome === "queued" || queued.queued === true, "steer target queued while turn is busy");
+  const queuedMessageId = Number((queued.user_message as { id?: number } | undefined)?.id);
+  check(Number.isFinite(queuedMessageId) && queuedMessageId > 0, "queued follow-up has message id");
+
+  const queue = await getJson(`/agent/queue-state?chat_jid=${encodeURIComponent(steerChat)}`);
+  const queueItems = (queue.items as Array<{ row_id?: number }>) ?? [];
+  check(queueItems.some((item) => item.row_id === queuedMessageId), "queued follow-up visible before steer");
+
+  const steerResponse = await fetch(`${BASE}/agent/queue-steer?chat_jid=${encodeURIComponent(steerChat)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ row_id: queuedMessageId }),
+  });
+  const steerResult = (await steerResponse.json()) as Record<string, unknown>;
+  check(steerResponse.ok, "queue-steer API accepted");
+  check(steerResult.removed === true && steerResult.queued === "steer", "queue-steer removed and injected target");
+  await waitFor(
+    () =>
+      steerEvents.some((e) => e.event === "agent_followup_removed" && e.data.row_id === queuedMessageId)
+      && steerEvents.some((e) => e.event === "agent_steer_queued" && e.data.content === "steer this follow-up"),
+    "followup_removed and steer_applied SSE",
+  );
+  await waitFor(
+    () => steerEvents.some((e) => e.event === "agent_response"),
+    "active mock turn response after steer",
+  );
+  check(
+    !steerEvents.some((e) => e.event === "agent_followup_consumed" && e.data.row_id === queuedMessageId),
+    "steered message was not executed as a follow-up",
+  );
+  const afterSteerQueue = await getJson(`/agent/queue-state?chat_jid=${encodeURIComponent(steerChat)}`);
+  check((afterSteerQueue.count as number) === 0, "steered follow-up removed from queue");
+  steerSse.abort();
+}
+
+console.log("\n[8] question tool (mock-tools:question)");
 {
   const qChat = `${CHAT}-question`;
   const eventsQ: SseEvent[] = [];
@@ -280,7 +349,7 @@ console.log("\n[7] question tool (mock-tools:question)");
   sseQ.abort();
 }
 
-console.log("\n[8] abort during mock turn");
+console.log("\n[9] abort during mock turn");
 {
   const abortChat = `${CHAT}-abort`;
   void postAgent(abortChat, "mock-tools: medium busy turn");

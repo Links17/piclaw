@@ -1,0 +1,18 @@
+{
+  "id": "preact-htm",
+  "packageName": "preact",
+  "additionalPackages": ["htm"],
+  "sourceEntry": "cloud/web/src/vendor/preact-htm-entry.ts",
+  "outputFile": "cloud/web/static/common/js/vendor/preact-htm.js",
+  "metadataFile": "cloud/web/static/common/js/vendor/preact-htm.meta.json",
+  "buildCommand": [
+    "bun",
+    "build",
+    "$SOURCE_ENTRY",
+    "--target=browser",
+    "--format=esm",
+    "--minify",
+    "--outfile",
+    "$OUTPUT_FILE"
+  ]
+}

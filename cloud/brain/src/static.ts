@@ -5,8 +5,8 @@ import { existsSync, statSync } from "node:fs";
 import { extname, resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..");
-const STATIC_DIR = resolve(process.env.PICLAW_WEB_STATIC_DIR || resolve(REPO_ROOT, "runtime", "web", "static"));
-const EDITOR_VENDOR_DIR = resolve(REPO_ROOT, "runtime", "extensions", "viewers", "editor", "vendor");
+const STATIC_DIR = resolve(process.env.PICLAW_WEB_STATIC_DIR || resolve(REPO_ROOT, "cloud", "web", "static"));
+const EDITOR_VENDOR_DIR = resolve(REPO_ROOT, "cloud", "web", "extensions", "viewers", "editor", "vendor");
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

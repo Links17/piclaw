@@ -1,6 +1,15 @@
 /** OpenAI-compatible function tool definitions for the brain tool loop. */
 
-export const CORE_TOOL_DEFINITIONS = [
+export type ToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
+export const CORE_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: "function" as const,
     function: {
@@ -198,30 +207,96 @@ export const CORE_TOOL_DEFINITIONS = [
   },
 ];
 
-const PLAN_MODE_ALLOWED = new Set(["read", "bash", "question", "todo", "skill"]);
+export const DISCOVERY_TOOL_DEFINITIONS: ToolDefinition[] = [
+  {
+    type: "function",
+    function: {
+      name: "list_tools",
+      description: "List tools available to activate for this session, including MCP tools.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "activate_tools",
+      description: "Activate available tools by name for this session. Activated tools remain available in later turns.",
+      parameters: {
+        type: "object",
+        properties: {
+          names: {
+            type: "array",
+            items: { type: "string" },
+            description: "Tool names returned by list_tools",
+          },
+        },
+        required: ["names"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reset_active_tools",
+      description: "Reset this session's active tools to the small baseline set.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+];
 
-export type ToolDefinition = {
-  type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
-};
+const BASELINE_TOOL_NAMES = new Set([
+  "read",
+  "question",
+  "todo",
+  "skill",
+  // Creating or modifying workspace code is the main Agent workflow. Keeping
+  // this narrow delegating alias available prevents a staged-discovery loop
+  // from consuming a real model's tool-round budget before it can delegate.
+  "coding_agent",
+  ...DISCOVERY_TOOL_DEFINITIONS.map((tool) => tool.function.name),
+]);
+const PLAN_MODE_ALLOWED = new Set(["read", "question", "todo", "skill", ...DISCOVERY_TOOL_DEFINITIONS.map((tool) => tool.function.name)]);
+
+export type ToolCatalogEntry = Pick<ToolDefinition["function"], "name" | "description">;
+
+export function getToolCatalog(extra: ToolDefinition[] = []): ToolCatalogEntry[] {
+  return [...CORE_TOOL_DEFINITIONS, ...extra].map(({ function: tool }) => ({
+    name: tool.name,
+    description: tool.description,
+  }));
+}
+
+export function getAllToolDefinitions(extra: ToolDefinition[] = []): ToolDefinition[] {
+  return [...CORE_TOOL_DEFINITIONS, ...extra];
+}
 
 export function getToolDefinitionsForMode(
   mode: "plan" | "execute",
   extra: ToolDefinition[] = [],
+  activeNames: ReadonlySet<string> = new Set(),
 ): ToolDefinition[] {
   const merged = [...CORE_TOOL_DEFINITIONS, ...extra];
-  if (mode === "plan") {
-    return merged.filter((tool) => PLAN_MODE_ALLOWED.has(tool.function.name));
-  }
-  return merged;
+  const allowed = mode === "plan" ? PLAN_MODE_ALLOWED : new Set([...BASELINE_TOOL_NAMES, ...activeNames]);
+  const available = merged.filter((tool) => allowed.has(tool.function.name));
+  return [...available, ...DISCOVERY_TOOL_DEFINITIONS];
 }
 
-export function toolNamesForMode(mode: "plan" | "execute", extra: ToolDefinition[] = []): Set<string> {
-  return new Set(getToolDefinitionsForMode(mode, extra).map((tool) => tool.function.name));
+export function toolNamesForMode(
+  mode: "plan" | "execute",
+  extra: ToolDefinition[] = [],
+  activeNames: ReadonlySet<string> = new Set(),
+): Set<string> {
+  return new Set(getToolDefinitionsForMode(mode, extra, activeNames).map((tool) => tool.function.name));
+}
+
+export function activatableToolNames(extra: ToolDefinition[] = []): Set<string> {
+  return new Set(getToolCatalog(extra).map((tool) => tool.name));
 }
 
 export const TOOL_DEFINITIONS = getToolDefinitionsForMode("execute");

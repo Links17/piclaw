@@ -10,16 +10,31 @@
     "e2e": "bun run scripts/e2e-scenario.ts",
     "llm-e2e": "bun run scripts/llm-sandbox-e2e.ts",
     "llm-subagent-e2e": "bun run scripts/llm-subagent-e2e.ts",
-    "web-e2e": "bun run scripts/web-e2e-scenario.ts"
+    "web-e2e": "bun run scripts/web-e2e-scenario.ts",
+    "terminal-reconnect-e2e": "bun run scripts/terminal-reconnect-e2e.ts",
+    "side-prompt-e2e": "bun run scripts/side-prompt-e2e.ts",
+    "real-steer-e2e": "bun run scripts/real-steer-e2e.ts",
+    "real-automation-e2e": "bun run scripts/real-automation-e2e.ts",
+    "real-lifecycle-e2e": "bun run scripts/real-lifecycle-e2e.ts",
+    "real-recovery-e2e": "bun run scripts/real-recovery-e2e.ts",
+    "real-quota-e2e": "bun run scripts/real-quota-e2e.ts",
+    "real-compaction-e2e": "bun run scripts/real-compaction-e2e.ts",
+    "multi-replica-load-e2e": "bun run scripts/multi-replica-load-e2e.ts",
+    "drain-e2e": "bun run scripts/drain-e2e.ts",
+    "drain-timeout-e2e": "bun run scripts/drain-timeout-e2e.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.82.1",
+    "@earendil-works/pi-ai": "0.82.1",
     "@piclaw-cloud/shared": "workspace:*",
     "@piclaw-cloud/store": "workspace:*",
+    "web-push": "3.6.7",
     "e2b": "^2.36.1",
     "ioredis": "^5.4.1"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.7.3"
   }
 }

@@ -1,6 +1,10 @@
 import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
 
 const cloud = getCloudConfig();
+function positiveEnvMs(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 /** Brain service configuration. */
 export const config = {
@@ -14,6 +18,9 @@ export const config = {
   openaiBaseUrl: cloud.openai.baseUrl,
   openaiApiKey: cloud.openai.apiKey,
   openaiModel: cloud.openai.model,
+  openaiContextWindow: cloud.openai.contextWindow,
+  openaiMaxTokens: cloud.openai.maxTokens,
+  providers: cloud.providers ?? [],
   defaultChatJid: cloud.server.defaultChatJid,
   /** When false, bash:/PTY routes return a stub (turn-loop scenarios only). */
   sandboxEnabled: cloud.sandbox.enabled,
@@ -21,6 +28,8 @@ export const config = {
   /** Subagent / platform */
   authRequired: cloud.auth.required,
   devApiKey: cloud.auth.devApiKey,
+  schedulerServiceKey: cloud.scheduler.serviceKey,
+  drainTimeoutMs: positiveEnvMs("CLOUD_DRAIN_TIMEOUT_MS", 30_000),
   subagentTimeoutMs: cloud.subagent.timeoutMs,
   codingWorkerMode: cloud.subagent.codingWorkerMode,
   maxActiveSandboxesPerUser: cloud.subagent.maxActiveSandboxesPerUser,

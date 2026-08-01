@@ -112,32 +112,10 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 CREATE INDEX IF NOT EXISTS scheduled_tasks_next_run_idx ON scheduled_tasks (next_run)
   WHERE status = 'active' AND next_run IS NOT NULL;
 
--- ── RLS (enabled; policies tightened in Phase 2) ────────────────────
+-- ── RLS (enabled; user-scoped policies are added in 002_platform.sql) ─
 
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE session_cursors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE token_usage ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scheduled_tasks ENABLE ROW LEVEL SECURITY;
-
--- Phase 1: permissive policy for local dev (replace in Phase 2)
-DO $$ BEGIN
-  CREATE POLICY sessions_dev_all ON sessions FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-  CREATE POLICY messages_dev_all ON messages FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-  CREATE POLICY session_cursors_dev_all ON session_cursors FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-  CREATE POLICY token_usage_dev_all ON token_usage FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-  CREATE POLICY scheduled_tasks_dev_all ON scheduled_tasks FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;

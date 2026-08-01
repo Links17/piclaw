@@ -1,0 +1,17 @@
+{
+  "id": "adaptivecards",
+  "packageName": "adaptivecards",
+  "sourceEntry": "cloud/web/src/vendor/adaptivecards-entry.ts",
+  "outputFile": "cloud/web/static/common/js/vendor/adaptivecards.min.js",
+  "metadataFile": "cloud/web/static/common/js/vendor/adaptivecards.meta.json",
+  "buildCommand": [
+    "bun",
+    "build",
+    "$SOURCE_ENTRY",
+    "--target=browser",
+    "--format=iife",
+    "--minify",
+    "--outfile",
+    "$OUTPUT_FILE"
+  ]
+}

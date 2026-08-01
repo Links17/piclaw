@@ -22,6 +22,24 @@ export async function clearSteerQueue(runId: string): Promise<void> {
   await commandRedis.del(steerKey(runId));
 }
 
+function sessionSteerKey(sessionId: string): string {
+  return `steer:session:${sessionId}`;
+}
+
+export async function enqueueSessionSteerMessage(sessionId: string, message: string): Promise<void> {
+  await commandRedis.lpush(sessionSteerKey(sessionId), message);
+  await commandRedis.expire(sessionSteerKey(sessionId), 3600);
+}
+
+export async function pollSessionSteerMessage(sessionId: string): Promise<string | null> {
+  const result = await commandRedis.rpop(sessionSteerKey(sessionId));
+  return result ? String(result) : null;
+}
+
+export async function clearSessionSteerQueue(sessionId: string): Promise<void> {
+  await commandRedis.del(sessionSteerKey(sessionId));
+}
+
 export async function waitForSubagentCompletion(
   sessionId: string,
   runId: string,

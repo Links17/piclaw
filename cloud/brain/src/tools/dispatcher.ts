@@ -1,22 +1,35 @@
 import { readFile, writeFile } from "../sandbox/fs.ts";
 import { ensureSandbox } from "../sandbox/session.ts";
-import { formatCodingSubagentToolResult, runCodingSubagent } from "../subagents/gateway.ts";
 import {
   formatAgentToolResult,
   getSubagentResult,
   spawnAgent,
   steerSubagent,
-} from "../subagents/manager.ts";
+} from "../subagents/service.ts";
 import { normalizeSubagentRunId } from "../subagents/run-id.ts";
 import type { AgentToolOptions } from "../subagents/types.ts";
 import { applyUniqueEdit } from "./edit.ts";
+import { config } from "../config.ts";
+import { isLlmMockEnabled } from "../llm.ts";
+import { publish } from "../events.ts";
+import { publishWorkspaceUpdate } from "../workspace/publish.ts";
 import { resolveWorkspacePath, WORKSPACE_ROOT } from "./path.ts";
 import { runQuestionTool } from "./question.ts";
 import { runSkillTool } from "./skill.ts";
 import { runTodoTool } from "./todo.ts";
-import { toolNamesForMode, type ToolDefinition } from "./schemas.ts";
+import {
+  activatableToolNames,
+  getToolCatalog,
+  toolNamesForMode,
+  type ToolDefinition,
+} from "./schemas.ts";
+import {
+  activateToolNames,
+  getActiveToolNames,
+  resetActiveToolNames,
+} from "./active.ts";
 import { getMcpToolDefinitions, invokeMcpTool } from "../mcp/client.ts";
-import { TurnAbortedError } from "../turn-abort.ts";
+import { TurnAbortedError, assertTurnNotAborted, isTurnAborted, waitForTurnAbort } from "../turn-abort.ts";
 
 const MAX_OUTPUT_CHARS = 32_000;
 
@@ -42,7 +55,8 @@ export async function dispatchTool(
   sessionMode: "plan" | "execute" = "execute",
   mcpTools: ToolDefinition[] = [],
 ): Promise<ToolDispatchResult> {
-  const allowed = toolNamesForMode(sessionMode, mcpTools);
+  const activeTools = getActiveToolNames(sessionId);
+  const allowed = toolNamesForMode(sessionMode, mcpTools, activeTools);
   if (!allowed.has(name)) {
     return { output: `Tool not available in ${sessionMode} mode: ${name}`, isError: true };
   }
@@ -53,6 +67,19 @@ export async function dispatchTool(
 
   try {
     switch (name) {
+      case "list_tools":
+        return {
+          output: JSON.stringify({
+            active: [...activeTools].sort(),
+            available: getToolCatalog(mcpTools),
+          }),
+          isError: false,
+        };
+      case "activate_tools":
+        return runActivateToolsTool(sessionId, args, mcpTools);
+      case "reset_active_tools":
+        resetActiveToolNames(sessionId);
+        return { output: "Active tools reset to the baseline set.", isError: false };
       case "bash":
         return await runBashTool(sessionId, args);
       case "read":
@@ -88,12 +115,66 @@ export async function dispatchTool(
   }
 }
 
+function runActivateToolsTool(
+  sessionId: string,
+  args: Record<string, unknown>,
+  mcpTools: ToolDefinition[],
+): ToolDispatchResult {
+  const rawNames = args.names;
+  if (!Array.isArray(rawNames) || rawNames.some((name) => typeof name !== "string" || !name.trim())) {
+    return { output: "names must be a non-empty array of tool names", isError: true };
+  }
+  const result = activateToolNames(
+    sessionId,
+    rawNames.map((name) => name.trim()),
+    activatableToolNames(mcpTools),
+  );
+  return {
+    output: JSON.stringify(result),
+    isError: result.unknown.length > 0,
+  };
+}
+
+async function killSandboxCommandBestEffort(sbx: Awaited<ReturnType<typeof ensureSandbox>>): Promise<void> {
+  try {
+    await sbx.commands.run("pkill -P 1 2>/dev/null || true", { timeoutMs: 5_000 });
+  } catch {
+    // best-effort
+  }
+}
+
+function mockSandboxToolResult(name: string, args: Record<string, unknown>): ToolDispatchResult | null {
+  if (!isLlmMockEnabled() || config.sandboxEnabled) return null;
+  if (name === "bash") {
+    return { output: `$ ${String(args.command ?? "")}\n(mock ok)\n(exit 0)`, isError: false };
+  }
+  if (name === "read") {
+    return { output: `(mock file ${String(args.path ?? "")})`, isError: false };
+  }
+  if (name === "write") {
+    return { output: `Mock wrote ${String(args.path ?? "")}`, isError: false };
+  }
+  if (name === "edit") {
+    return { output: `Mock edited ${String(args.path ?? "")}`, isError: false };
+  }
+  return null;
+}
+
 async function runBashTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("bash", args);
+  if (mocked) return mocked;
+  assertTurnNotAborted(sessionId);
   const command = String(args.command ?? "").trim();
   if (!command) return { output: "command is required", isError: true };
   const sbx = await ensureSandbox(sessionId);
   const wrapped = `cd ${WORKSPACE_ROOT} && ${command}`;
-  const result = await sbx.commands.run(wrapped, { timeoutMs: 120_000 });
+  const runPromise = sbx.commands.run(wrapped, { timeoutMs: 120_000 });
+  await Promise.race([runPromise, waitForTurnAbort(sessionId)]);
+  if (isTurnAborted(sessionId)) {
+    void killSandboxCommandBestEffort(sbx);
+    throw new TurnAbortedError();
+  }
+  const result = await runPromise;
   const parts = [`$ ${command}`];
   if (result.stdout.trim()) parts.push(result.stdout.trimEnd());
   if (result.stderr.trim()) parts.push(result.stderr.trimEnd());
@@ -102,21 +183,29 @@ async function runBashTool(sessionId: string, args: Record<string, unknown>): Pr
 }
 
 async function runReadTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("read", args);
+  if (mocked) return mocked;
   const path = resolveWorkspacePath(String(args.path ?? ""));
   const sbx = await ensureSandbox(sessionId);
   const content = await readFile(sbx, path);
   return { output: truncate(String(content)), isError: false };
 }
 
+
 async function runWriteTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("write", args);
+  if (mocked) return mocked;
   const path = resolveWorkspacePath(String(args.path ?? ""));
   const content = String(args.content ?? "");
   const sbx = await ensureSandbox(sessionId);
   await writeFile(sbx, path, content);
+  await publishWorkspaceUpdate(sessionId, path);
   return { output: `Wrote ${content.length} bytes to ${path}`, isError: false };
 }
 
 async function runEditTool(sessionId: string, args: Record<string, unknown>): Promise<ToolDispatchResult> {
+  const mocked = mockSandboxToolResult("edit", args);
+  if (mocked) return mocked;
   const path = resolveWorkspacePath(String(args.path ?? ""));
   const oldString = String(args.old_string ?? "");
   const newString = String(args.new_string ?? "");
@@ -124,6 +213,7 @@ async function runEditTool(sessionId: string, args: Record<string, unknown>): Pr
   const current = await readFile(sbx, path);
   const updated = applyUniqueEdit(String(current), oldString, newString);
   await writeFile(sbx, path, updated);
+  await publishWorkspaceUpdate(sessionId, path);
   return { output: `Edited ${path}`, isError: false };
 }
 
@@ -158,10 +248,16 @@ async function runCodingAgentTool(sessionId: string, args: Record<string, unknow
   if (!task) return { output: "task is required", isError: true };
   const constraints = typeof args.constraints === "string" ? args.constraints : undefined;
   const timeoutMs = typeof args.timeout_ms === "number" ? args.timeout_ms : undefined;
-  const result = await runCodingSubagent(sessionId, { task, constraints, timeoutMs });
-  const isError = result.status !== "completed";
+  const outcome = await spawnAgent(sessionId, {
+    prompt: task,
+    description: constraints ?? task,
+    subagentType: "general-purpose",
+    timeoutMs,
+    runInBackground: false,
+  });
+  const isError = outcome.status === "failed" || outcome.status === "timed_out" || outcome.status === "stopped";
   return {
-    output: formatCodingSubagentToolResult(result),
+    output: formatAgentToolResult(outcome),
     isError,
   };
 }

@@ -2,6 +2,7 @@
 import * as store from "@piclaw-cloud/store";
 import { DEFAULT_USER_ID } from "@piclaw-cloud/shared/sse-events";
 import { config } from "./config.ts";
+import { chatJidToSessionId } from "./web-adapter.ts";
 
 export class AuthError extends Error {
   constructor(message: string) {
@@ -34,12 +35,17 @@ export async function resolveRequestUser(req: Request): Promise<string> {
 export async function requireSessionAccess(sessionId: string, userId: string): Promise<void> {
   const session = await store.getSessionForUser(sessionId, userId);
   if (!session) {
-    const exists = await store.getSession(sessionId);
-    if (exists && config.authRequired) {
-      throw new AuthError("session access denied");
-    }
-    if (!exists) {
-      throw new Error("unknown session");
-    }
+    throw new AuthError("session access denied");
   }
+}
+
+/** Resolve user and verify session access for a web chat_jid. */
+export async function authorizeChatAccess(req: Request, chatJid: string): Promise<string> {
+  const userId = await resolveRequestUser(req);
+  const sessionId = chatJidToSessionId(chatJid);
+  if (!sessionId) {
+    throw new AuthError("chat_jid required");
+  }
+  await requireSessionAccess(sessionId, userId);
+  return userId;
 }

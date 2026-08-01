@@ -1,0 +1,22 @@
+{
+  "id": "beautiful-mermaid",
+  "packageName": "beautiful-mermaid",
+  "sourceEntry": "cloud/web/src/vendor/mermaid-entry.ts",
+  "outputFile": "cloud/web/static/common/js/vendor/beautiful-mermaid.js",
+  "metadataFile": "cloud/web/static/common/js/vendor/beautiful-mermaid.meta.json",
+  "buildCommand": [
+    "bun",
+    "build",
+    "$SOURCE_ENTRY",
+    "--target=browser",
+    "--minify",
+    "--outfile",
+    "$OUTPUT_FILE"
+  ],
+  "installCommand": [
+    "bun",
+    "add",
+    "--exact",
+    "$PACKAGE_NAME@$VERSION"
+  ]
+}

@@ -7,12 +7,17 @@
  *   - CubeSandbox cluster (sandbox section in config)
  */
 import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
+import { ensureE2eSession } from "./e2e-session.ts";
 import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
 import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
 import { getAccessToken } from "../src/sandbox/auth.ts";
 import { readFile } from "../src/sandbox/fs.ts";
+import { executableHelloLines, hasLegacyHelloOutput } from "../src/e2e/arduino-output.ts";
 
 applyE2bEnv();
+
+const EXAMPLE_CONFIG = new URL("../../brain.config.example.json", import.meta.url).pathname;
+process.env.CLOUD_CONFIG_PATH ||= EXAMPLE_CONFIG;
 
 const BASE = process.env.CLOUD_E2E_BASE || "http://localhost:7801";
 const CHAT = `llm-e2e-${Date.now()}`;
@@ -69,8 +74,9 @@ async function findInoFile(sandboxId: string): Promise<{ path: string; content: 
 
 async function preflightSandbox(): Promise<boolean> {
   try {
-    const { createSandbox } = await import("../src/sandbox/client.ts");
-    const sbx = await createSandbox();
+    const { createSandbox, createWorkspaceVolume } = await import("../src/sandbox/client.ts");
+    const volume = await createWorkspaceVolume(`llm-sandbox-preflight-${Date.now()}`);
+    const sbx = await createSandbox({ volumeId: volume });
     const id = sbx.sandboxId;
     await sbx.kill().catch(() => {});
     console.log(`  sandbox preflight ok (${id})`);
@@ -117,12 +123,12 @@ async function reclaimSandboxQuota(): Promise<void> {
   }
 }
 
-if (!getCloudConfig().openai.apiKey) {
-  console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or POC_OPENAI_API_KEY.");
+if (!getCloudConfig().openai.apiKey || getCloudConfig().openai.apiKey === "sk-your-key-here") {
+  console.error("\nMissing real openai.apiKey — set CLOUD_OPENAI_API_KEY or POC_OPENAI_API_KEY.");
   process.exit(2);
 }
 if (!getCloudConfig().openai.baseUrl) {
-  console.error("\nMissing openai.baseUrl — set in cloud/brain.config.json or POC_OPENAI_BASE_URL.");
+  console.error("\nMissing openai.baseUrl in cloud/brain.config.example.json or CLOUD_OPENAI_BASE_URL.");
   process.exit(2);
 }
 
@@ -154,7 +160,7 @@ let sandboxId = "";
 
 console.log("\n[1] hello — LLM reply");
 {
-  await fetch(`${BASE}/timeline?chat_jid=${encodeURIComponent(CHAT)}`);
+  await ensureE2eSession(BASE, CHAT, "llm-e2e");
   await postAgent("hello");
   const messages = await getMessages();
   const reply = lastAssistantText(messages);
@@ -194,7 +200,9 @@ console.log("\n[3] edit hello world → hello agent");
     console.log("  ⚠ skipped — sandbox file steps unavailable");
   } else {
     const beforeSession = sandboxId;
-    await postAgent("输出 hello world 改为输出“hello agent”");
+    await postAgent(
+      `请读取并修改 ${inoPath}。把所有非注释、用户可见的 “hello world” 或 “hello, world” 输出替换成恰好 “hello agent”，必须同时覆盖 Serial、TFT、LCD 等所有输出调用。保留 setup() 和 loop()。保存后重新读取文件，确认所有可执行输出均不再含 hello world。`,
+    );
     const messages = await getMessages();
     check(hasToolCalls(messages.filter((m) => m.id > 0)), "edit turn used tools");
 
@@ -206,11 +214,11 @@ console.log("\n[3] edit hello world → hello agent");
     if (ino) {
       const lower = ino.content.toLowerCase();
       check(lower.includes("hello agent"), "file contains hello agent");
-      const outputLines = lower
-        .split("\n")
-        .filter((line) => !line.trim().startsWith("//"))
-        .join("\n");
-      check(!outputLines.includes("hello world"), "hello world removed from executable output");
+      const helloLines = executableHelloLines(ino.content);
+      if (hasLegacyHelloOutput(ino.content)) {
+        console.log("  legacy executable hello lines:", helloLines.filter((line) => /\bhello(?:,)?\s+world\b/i.test(line)));
+      }
+      check(!hasLegacyHelloOutput(ino.content), "hello world removed from executable output");
     }
 
     const reply = lastAssistantText(messages);

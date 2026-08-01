@@ -1,0 +1,17 @@
+{
+  "id": "codemirror-editor",
+  "packageName": "codemirror",
+  "sourceEntry": "cloud/web/extensions/viewers/editor/vendor/codemirror-entry.ts",
+  "outputFile": "cloud/web/extensions/viewers/editor/vendor/codemirror.js",
+  "metadataFile": "cloud/web/extensions/viewers/editor/vendor/codemirror.meta.json",
+  "buildCommand": [
+    "bun",
+    "build",
+    "$SOURCE_ENTRY",
+    "--target=browser",
+    "--format=esm",
+    "--minify",
+    "--outfile",
+    "$OUTPUT_FILE"
+  ]
+}

@@ -38,3 +38,20 @@ export function quotaErrorFromMessage(message: string): QuotaExceededError | nul
   }
   return null;
 }
+
+export function estimateProviderTokenBudget(input: {
+  estimatedInputTokens: number;
+  maxOutputTokens: number;
+  dailyLimit?: number;
+}): number {
+  const conservative = Math.max(
+    1,
+    Math.ceil(input.estimatedInputTokens) + Math.max(1, input.maxOutputTokens),
+  );
+  // Tiny test/development limits must still permit one request. The DB
+  // reservation serializes that request; actual settlement can exceed the
+  // estimate and blocks subsequent calls.
+  return input.dailyLimit && input.dailyLimit > 1
+    ? Math.min(conservative, Math.max(1, Math.floor(input.dailyLimit * 0.9)))
+    : conservative;
+}

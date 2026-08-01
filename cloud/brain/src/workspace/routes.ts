@@ -1,7 +1,18 @@
 /**
- * Read-only /workspace/* routes for cloud brain Web UI.
+ * Workspace routes — sandbox-backed explorer API for cloud Web UI.
  */
+import * as store from "@piclaw-cloud/store";
+import { chatJidToSessionId } from "../web-adapter.ts";
 import { getWorkspaceFilePreview, getWorkspaceRawFile, getWorkspaceTree } from "./sandbox-tree.ts";
+import {
+  countWorkspaceFiles,
+  createWorkspaceFileEntry,
+  deleteWorkspacePath,
+  moveWorkspacePath,
+  renameWorkspacePath,
+  statWorkspacePath,
+  updateWorkspaceFileContent,
+} from "./sandbox-write.ts";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -16,8 +27,19 @@ function chatJidFromUrl(url: URL): string | null {
 }
 
 /** Handle workspace routes; returns null when pathname is not a workspace route. */
-export async function handleWorkspaceRoutes(req: Request, pathname: string): Promise<Response | null> {
+export async function handleWorkspaceRoutes(
+  req: Request,
+  pathname: string,
+  userId?: string,
+): Promise<Response | null> {
   const url = new URL(req.url);
+  if (userId) {
+    const chatJid = chatJidFromUrl(url);
+    if (!chatJid) return json({ error: "chat_jid required" }, 400);
+    if (!(await store.getSessionForUser(chatJidToSessionId(chatJid), userId))) {
+      return json({ error: "session access denied" }, 401);
+    }
+  }
 
   if (req.method === "GET" && pathname === "/workspace/tree") {
     try {
@@ -75,12 +97,125 @@ export async function handleWorkspaceRoutes(req: Request, pathname: string): Pro
     }
   }
 
+  if (req.method === "GET" && pathname === "/workspace/stat") {
+    try {
+      const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
+      return json(await statWorkspacePath(chatJid, url.searchParams.get("path")));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return json({ error: message }, message.includes("not found") ? 404 : 400);
+    }
+  }
+
+  if (req.method === "PUT" && pathname === "/workspace/file") {
+    try {
+      const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
+      const body = await req.json().catch(() => ({})) as { path?: string; content?: string };
+      if (!body.path) return json({ error: "Missing path" }, 400);
+      return json(await updateWorkspaceFileContent(chatJid, body.path, body.content ?? ""));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return json({ error: message }, message.includes("not found") ? 404 : 400);
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/workspace/file") {
+    try {
+      const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
+      const body = await req.json().catch(() => ({})) as { path?: string; name?: string; content?: string };
+      if (!body.name) return json({ error: "Missing name" }, 400);
+      return json(await createWorkspaceFileEntry(chatJid, body.path ?? ".", body.name, body.content ?? ""));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = message.includes("already exists") ? 409 : message.includes("not found") ? 404 : 400;
+      return json({ error: message }, status);
+    }
+  }
+
+  if (req.method === "DELETE" && pathname === "/workspace/file") {
+    try {
+      const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
+      const path = url.searchParams.get("path");
+      if (!path) return json({ error: "Missing path" }, 400);
+      return json(await deleteWorkspacePath(chatJid, path));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return json({ error: message }, message.includes("not found") ? 404 : 400);
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/workspace/rename") {
+    try {
+      const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
+      const body = await req.json().catch(() => ({})) as { path?: string; name?: string };
+      if (!body.path || !body.name) return json({ error: "Missing path or name" }, 400);
+      return json(await renameWorkspacePath(chatJid, body.path, body.name));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return json({ error: message }, message.includes("not found") ? 404 : 400);
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/workspace/move") {
+    try {
+      const chatJid = chatJidFromUrl(url);
+      if (!chatJid) return json({ error: "chat_jid required" }, 400);
+      const body = await req.json().catch(() => ({})) as { path?: string; target?: string };
+      if (!body.path || body.target == null) return json({ error: "Missing path or target" }, 400);
+      return json(await moveWorkspacePath(chatJid, body.path, body.target));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return json({ error: message }, message.includes("not found") ? 404 : 400);
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/workspace/reindex") {
+    const chatJid = chatJidFromUrl(url);
+    if (!chatJid) return json({ error: "chat_jid required" }, 400);
+    try {
+      const indexedFileCount = await countWorkspaceFiles(chatJid);
+      return json({
+        state: "ready",
+        has_sandbox: true,
+        indexed_file_count: indexedFileCount,
+        roots: ["workspace"],
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return json({ error: message }, 500);
+    }
+  }
+
   if (req.method === "POST" && pathname === "/workspace/visibility") {
     return json({ ok: true });
   }
 
   if (req.method === "GET" && pathname === "/workspace/index-status") {
-    return json({ state: "ready", indexed_file_count: 0, roots: ["workspace"] });
+    const chatJid = chatJidFromUrl(url);
+    let hasSandbox = false;
+    let indexedFileCount = 0;
+    if (chatJid) {
+      const session = await store.getSession(chatJidToSessionId(chatJid));
+      hasSandbox = Boolean(typeof session?.sandbox_id === "string" && session.sandbox_id.trim());
+      if (hasSandbox) {
+        try {
+          indexedFileCount = await countWorkspaceFiles(chatJid);
+        } catch {
+          indexedFileCount = 0;
+        }
+      }
+    }
+    return json({
+      state: hasSandbox ? "ready" : "unavailable",
+      has_sandbox: hasSandbox,
+      indexed_file_count: indexedFileCount,
+      roots: ["workspace"],
+    });
   }
 
   if (req.method === "GET" && pathname === "/workspace/branch") {

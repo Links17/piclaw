@@ -7,11 +7,16 @@
  *   - CubeSandbox cluster
  *   - subagent.codingWorkerMode=sandbox in config (recommended)
  */
-import { getCloudConfig } from "@piclaw-cloud/shared/cloud-config";
-import { applyE2bEnv, missingSandboxConfig, sandboxConfig } from "../src/sandbox/config.ts";
-import { connectSandbox, healthCheck } from "../src/sandbox/client.ts";
-import { getAccessToken } from "../src/sandbox/auth.ts";
-import { readFile } from "../src/sandbox/fs.ts";
+import { ensureE2eSession } from "./e2e-session.ts";
+
+const EXAMPLE_CONFIG = new URL("../../brain.config.example.json", import.meta.url).pathname;
+process.env.CLOUD_CONFIG_PATH ||= EXAMPLE_CONFIG;
+
+const { getCloudConfig } = await import("@piclaw-cloud/shared/cloud-config");
+const { applyE2bEnv, missingSandboxConfig, sandboxConfig } = await import("../src/sandbox/config.ts");
+const { connectSandbox, healthCheck } = await import("../src/sandbox/client.ts");
+const { getAccessToken } = await import("../src/sandbox/auth.ts");
+const { readFile } = await import("../src/sandbox/fs.ts");
 
 applyE2bEnv();
 
@@ -118,8 +123,9 @@ async function reclaimSandboxQuota(): Promise<void> {
 
 async function preflightSandbox(): Promise<boolean> {
   try {
-    const { createSandbox } = await import("../src/sandbox/client.ts");
-    const sbx = await createSandbox();
+    const { createSandbox, createWorkspaceVolume } = await import("../src/sandbox/client.ts");
+    const volume = await createWorkspaceVolume(`llm-subagent-preflight-${Date.now()}`);
+    const sbx = await createSandbox({ volumeId: volume });
     const id = sbx.sandboxId;
     await sbx.kill().catch(() => {});
     console.log(`  sandbox preflight ok (${id})`);
@@ -171,12 +177,12 @@ console.log(`  chat:   ${CHAT}`);
 console.log(`  cube:   ${sandboxConfig.apiUrl}`);
 console.log(`  worker: ${getCloudConfig().subagent.codingWorkerMode}`);
 
-if (!getCloudConfig().openai.apiKey) {
-  console.error("\nMissing openai.apiKey — set in cloud/brain.config.json or POC_OPENAI_API_KEY.");
+if (!getCloudConfig().openai.apiKey || getCloudConfig().openai.apiKey === "sk-your-key-here") {
+  console.error("\nMissing real openai.apiKey — set CLOUD_OPENAI_API_KEY or POC_OPENAI_API_KEY.");
   process.exit(2);
 }
 if (!getCloudConfig().openai.baseUrl) {
-  console.error("\nMissing openai.baseUrl — set in cloud/brain.config.json or POC_OPENAI_BASE_URL.");
+  console.error("\nMissing openai.baseUrl in cloud/brain.config.example.json or CLOUD_OPENAI_BASE_URL.");
   process.exit(2);
 }
 
@@ -208,7 +214,7 @@ let inoPath = "";
 
 console.log("\n[1] delegate create — coding_agent + sandbox worker");
 {
-  await fetch(`${BASE}/timeline?chat_jid=${encodeURIComponent(CHAT)}`);
+  await ensureE2eSession(BASE, CHAT, "llm-subagent-e2e");
   await postAgent(
     "请使用 coding_agent 工具完成：在 /workspace 创建 wio_subagent_test.ino，内容为 Wio Terminal hello world sketch（必须含 setup() 和 loop()，Serial 输出 hello world）",
   );
@@ -221,7 +227,11 @@ console.log("\n[1] delegate create — coding_agent + sandbox worker");
 
   const runs = await getSubagentRuns();
   check(
-    runs.some((r) => r.agent_type === "coding" && r.status === "completed"),
+    runs.some(
+      (r) =>
+        (r.agent_type === "general-purpose" || r.agent_type === "coding") &&
+        r.status === "completed",
+    ),
     `subagent_runs persisted (${runs.length} runs)`,
   );
 

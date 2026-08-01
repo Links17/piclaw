@@ -5,6 +5,7 @@ import * as store from "@piclaw-cloud/store";
 import type { SkillPublicRow, SkillRow } from "@piclaw-cloud/store";
 import { readFile } from "../sandbox/fs.ts";
 import { ensureSandbox } from "../sandbox/session.ts";
+import { config } from "../config.ts";
 import { getCachedCatalog, invalidateSkillCache, setCachedCatalog } from "./cache.ts";
 
 export interface SkillCatalogEntry {
@@ -52,6 +53,7 @@ function mergeCatalogRows(rows: SkillRow[]): SkillCatalogEntry[] {
 }
 
 async function syncWorkspaceSkills(sessionId: string, userId: string): Promise<void> {
+  if (!config.sandboxEnabled) return;
   const sbx = await ensureSandbox(sessionId);
   const roots = ["/workspace/.pi/skills", "/workspace/.agents/skills"];
 

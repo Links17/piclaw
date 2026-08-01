@@ -100,23 +100,17 @@ update-mermaid-vendor: ## Rebuild or upgrade vendored mermaid (use MERMAID_VERSI
 	cd runtime && bun run update:vendor:mermaid $(if $(MERMAID_VERSION),--version $(MERMAID_VERSION),)
 	@ls -lh runtime/web/static/common/js/vendor/beautiful-mermaid.js runtime/web/static/common/js/vendor/beautiful-mermaid.meta.json
 
-build-web: ## Build web JS/CSS bundles (+ sourcemaps) into static/classic/dist, static/common/dist, and static/visual/dist
-	cd runtime && bun run build:web
-	bun run build:web:visual
-	@cd runtime && bun test --timeout $(WEB_BUILD_TEST_TIMEOUT_MS) test/channels/web/web-build.test.ts test/channels/web/post-link-preview-content.test.ts
-	@# Pre-compress static assets for faster first-request serving
-	@find runtime/web/static -type f \( -name '*.js' -o -name '*.css' -o -name '*.json' -o -name '*.svg' \) \
-		! -name '*.gz' ! -name '*.br' -size +1k \
-		-exec sh -c 'gzip -9 -k -f "$$1"' _ {} \;
+build-web: ## Build cloud web JS/CSS bundles (+ sourcemaps)
+	bun run build:web:cloud
 	@ls -lh \
-		runtime/web/static/classic/dist/app.bundle.js \
-		runtime/web/static/classic/dist/app.bundle.js.map \
-		runtime/web/static/classic/dist/app.bundle.css \
-		runtime/web/static/classic/dist/editor.bundle.js \
-		runtime/web/static/classic/dist/editor.bundle.js.map \
-		runtime/web/static/common/dist/login.bundle.js \
-		runtime/web/static/common/dist/login.bundle.js.map \
-		runtime/web/static/common/dist/login.bundle.css
+		cloud/web/static/classic/dist/app.bundle.js \
+		cloud/web/static/classic/dist/app.bundle.js.map \
+		cloud/web/static/classic/dist/app.bundle.css \
+		cloud/web/static/classic/dist/editor.bundle.js \
+		cloud/web/static/classic/dist/editor.bundle.js.map \
+		cloud/web/static/common/dist/login.bundle.js \
+		cloud/web/static/common/dist/login.bundle.js.map \
+		cloud/web/static/common/dist/login.bundle.css
 
 build-ts: ## Type-check TypeScript / validate emit (generated/dist is cleaned up after the run)
 	cd runtime && bun run build

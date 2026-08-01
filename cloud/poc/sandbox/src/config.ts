@@ -1,6 +1,6 @@
-/** PoC 2 configuration — defaults target CubeSandbox at 192.168.200.127:12088. */
+/** PoC 2 configuration — CubeAPI control plane at :13000; ops login remains on :12088. */
 export const config = {
-  apiUrl: process.env.E2B_API_URL || process.env.CUBE_API_URL || "http://192.168.200.127:12088",
+  apiUrl: process.env.E2B_API_URL || process.env.CUBE_API_URL || "http://192.168.200.127:13000",
   /** Dummy e2b_ key required by SDK header shape; real auth is JWT accessToken. */
   apiKey:
     process.env.E2B_API_KEY ||
@@ -17,11 +17,6 @@ export const config = {
   opsUrl: process.env.CUBE_OPS_URL || "http://192.168.200.127:12088/opsapi/v1",
   opsUser: process.env.CUBE_OPS_USER || process.env.CUBE_ADMIN_USER || "admin",
   opsPassword: process.env.CUBE_OPS_PASSWORD || process.env.CUBE_ADMIN_PASSWORD || "admin",
-  artifactDir: process.env.POC_ARTIFACT_DIR || "/tmp/piclaw-poc-artifacts",
-  cosSecretId: process.env.POC_COS_SECRET_ID || "",
-  cosSecretKey: process.env.POC_COS_SECRET_KEY || "",
-  cosBucket: process.env.POC_COS_BUCKET || "",
-  cosRegion: process.env.POC_COS_REGION || "",
   resumeSamples: Number(process.env.POC_RESUME_SAMPLES || 3),
   resumeP95BudgetMs: Number(process.env.POC_RESUME_P95_MS || 5000),
   sandboxTimeoutMs: Number(process.env.POC_SANDBOX_TIMEOUT_MS || 5 * 60 * 1000),

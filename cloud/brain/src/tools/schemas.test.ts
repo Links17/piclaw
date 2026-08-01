@@ -1,23 +1,54 @@
 import { describe, expect, test } from "bun:test";
 import { mapInternalToSse } from "@piclaw-cloud/shared/sse-events";
-import { getToolDefinitionsForMode, toolNamesForMode } from "./schemas.ts";
+import {
+  getToolCatalog,
+  getToolDefinitionsForMode,
+  toolNamesForMode,
+} from "./schemas.ts";
 
 describe("tool schemas", () => {
-  test("plan mode exposes readonly tools only", () => {
+  test("plan mode exposes only the discovery baseline", () => {
     const names = [...toolNamesForMode("plan")];
     expect(names).toContain("read");
     expect(names).toContain("question");
     expect(names).toContain("todo");
     expect(names).toContain("skill");
+    expect(names).toContain("list_tools");
+    expect(names).toContain("activate_tools");
+    expect(names).toContain("reset_active_tools");
     expect(names).not.toContain("write");
     expect(names).not.toContain("Agent");
   });
 
-  test("execute mode includes Agent and coding_agent", () => {
+  test("execute mode starts with discovery baseline instead of all tools", () => {
     const names = [...toolNamesForMode("execute")];
-    expect(names).toContain("Agent");
+    expect(names).toContain("list_tools");
     expect(names).toContain("coding_agent");
-    expect(names).toContain("get_subagent_result");
+    expect(names).not.toContain("bash");
+    expect(names).not.toContain("Agent");
+  });
+
+  test("active tools augment the baseline without exposing inactive tools", () => {
+    const names = [...toolNamesForMode("execute", [], new Set(["bash", "Agent"]))];
+    expect(names).toContain("bash");
+    expect(names).toContain("Agent");
+    expect(names).not.toContain("write");
+  });
+
+  test("catalog includes subagent and MCP tools for activation", () => {
+    const catalog = getToolCatalog([
+      {
+        type: "function",
+        function: {
+          name: "mcp__docs__search",
+          description: "Search docs",
+          parameters: { type: "object" },
+        },
+      },
+    ]);
+    expect(catalog.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["Agent", "coding_agent", "mcp__docs__search"]),
+    );
   });
 
   test("todo_update maps to agent_draft plan panel", () => {

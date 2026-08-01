@@ -13,10 +13,39 @@ describe("@piclaw-cloud/shared sse-events", () => {
   });
 
   test("maps followup_queued with chat_jid", () => {
-    const mapped = mapInternalToSse(scope, { type: "followup_queued", content: "next" });
+    const mapped = mapInternalToSse(scope, { type: "followup_queued", content: "next", messageId: 43 });
     expect(mapped).toEqual({
       event: "agent_followup_queued",
-      data: { content: "next", chat_jid: "web:test", turn_id: "42" },
+        data: { content: "next", row_id: 43, chat_jid: "web:test", turn_id: "42" },
+    });
+  });
+
+  test("maps removed follow-up and applied steer with chat scope", () => {
+    expect(mapInternalToSse(scope, { type: "followup_removed", messageId: 43 })).toEqual({
+      event: "agent_followup_removed",
+      data: { row_id: 43, chat_jid: "web:test", turn_id: "42" },
+    });
+    expect(mapInternalToSse(scope, { type: "steer_applied", content: "use this instead", replica: "A" })).toEqual({
+      event: "agent_steer_queued",
+      data: { content: "use this instead", chat_jid: "web:test", turn_id: "42" },
+    });
+  });
+
+  test("maps recovery retries with chat scope", () => {
+    expect(mapInternalToSse(scope, {
+      type: "recovery",
+      messageId: 99,
+      action: "retried",
+      replica: "replica-b",
+    })).toEqual({
+      event: "agent_recovery",
+      data: {
+        message_id: 99,
+        action: "retried",
+        replica: "replica-b",
+        chat_jid: "web:test",
+        turn_id: "42",
+      },
     });
   });
 
@@ -46,9 +75,40 @@ describe("@piclaw-cloud/shared sse-events", () => {
     expect(mapped?.data.chat_jid).toBe("web:test");
   });
 
-  test("legacy mapInternalToWeb still maps delta", () => {
-    const mapped = mapInternalToWeb("s1", { type: "delta", text: "hi", replica: "A" }, scope);
-    expect(mapped).toEqual({ type: "agent_draft_delta", delta: "hi" });
+  test("maps turn_aborted to classic done status", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "turn_aborted",
+      messageId: 42,
+      replica: "A",
+    });
+    expect(mapped?.data.type).toBe("done");
+    expect(mapped?.data.title).toBe("Stopped");
+  });
+
+  test("maps user-aborted turn_failed to done", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "turn_failed",
+      messageId: 42,
+      error: "Turn aborted by user",
+      replica: "A",
+    });
+    expect(mapped?.data.type).toBe("done");
+  });
+
+  test("maps workspace_update to classic workspace_update", () => {
+    const mapped = mapInternalToSse(scope, {
+      type: "workspace_update",
+      path: "demo.ino",
+      replica: "A",
+    });
+    expect(mapped).toEqual({
+      event: "workspace_update",
+      data: {
+        updates: [{ path: "demo.ino", truncated: true }],
+        chat_jid: "web:test",
+        turn_id: "42",
+      },
+    });
   });
 });
 

@@ -12,6 +12,12 @@ const THEME_WORKSPACE_CSS = [
   "../../web/static/classic/css/workspace.css",
 ];
 
+test("timeline hamburger dropdown uses fixed coordinates from the button anchor", () => {
+  const settingsCss = readFileSync(join(import.meta.dir, "../../web/static/classic/css/settings.css"), "utf8");
+  expect(settingsCss).toContain(".timeline-menu-dropdown-fixed");
+  expect(settingsCss).toContain("position: fixed");
+});
+
 test("timeline hamburger dropdown uses available viewport height without a fixed desktop cap", () => {
   for (const relativePath of THEME_WORKSPACE_CSS) {
     const css = readFileSync(join(import.meta.dir, relativePath), "utf8");

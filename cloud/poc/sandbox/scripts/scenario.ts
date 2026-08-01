@@ -4,15 +4,13 @@
  *   1. exec + files   — commands.run + files.read/write
  *   2. PTY            — create → sendInput → connect (reattach)
  *   3. pause/resume   — filesystem marker + background process survival
- *   4. artifacts      — archive → kill → new sandbox → restore
- *   5. resume latency — p95 over multiple pause/connect cycles
+ *   4. resume latency — p95 over multiple pause/connect cycles
  */
 import { applyE2bEnv, config, missingConfig } from "../src/config.ts";
 applyE2bEnv();
 
-import { makeDir, readFile, writeFile } from "../src/fs.ts";
+import { readFile, writeFile } from "../src/fs.ts";
 import { getAccessToken } from "../src/auth.ts";
-import { archiveFromSandbox, artifactBackend, restoreToSandbox } from "../src/artifacts.ts";
 import {
   connectSandbox,
   createSandbox,
@@ -60,7 +58,6 @@ console.log("PoC 2 — CubeSandbox execution layer");
 console.log(`  api:      ${config.apiUrl}`);
 console.log(`  domain:   ${config.domain}`);
 console.log(`  template: ${config.templateId || "(missing)"}`);
-console.log(`  artifacts:${artifactBackend()} → ${config.artifactDir}`);
 
 console.log(`  proxy:    ${config.proxyNodeIp}`);
 console.log(`  ops:      ${config.opsUrl} (${config.opsUser})`);
@@ -158,37 +155,9 @@ try {
     check(bgCheck.stdout.includes("ALIVE"), "background process survived pause (memory snapshot)");
   }
 
-  // ── 4. artifacts archive / restore ──────────────────────────────────
+  // ── 4. resume latency p95 ───────────────────────────────────────────
 
-  console.log("\n[4] artifacts archive → new sandbox → restore");
-  {
-    const sbx = await track(await createSandbox());
-    const sessionKey = `poc-${Date.now()}`;
-    await makeDir(sbx, "/workspace/artifacts/nested");
-    await writeFile(sbx, "/workspace/artifacts/note.txt", "artifact-payload");
-    await writeFile(sbx, "/workspace/artifacts/nested/data.json", '{"ok":true}');
-
-    await archiveFromSandbox(sbx, sessionKey, [
-      "/workspace/artifacts/note.txt",
-      "/workspace/artifacts/nested/data.json",
-    ]);
-    const oldId = sbx.sandboxId;
-    await killSandbox(sbx);
-    sandboxes.splice(sandboxes.indexOf(sbx), 1);
-
-    const fresh = await track(await createSandbox());
-    check(fresh.sandboxId !== oldId, "new sandbox id after kill");
-
-    await restoreToSandbox(fresh, sessionKey);
-    const note = await readFile(fresh, "/workspace/artifacts/note.txt");
-    const nested = await readFile(fresh, "/workspace/artifacts/nested/data.json");
-    check(note === "artifact-payload", "restored note.txt");
-    check(nested.includes('"ok":true'), "restored nested/data.json");
-  }
-
-  // ── 5. resume latency p95 ───────────────────────────────────────────
-
-  console.log("\n[5] resume latency samples");
+  console.log("\n[4] resume latency samples");
   {
     const samples: number[] = [];
     let sbx = await track(await createSandbox());

@@ -2,7 +2,7 @@
  * SSE event vocabulary — canonical contract between brain and runtime/web.
  * PoC internal names (turn-loop) map to these via brain/events/publish.ts.
  */
-export type AgentStatus = "idle" | "thinking" | "streaming" | "tool" | "error";
+export type AgentStatus = "idle" | "thinking" | "streaming" | "tool" | "compaction" | "error";
 
 export interface SseScope {
   chatJid: string;
@@ -22,8 +22,9 @@ export type WebSseEvent =
   | { type: "agent_draft"; text: string }
   | { type: "agent_thought_delta"; delta: string }
   | { type: "agent_response"; messageId: string; content: string; recovery?: boolean }
-  | { type: "agent_followup_queued"; content: string }
-  | { type: "agent_followup_consumed"; content: string }
+  | { type: "agent_followup_queued"; content: string; row_id?: number }
+  | { type: "agent_followup_consumed"; content: string; row_id?: number }
+  | { type: "agent_followup_removed"; row_id: number }
   | { type: "agent_steer_queued"; content: string }
   | { type: "agent_question"; questionId: string; question: string; options: unknown[] }
   | { type: "subagent_created"; runId: string; agentType: string; description?: string }
@@ -37,10 +38,14 @@ export type InternalSessionEvent =
   | { type: "message"; id: number; role: string; content: string; recovery?: boolean }
   | { type: "turn_started"; messageId: number; replica: string }
   | { type: "turn_done"; messageId: number; replica: string; dbRoundtrips: number; durationMs: number }
+  | { type: "turn_aborted"; messageId?: number; replica: string }
   | { type: "turn_failed"; messageId: number; error: string; replica: string }
-  | { type: "followup_queued"; content: string }
-  | { type: "followup_consumed"; content: string }
+  | { type: "followup_queued"; content: string; messageId: number }
+  | { type: "followup_consumed"; content: string; messageId: number }
+  | { type: "followup_removed"; messageId: number }
+  | { type: "steer_applied"; content: string; replica: string }
   | { type: "recovery"; messageId: number; action: "retried" | "cleared"; replica: string }
+  | { type: "compaction_done"; compactedThroughMessageId: number; tokensBefore: number; replica: string }
   | { type: "tool_start"; name: string; toolCallId: string; replica: string; detail?: string }
   | { type: "tool_result"; name: string; toolCallId: string; isError: boolean; replica: string }
   | { type: "question_asked"; questionId: string; question: string; options: Array<{ label: string; description?: string }>; replica: string }
@@ -53,7 +58,8 @@ export type InternalSessionEvent =
   | { type: "subagent_tool_start"; runId: string; name: string; toolCallId: string; replica: string }
   | { type: "subagent_tool_result"; runId: string; name: string; toolCallId: string; isError: boolean; replica: string }
   | { type: "subagent_steered"; runId: string; message: string; replica: string }
-  | { type: "subagent_done"; runId: string; status: string; summary: string; artifacts: string[]; replica: string };
+  | { type: "subagent_done"; runId: string; status: string; summary: string; artifacts: string[]; replica: string }
+  | { type: "workspace_update"; path: string; replica: string };
 
 function scoped(scope: SseScope, data: Record<string, unknown>): Record<string, unknown> {
   const payload: Record<string, unknown> = { ...data, chat_jid: scope.chatJid };
@@ -91,18 +97,47 @@ export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): 
       );
     case "turn_done":
       return agentStatusEnvelope(scope, "done", "Idle");
+    case "turn_aborted":
+      return agentStatusEnvelope(scope, "done", "Stopped");
     case "turn_failed":
+      if (event.error === "Turn aborted by user") {
+        return agentStatusEnvelope(scope, "done", "Stopped");
+      }
       return agentStatusEnvelope(scope, "error", event.error, { detail: event.error });
     case "followup_queued":
       return {
         event: "agent_followup_queued",
-        data: scoped(scope, { content: event.content }),
+        data: scoped(scope, { content: event.content, row_id: event.messageId }),
       };
     case "followup_consumed":
       return {
         event: "agent_followup_consumed",
+        data: scoped(scope, { content: event.content, row_id: event.messageId }),
+      };
+    case "followup_removed":
+      return {
+        event: "agent_followup_removed",
+        data: scoped(scope, { row_id: event.messageId }),
+      };
+    case "steer_applied":
+      return {
+        event: "agent_steer_queued",
         data: scoped(scope, { content: event.content }),
       };
+    case "recovery":
+      return {
+        event: "agent_recovery",
+        data: scoped(scope, {
+          message_id: event.messageId,
+          action: event.action,
+          replica: event.replica,
+        }),
+      };
+    case "compaction_done":
+      return agentStatusEnvelope(scope, "compaction", "Context compacted", {
+        compacted_through_message_id: event.compactedThroughMessageId,
+        tokens_before: event.tokensBefore,
+      });
     case "tool_start":
       return agentStatusEnvelope(scope, "tool", event.name, { detail: event.detail ?? event.name });
     case "tool_result":
@@ -193,6 +228,13 @@ export function mapInternalToSse(scope: SseScope, event: InternalSessionEvent): 
           name: event.name,
           tool_call_id: event.toolCallId,
           is_error: event.isError,
+        }),
+      };
+    case "workspace_update":
+      return {
+        event: "workspace_update",
+        data: scoped(scope, {
+          updates: [{ path: event.path || ".", truncated: true }],
         }),
       };
     default:

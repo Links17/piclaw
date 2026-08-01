@@ -5,28 +5,21 @@ import * as store from "@piclaw-cloud/store";
 import { newCounter } from "@piclaw-cloud/store/db";
 import { config } from "./config.ts";
 import { publish } from "./events.ts";
-import { streamCompletionRound, type LlmUsage } from "./llm.ts";
-import {
-  assistantToolCallBlocks,
-  historyToOpenAi,
-  toolResultBlocks,
-  type OpenAiMessage,
-  type OpenAiToolCall,
-} from "./llm/messages.ts";
-import { dispatchTool, getDispatchMcpTools } from "./tools/dispatcher.ts";
-import { getToolDefinitionsForMode, type ToolDefinition } from "./tools/schemas.ts";
+import { runKernelToolLoop } from "./kernel/loop.ts";
+import { getKernelRuntime } from "./kernel/runtime.ts";
+import { resolveSessionKernelModel, resolveModelIdForLogging } from "./kernel/resolve-model.ts";
 import { QuotaExceededError } from "./quota.ts";
-import { trackTurnDelta, trackTurnFinished, trackTurnStarted, setPlanPreview } from "./agent-run-state.ts";
+import { trackTurnDelta, trackTurnFinished, trackTurnStarted, getInflightTurn } from "./agent-run-state.ts";
 import { answerPendingQuestionForSession, interruptPendingQuestion, publishQuestionCleared } from "./tools/question.ts";
 import { getPendingQuestion } from "./question/state.ts";
-import { buildSkillsPromptSection } from "./skills/registry.ts";
 import { scheduleSessionTitleGeneration } from "./session-title.ts";
+import { stopAllRunningSubagents } from "./subagents/service.ts";
+import { enqueueSessionSteerMessage } from "./subagents/channels.ts";
+import { sendAgentReplyWebPush } from "./push/service.ts";
 import {
   TurnAbortedError,
-  assertTurnNotAborted,
   beginTurnAbortScope,
   clearTurnAbortScope,
-  isTurnAborted,
   signalTurnAbort,
 } from "./turn-abort.ts";
 
@@ -35,6 +28,12 @@ export type TurnOutcome = "ran" | "queued" | "answered" | "aborted";
 export interface SubmitMessageResult {
   outcome: TurnOutcome;
   userMessageId: number;
+}
+
+export interface QueueMutationResult {
+  removed: boolean;
+  row_id?: number;
+  count: number;
 }
 
 function normalizeIncomingContent(content: string): { content: string; modeSwitch?: "plan" | "execute" } {
@@ -61,6 +60,19 @@ export async function abortSessionTurn(sessionId: string): Promise<{ ok: boolean
   } else {
     await publishQuestionCleared(sessionId);
   }
+  await stopAllRunningSubagents(sessionId);
+  trackTurnFinished(sessionId);
+  const cursor = await store.getCursor(sessionId);
+  const inflightId = cursor?.inflight_message_id == null ? undefined : Number(cursor.inflight_message_id);
+  // Invalidate the durable inflight condition used by compaction transactions.
+  // If a compaction transaction already holds the cursor lock, it commits first
+  // and remains valid; otherwise this prevents a later compaction commit.
+  await store.clearInflight(sessionId);
+  await publish(sessionId, {
+    type: "turn_aborted",
+    ...(inflightId != null && Number.isFinite(inflightId) ? { messageId: inflightId } : {}),
+    replica: config.replicaId,
+  });
   return { ok: true, aborted: true };
 }
 
@@ -109,7 +121,7 @@ export async function submitMessage(sessionId: string, content: string): Promise
       scheduleSessionTitleGeneration(sessionId, session.user_id, messageContent);
     }
     await store.enqueueFollowup(sessionId, { content: messageContent, messageId }, counter);
-    await publish(sessionId, { type: "followup_queued", content: messageContent });
+    await publish(sessionId, { type: "followup_queued", content: messageContent, messageId });
     await publish(sessionId, { type: "message", id: messageId, role: "user", content: messageContent });
     const retryLock = await store.tryLockSession(sessionId);
     if (retryLock) {
@@ -139,156 +151,6 @@ export async function submitMessage(sessionId: string, content: string): Promise
   return { outcome: "ran", userMessageId };
 }
 
-function mergeUsage(total: LlmUsage, round: LlmUsage): LlmUsage {
-  return {
-    inputTokens: (total.inputTokens ?? 0) + (round.inputTokens ?? 0),
-    outputTokens: (total.outputTokens ?? 0) + (round.outputTokens ?? 0),
-    cachedTokens: (total.cachedTokens ?? 0) + (round.cachedTokens ?? 0),
-  };
-}
-
-function toOpenAiToolCalls(calls: Array<{ id: string; name: string; arguments: string }>): OpenAiToolCall[] {
-  return calls.map((call) => ({
-    id: call.id,
-    type: "function" as const,
-    function: { name: call.name, arguments: call.arguments },
-  }));
-}
-
-async function buildTurnContext(sessionId: string): Promise<{
-  mode: "plan" | "execute";
-  tools: ToolDefinition[];
-  skillsSection: string;
-  planText: string;
-}> {
-  const session = await store.getSession(sessionId);
-  const userId = session?.user_id ?? "default-user";
-  const [mode, planText, skillsSection, mcpTools] = await Promise.all([
-    store.getSessionMode(sessionId),
-    store.getSessionPlanText(sessionId),
-    buildSkillsPromptSection(sessionId, userId),
-    getDispatchMcpTools(),
-  ]);
-  return {
-    mode,
-    planText,
-    skillsSection,
-    tools: getToolDefinitionsForMode(mode, mcpTools),
-  };
-}
-
-async function runToolLoop(
-  sessionId: string,
-  counter: ReturnType<typeof newCounter>,
-  onDelta: (text: string) => Promise<void>,
-  options: { recovery?: boolean } = {},
-): Promise<{ finalText: string; usage: LlmUsage; assistantMessageId: number | null }> {
-  const turnContext = await buildTurnContext(sessionId);
-  let messages: OpenAiMessage[] = historyToOpenAi(await store.hydrate(sessionId, counter), {
-    mode: turnContext.mode,
-    skillsSection: turnContext.skillsSection,
-    planText: turnContext.planText,
-  });
-  let totalUsage: LlmUsage = { inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
-  let finalText = "";
-  let assistantMessageId: number | null = null;
-  let questionCallsThisTurn = 0;
-
-  for (let round = 0; round < config.maxToolRounds; round += 1) {
-    assertTurnNotAborted(sessionId);
-    const result = await streamCompletionRound(messages, onDelta, turnContext.tools);
-    totalUsage = mergeUsage(totalUsage, result.usage);
-
-    if (result.toolCalls.length === 0) {
-      finalText = result.text;
-      assistantMessageId = await store.insertMessage(sessionId, "assistant", finalText, {
-        counter,
-        recoveryMarker: options.recovery ?? false,
-      });
-      messages.push({ role: "assistant", content: finalText });
-      if (turnContext.mode === "plan" && finalText.trim()) {
-        await store.setSessionPlanText(sessionId, finalText.trim());
-        setPlanPreview(sessionId, finalText.trim());
-        await publish(sessionId, { type: "plan_update", text: finalText.trim(), replica: config.replicaId });
-      }
-      break;
-    }
-
-    const toolCalls = toOpenAiToolCalls(result.toolCalls);
-    await store.insertMessage(sessionId, "assistant", result.text || "", {
-      counter,
-      contentBlocks: assistantToolCallBlocks(toolCalls),
-    });
-    messages.push({ role: "assistant", content: result.text || null, tool_calls: toolCalls });
-
-    for (const call of result.toolCalls) {
-      assertTurnNotAborted(sessionId);
-      let args: Record<string, unknown> = {};
-      let parseError: string | null = null;
-      try {
-        args = JSON.parse(call.arguments || "{}") as Record<string, unknown>;
-      } catch {
-        parseError = `Invalid tool arguments JSON for ${call.name}`;
-      }
-      const skillDetail =
-        call.name === "skill" && typeof args.name === "string" ? String(args.name) : undefined;
-
-      await publish(sessionId, {
-        type: "tool_start",
-        name: call.name,
-        toolCallId: call.id,
-        replica: config.replicaId,
-        ...(skillDetail ? { detail: skillDetail } : {}),
-      });
-
-      let toolResult: { output: string; isError: boolean };
-      if (parseError) {
-        toolResult = { output: parseError, isError: true };
-      } else if (call.name === "question") {
-        if (questionCallsThisTurn >= 1) {
-          toolResult = {
-            output: "question tool already used this turn; proceed with reasonable defaults.",
-            isError: true,
-          };
-        } else {
-          questionCallsThisTurn += 1;
-          toolResult = await dispatchTool(sessionId, call.name, args, turnContext.mode, turnContext.tools);
-        }
-      } else {
-        toolResult = await dispatchTool(sessionId, call.name, args, turnContext.mode, turnContext.tools);
-      }
-
-      if (isTurnAborted(sessionId)) {
-        throw new TurnAbortedError();
-      }
-
-      await publish(sessionId, {
-        type: "tool_result",
-        name: call.name,
-        toolCallId: call.id,
-        isError: toolResult.isError,
-        replica: config.replicaId,
-      });
-
-      await store.insertMessage(sessionId, "tool", toolResult.output, {
-        counter,
-        contentBlocks: toolResultBlocks(call.id, call.name),
-      });
-      messages.push({ role: "tool", tool_call_id: call.id, content: toolResult.output });
-    }
-
-    if (round === config.maxToolRounds - 1) {
-      finalText = result.text || "Stopped: maximum tool rounds reached.";
-      assistantMessageId = await store.insertMessage(sessionId, "assistant", finalText, {
-        counter,
-        recoveryMarker: options.recovery ?? false,
-      });
-    }
-  }
-
-  return { finalText, usage: totalUsage, assistantMessageId };
-}
-
 async function runTurnLocked(
   sessionId: string,
   messageId: number,
@@ -302,39 +164,63 @@ async function runTurnLocked(
   beginTurnAbortScope(sessionId);
 
   try {
-    const { finalText, usage, assistantMessageId } = await runToolLoop(
+    if (!getKernelRuntime()) {
+      throw new Error(
+        "Agent kernel is not initialized — configure openai in brain.config.json or set CLOUD_LLM_MOCK=1",
+      );
+    }
+    const { finalText, usage, assistantMessageId } = await runKernelToolLoop(
       sessionId,
       counter,
       async (delta) => {
         trackTurnDelta(sessionId, delta);
         await publish(sessionId, { type: "delta", text: delta, replica: config.replicaId });
       },
-      { recovery: options.recovery ?? false },
+      {
+        recovery: options.recovery ?? false,
+        // Queued follow-ups are persisted as user rows immediately; bound the
+        // active turn so recovery/replay cannot see later unprocessed prompts.
+        throughMessageId: messageId,
+      },
     );
 
     if (assistantMessageId == null) {
       throw new Error("turn completed without assistant message");
     }
 
-    await store.endTurn(sessionId, messageId, counter);
     const durationMs = Date.now() - startedAt;
-    await store.logTokenUsage({
+    const sessionRuntime = await resolveSessionKernelModel(sessionId);
+    const owner = await store.getSession(sessionId);
+    if (!owner) throw new Error(`unknown session ${sessionId}`);
+    const receipt = {
       sessionId,
-      messageId: assistantMessageId,
-      model: config.openaiModel,
+      assistantMessageId,
+      userMessageId: messageId,
+      operationId: `turn:${sessionId}:${messageId}`,
+      attempt: 1,
+      model: resolveModelIdForLogging(sessionRuntime.model),
+      provider: sessionRuntime.providerId,
       inputTokens: usage.inputTokens ?? 0,
       outputTokens: usage.outputTokens ?? 0,
+      reasoningTokens: usage.reasoningTokens ?? 0,
       cacheReadTokens: usage.cachedTokens ?? 0,
+      cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+      status: "success" as const,
+    };
+    // Persist the provider receipt first. If the process dies before the atomic
+    // turn commit, recovery can replay this exact fact without inventing usage.
+    await store.persistAssistantUsageReceiptFromLedger({
+      sessionId,
+      assistantMessageId,
+      userMessageId: messageId,
+      operationId: receipt.operationId,
+    });
+    await store.commitTurnUsage({
+      ...receipt,
+      userId: owner.user_id,
+      userMessageId: messageId,
       durationMs,
     });
-    const owner = await store.getSession(sessionId);
-    if (owner) {
-      await store.incrementDailyTokenUsage(
-        owner.user_id,
-        usage.inputTokens ?? 0,
-        usage.outputTokens ?? 0,
-      );
-    }
     await publish(sessionId, {
       type: "message",
       id: assistantMessageId,
@@ -349,15 +235,42 @@ async function runTurnLocked(
       dbRoundtrips: counter.count,
       durationMs,
     });
+    console.log(JSON.stringify({
+      level: "info",
+      event: "turn_completed",
+      replicaId: config.replicaId,
+      sessionId,
+      messageId,
+      assistantMessageId,
+      durationMs,
+      dbRoundtrips: counter.count,
+      usage: {
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        cacheReadTokens: usage.cachedTokens ?? 0,
+      },
+    }));
     trackTurnFinished(sessionId);
+    void sendAgentReplyWebPush({
+      chatJid: sessionId,
+      body: finalText,
+      userId: owner.user_id,
+    }).catch((error) => {
+      console.warn(`[${config.replicaId}] web push failed for ${sessionId}:`, error);
+    });
   } catch (error) {
+    if (error instanceof TurnAbortedError) {
+      // Preserve the consumed provider-round ledger while leaving the aborted
+      // user message retryable under the existing failed-turn recovery model.
+      await store.endTurnAborted(sessionId, messageId, counter);
+      trackTurnFinished(sessionId);
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     await store.endTurnWithError(sessionId, messageId, message, counter);
     trackTurnFinished(sessionId);
     await publish(sessionId, { type: "turn_failed", messageId, error: message, replica: config.replicaId });
-    if (!(error instanceof TurnAbortedError)) {
-      throw error;
-    }
+    throw error;
   } finally {
     clearTurnAbortScope(sessionId);
   }
@@ -368,7 +281,7 @@ async function drainFollowups(sessionId: string): Promise<void> {
     const counter = newCounter();
     const item = await store.popFollowup(sessionId, counter);
     if (item === null) return;
-    await publish(sessionId, { type: "followup_consumed", content: item.content });
+    await publish(sessionId, { type: "followup_consumed", content: item.content, messageId: item.messageId });
     await runTurnLocked(sessionId, item.messageId, counter);
   }
 }
@@ -385,7 +298,28 @@ export async function sweepInflight(): Promise<void> {
       if (inflightId === null) continue;
 
       if (await store.hasAssistantReplyAfter(row.session_id, inflightId)) {
-        await store.clearInflight(row.session_id);
+        const receipt = await store.getRecoverableAssistantUsage(row.session_id, inflightId);
+        const owner = await store.getSession(row.session_id);
+        if (receipt && owner) {
+          await store.commitTurnUsage({
+            sessionId: row.session_id,
+            userId: owner.user_id,
+            userMessageId: inflightId,
+            assistantMessageId: receipt.assistantMessageId,
+            provider: receipt.provider ?? undefined,
+            model: receipt.model ?? undefined,
+            inputTokens: receipt.inputTokens,
+            outputTokens: receipt.outputTokens,
+            reasoningTokens: receipt.reasoningTokens,
+            cacheReadTokens: receipt.cacheReadTokens,
+            cacheWriteTokens: receipt.cacheWriteTokens,
+            status: receipt.status,
+          });
+        } else {
+          // Legacy assistant rows have no provider receipt. Complete recovery,
+          // but deliberately do not fabricate token counts.
+          await store.endTurn(row.session_id, inflightId, newCounter());
+        }
         continue;
       }
 
@@ -420,4 +354,75 @@ export async function sweepInflight(): Promise<void> {
 
 export async function setSessionMode(sessionId: string, mode: "plan" | "execute"): Promise<void> {
   await store.setSessionMode(sessionId, mode);
+}
+
+export async function removeQueuedFollowup(sessionId: string, rowId: number): Promise<QueueMutationResult> {
+  const counter = newCounter();
+  const removed = await store.removeFollowupByMessageId(sessionId, rowId, counter);
+  if (!removed) {
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return { removed: false, count: items.length };
+  }
+  await store.deleteMessage(sessionId, rowId, counter);
+  await publish(sessionId, { type: "followup_removed", messageId: rowId });
+  const items = await store.listQueuedFollowupItems(sessionId);
+  return { removed: true, row_id: rowId, count: items.length };
+}
+
+export async function steerQueuedFollowup(
+  sessionId: string,
+  rowId: number,
+): Promise<QueueMutationResult & { queued?: "steer" | false; user_message?: { id: number; content: string } }> {
+  const counter = newCounter();
+  const removed = await store.removeFollowupByMessageId(sessionId, rowId, counter);
+  if (!removed) {
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return { removed: false, count: items.length };
+  }
+  await publish(sessionId, { type: "followup_removed", messageId: rowId });
+  const inflight = getInflightTurn(sessionId);
+  if (inflight) {
+    await enqueueSessionSteerMessage(sessionId, removed.content);
+    await publish(sessionId, { type: "steer_applied", content: removed.content, replica: config.replicaId });
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return {
+      removed: true,
+      row_id: rowId,
+      queued: "steer",
+      count: items.length,
+      user_message: { id: rowId, content: removed.content },
+    };
+  }
+  const lock = await store.tryLockSession(sessionId);
+  if (!lock) {
+    await store.enqueueFollowup(sessionId, removed, counter);
+    await publish(sessionId, { type: "followup_queued", content: removed.content, messageId: rowId });
+    const items = await store.listQueuedFollowupItems(sessionId);
+    return { removed: false, row_id: rowId, count: items.length };
+  }
+  try {
+    await runTurnLocked(sessionId, rowId, counter);
+    await drainFollowups(sessionId);
+  } finally {
+    await lock.release();
+  }
+  const items = await store.listQueuedFollowupItems(sessionId);
+  return {
+    removed: true,
+    row_id: rowId,
+    queued: false,
+    count: items.length,
+    user_message: { id: rowId, content: removed.content },
+  };
+}
+
+export async function reorderQueuedFollowups(
+  sessionId: string,
+  fromIndex: number,
+  toIndex: number,
+): Promise<{ reordered: boolean; count: number }> {
+  const counter = newCounter();
+  const reordered = await store.reorderFollowups(sessionId, fromIndex, toIndex, counter);
+  const items = await store.listQueuedFollowupItems(sessionId);
+  return { reordered, count: items.length };
 }

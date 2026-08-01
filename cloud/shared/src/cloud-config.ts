@@ -19,7 +19,26 @@ export interface CloudConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
+    contextWindow?: number;
+    maxTokens?: number;
   };
+  /**
+   * Additional OpenAI-compatible providers. The legacy `openai` object remains
+   * the default `piclaw-cloud` provider for backwards compatibility.
+   */
+  providers?: Array<{
+    id: string;
+    name?: string;
+    baseUrl: string;
+    apiKey: string;
+    models: Array<{
+      id: string;
+      name?: string;
+      contextWindow?: number;
+      maxTokens?: number;
+      reasoning?: boolean;
+    }>;
+  }>;
   sandbox: {
     enabled: boolean;
     apiUrl: string;
@@ -33,6 +52,15 @@ export interface CloudConfig {
     opsPassword: string;
     timeoutMs: number;
     idleMs: number;
+  };
+  storage: {
+    /** `cos` deliberately fails until a COS SDK/client adapter is supplied. */
+    backend: "local" | "cos";
+    localDir: string;
+    cosSecretId: string;
+    cosSecretKey: string;
+    cosBucket: string;
+    cosRegion: string;
   };
   subagent: {
     codingWorkerMode: CodingWorkerMode;
@@ -49,6 +77,10 @@ export interface CloudConfig {
   };
   scheduler: {
     pollMs: number;
+    serviceKey: string;
+    leaseMs: number;
+    heartbeatMs: number;
+    idlePauseLeaseMs: number;
   };
   question: {
     timeoutMs: number;
@@ -89,10 +121,13 @@ function defaultConfig(): CloudConfig {
       baseUrl: "",
       apiKey: "",
       model: "gpt-4o-mini",
+      contextWindow: 128_000,
+      maxTokens: 8192,
     },
+    providers: [],
     sandbox: {
       enabled: true,
-      apiUrl: "http://192.168.200.127:12088",
+      apiUrl: "http://192.168.200.127:13000",
       apiKey: "e2b_0000000000000000000000000000000000000000",
       templateId: "tpl-474f7cc593f145f0bb4cf232",
       domain: "cube.app",
@@ -103,6 +138,14 @@ function defaultConfig(): CloudConfig {
       opsPassword: "admin",
       timeoutMs: 5 * 60 * 1000,
       idleMs: 30 * 60 * 1000,
+    },
+    storage: {
+      backend: "local",
+      localDir: "/tmp/piclaw-cloud-objects",
+      cosSecretId: "",
+      cosSecretKey: "",
+      cosBucket: "",
+      cosRegion: "",
     },
     subagent: {
       codingWorkerMode: "auto",
@@ -119,6 +162,10 @@ function defaultConfig(): CloudConfig {
     },
     scheduler: {
       pollMs: 60_000,
+      serviceKey: "",
+      leaseMs: 60_000,
+      heartbeatMs: 15_000,
+      idlePauseLeaseMs: 60_000,
     },
     question: {
       timeoutMs: 5 * 60 * 1000,
@@ -149,6 +196,13 @@ function envNumber(...keys: string[]): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+export function isPlaceholderSchedulerServiceKey(value: string | undefined): boolean {
+  const normalized = value?.trim() ?? "";
+  return normalized === ""
+    || normalized === "replace-with-a-shared-internal-service-key"
+    || normalized === "your-scheduler-service-key";
+}
+
 function envLayer(): DeepPartial<CloudConfig> {
   const sandboxEnabled = envFirst("CLOUD_SANDBOX_ENABLED");
   const authRequired = envFirst("CLOUD_AUTH_REQUIRED");
@@ -170,6 +224,8 @@ function envLayer(): DeepPartial<CloudConfig> {
       baseUrl: envFirst("CLOUD_OPENAI_BASE_URL", "POC_OPENAI_BASE_URL"),
       apiKey: envFirst("CLOUD_OPENAI_API_KEY", "POC_OPENAI_API_KEY"),
       model: envFirst("CLOUD_OPENAI_MODEL", "POC_OPENAI_MODEL"),
+      contextWindow: envNumber("CLOUD_OPENAI_CONTEXT_WINDOW"),
+      maxTokens: envNumber("CLOUD_OPENAI_MAX_TOKENS"),
     },
     sandbox: {
       enabled: sandboxEnabled !== undefined ? sandboxEnabled !== "0" : undefined,
@@ -184,6 +240,14 @@ function envLayer(): DeepPartial<CloudConfig> {
       opsPassword: envFirst("CUBE_OPS_PASSWORD", "CUBE_ADMIN_PASSWORD", "CLOUD_SANDBOX_OPS_PASSWORD"),
       timeoutMs: envNumber("POC_SANDBOX_TIMEOUT_MS"),
       idleMs: envNumber("CLOUD_SANDBOX_IDLE_MS"),
+    },
+    storage: {
+      backend: envFirst("CLOUD_OBJECT_STORAGE_BACKEND", "POC_OBJECT_STORAGE_BACKEND") as "local" | "cos" | undefined,
+      localDir: envFirst("CLOUD_OBJECT_STORAGE_LOCAL_DIR", "POC_ARTIFACT_DIR"),
+      cosSecretId: envFirst("CLOUD_COS_SECRET_ID", "POC_COS_SECRET_ID"),
+      cosSecretKey: envFirst("CLOUD_COS_SECRET_KEY", "POC_COS_SECRET_KEY"),
+      cosBucket: envFirst("CLOUD_COS_BUCKET", "POC_COS_BUCKET"),
+      cosRegion: envFirst("CLOUD_COS_REGION", "POC_COS_REGION"),
     },
     subagent: {
       codingWorkerMode,
@@ -200,6 +264,10 @@ function envLayer(): DeepPartial<CloudConfig> {
     },
     scheduler: {
       pollMs: envNumber("CLOUD_SCHEDULER_POLL_MS"),
+      serviceKey: envFirst("CLOUD_SCHEDULER_SERVICE_KEY"),
+      leaseMs: envNumber("CLOUD_SCHEDULER_LEASE_MS"),
+      heartbeatMs: envNumber("CLOUD_SCHEDULER_HEARTBEAT_MS"),
+      idlePauseLeaseMs: envNumber("CLOUD_SCHEDULER_IDLE_PAUSE_LEASE_MS"),
     },
     question: {
       timeoutMs: envNumber("CLOUD_QUESTION_TIMEOUT_MS"),
@@ -247,7 +315,7 @@ function readFileLayer(path: string): DeepPartial<CloudConfig> {
 }
 
 function resolveConfigPath(): string {
-  return configPathOverride ?? DEFAULT_CONFIG_PATH;
+  return configPathOverride ?? envFirst("CLOUD_CONFIG_PATH") ?? DEFAULT_CONFIG_PATH;
 }
 
 function loadCloudConfig(): CloudConfig {
@@ -268,7 +336,39 @@ function loadCloudConfig(): CloudConfig {
     }
   }
 
-  return deepMerge(defaultConfig(), envLayer(), fileLayer);
+  const merged = deepMerge(defaultConfig(), envLayer(), fileLayer);
+  const env = envLayer();
+  const fileOpenAiKey = fileLayer.openai?.apiKey;
+  if (
+    (fileOpenAiKey === "sk-your-key-here" || !fileOpenAiKey)
+    && typeof env.openai?.apiKey === "string"
+    && env.openai.apiKey.trim()
+  ) {
+    merged.openai.apiKey = env.openai.apiKey;
+  }
+  const envSchedulerKey = env.scheduler?.serviceKey;
+  if (
+    typeof envSchedulerKey === "string"
+    && envSchedulerKey.trim()
+    && !isPlaceholderSchedulerServiceKey(envSchedulerKey)
+  ) {
+    merged.scheduler.serviceKey = envSchedulerKey.trim();
+  } else if (isPlaceholderSchedulerServiceKey(merged.scheduler.serviceKey)) {
+    merged.scheduler.serviceKey = "";
+  }
+  if (!(merged.scheduler.pollMs > 0)) {
+    throw new Error("scheduler.pollMs must be positive");
+  }
+  if (!(merged.scheduler.leaseMs > 0)) {
+    throw new Error("scheduler.leaseMs must be positive");
+  }
+  if (!(merged.scheduler.heartbeatMs > 0 && merged.scheduler.heartbeatMs < merged.scheduler.leaseMs)) {
+    throw new Error("scheduler.heartbeatMs must be positive and less than scheduler.leaseMs");
+  }
+  if (!(merged.scheduler.idlePauseLeaseMs > 0)) {
+    throw new Error("scheduler.idlePauseLeaseMs must be positive");
+  }
+  return merged;
 }
 
 /** Override config file path (call before first getCloudConfig()). */
