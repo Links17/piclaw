@@ -28,6 +28,7 @@ export interface GeneralSettingsSnapshot {
   uiTint: string | null;
   outputPad: number;
   widgetToken: string;
+  timezone: string | null;
 }
 
 export interface CompactionSettingsSnapshot {
@@ -81,7 +82,23 @@ function defaultGeneralSettings(): GeneralSettingsSnapshot {
     uiTint: null,
     outputPad: 0,
     widgetToken: "",
+    timezone: null,
   };
+}
+
+export function normalizeIanaTimezone(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string") throw new Error("timezone must be a valid IANA timezone");
+  const timezone = value.trim();
+  if (!timezone || /^GMT[+-]/i.test(timezone)) {
+    throw new Error("timezone must be a valid IANA timezone");
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date(0));
+  } catch {
+    throw new Error("timezone must be a valid IANA timezone");
+  }
+  return timezone;
 }
 
 function defaultCompactionSettings(): CompactionSettingsSnapshot {
@@ -124,6 +141,13 @@ export async function getGeneralSettingsSnapshot(userId = DEFAULT_USER_ID): Prom
     searchMatchMode: prefs.searchMatchMode === "and" ? "and" : "or",
     scopedModelsOnly: Boolean(prefs.scopedModelsOnly),
     uiTint: typeof prefs.uiTint === "string" ? prefs.uiTint : defaults.uiTint,
+    timezone: (() => {
+      try {
+        return normalizeIanaTimezone(prefs.timezone);
+      } catch {
+        return null;
+      }
+    })(),
   };
 }
 
@@ -149,7 +173,13 @@ export async function saveGeneralSettingsPatch(
   userId = DEFAULT_USER_ID,
 ): Promise<GeneralSettingsSnapshot> {
   const current = await readStoredSettings(userId);
-  const next = { ...current, ...patch };
+  const safePatch = {
+    ...patch,
+    ...(Object.prototype.hasOwnProperty.call(patch, "timezone")
+      ? { timezone: normalizeIanaTimezone(patch.timezone) }
+      : {}),
+  };
+  const next = { ...current, ...safePatch };
   await sql`
     UPDATE users SET preferences = ${JSON.stringify(next)}::jsonb
     WHERE id = ${userId}`;

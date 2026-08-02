@@ -140,9 +140,15 @@ export async function createScheduledTask(row: {
   scheduleType: string;
   scheduleValue: string;
   nextRun?: Date | null;
+  timezone?: string | null;
+  invocation?: object | null;
 }): Promise<void> {
+  const hasTimezone = Object.prototype.hasOwnProperty.call(row, "timezone");
+  const hasInvocation = Object.prototype.hasOwnProperty.call(row, "invocation");
   await sql`
-    INSERT INTO scheduled_tasks (id, session_id, prompt, schedule_type, schedule_value, next_run, status)
+    INSERT INTO scheduled_tasks (
+      id, session_id, prompt, schedule_type, schedule_value, next_run, status, timezone, invocation
+    )
     VALUES (
       ${row.id},
       ${row.sessionId},
@@ -150,14 +156,18 @@ export async function createScheduledTask(row: {
       ${row.scheduleType},
       ${row.scheduleValue},
       ${row.nextRun ?? null},
-      'active'
+      'active',
+      ${row.timezone ?? null},
+      ${row.invocation ? JSON.stringify(row.invocation) : null}::text::jsonb
     )
     ON CONFLICT (id) DO UPDATE SET
       prompt = EXCLUDED.prompt,
       schedule_type = EXCLUDED.schedule_type,
       schedule_value = EXCLUDED.schedule_value,
       next_run = EXCLUDED.next_run,
-        status = 'active',
+      timezone = CASE WHEN ${hasTimezone} THEN EXCLUDED.timezone ELSE scheduled_tasks.timezone END,
+      invocation = CASE WHEN ${hasInvocation} THEN EXCLUDED.invocation ELSE scheduled_tasks.invocation END,
+      status = 'active',
       claimed_at = NULL,
       claim_token = NULL,
       claim_expires_at = NULL,
@@ -173,10 +183,12 @@ export async function listDueScheduledTasks(limit = 20): Promise<
     schedule_type: string;
     schedule_value: string;
     task_kind: string;
+    timezone: string | null;
+    invocation: Record<string, unknown> | null;
   }>
 > {
   const rows = await sql`
-    SELECT id, session_id, prompt, schedule_type, schedule_value, task_kind
+    SELECT id, session_id, prompt, schedule_type, schedule_value, task_kind, timezone, invocation
     FROM scheduled_tasks
     WHERE status = 'active' AND next_run IS NOT NULL AND next_run <= now()
     ORDER BY next_run ASC
@@ -188,6 +200,10 @@ export async function listDueScheduledTasks(limit = 20): Promise<
     schedule_type: String(row.schedule_type),
     schedule_value: String(row.schedule_value),
     task_kind: row.task_kind != null ? String(row.task_kind) : "agent",
+    timezone: row.timezone != null ? String(row.timezone) : null,
+    invocation: row.invocation && typeof row.invocation === "object"
+      ? row.invocation as Record<string, unknown>
+      : null,
   }));
 }
 
@@ -198,6 +214,8 @@ export interface ClaimedScheduledTask {
   schedule_type: string;
   schedule_value: string;
   task_kind: string;
+  timezone: string | null;
+  invocation: Record<string, unknown> | null;
   claim_token: string;
   attempt_count: number;
 }
@@ -235,11 +253,12 @@ export async function claimDueScheduledTasks(
         claim_token = md5(random()::text || clock_timestamp()::text || task.id),
         claim_expires_at = now() + make_interval(secs => ${leaseMs / 1000}),
         execution_started_at = NULL,
+        delivery_message_id = NULL,
         attempt_count = task.attempt_count + 1
     FROM claimed
     WHERE task.id = claimed.id
     RETURNING task.id, task.session_id, task.prompt, task.schedule_type, task.schedule_value,
-      task.task_kind, task.claim_token, task.attempt_count`;
+      task.task_kind, task.timezone, task.invocation, task.claim_token, task.attempt_count`;
   return rows.map((row: Record<string, unknown>) => ({
     id: String(row.id),
     session_id: String(row.session_id),
@@ -247,6 +266,10 @@ export async function claimDueScheduledTasks(
     schedule_type: String(row.schedule_type),
     schedule_value: String(row.schedule_value),
     task_kind: row.task_kind != null ? String(row.task_kind) : "agent",
+    timezone: row.timezone != null ? String(row.timezone) : null,
+    invocation: row.invocation && typeof row.invocation === "object"
+      ? row.invocation as Record<string, unknown>
+      : null,
     claim_token: String(row.claim_token),
     attempt_count: Number(row.attempt_count),
   }));
@@ -280,6 +303,51 @@ export async function resetScheduledTaskExecutionForRetry(
       AND execution_started_at IS NOT NULL
     RETURNING id`;
   return rows.length > 0;
+}
+
+export async function deliverScheduledTaskOutcome(
+  taskId: string,
+  claimToken: string,
+  summary: string,
+): Promise<{ delivered: boolean; messageId: number | null }> {
+  const rows = await sql`
+    WITH claimed_task AS (
+      SELECT id, session_id
+      FROM scheduled_tasks
+      WHERE id = ${taskId}
+        AND claim_token = ${claimToken}
+        AND claim_expires_at > now()
+        AND execution_started_at IS NOT NULL
+        AND delivery_message_id IS NULL
+      FOR UPDATE
+    ),
+    inserted_message AS (
+      INSERT INTO messages (session_id, role, content, content_blocks, recovery_marker)
+      SELECT
+        session_id,
+        'assistant',
+        ${summary},
+        jsonb_build_object(
+          'scheduled_task_id', ${taskId}::text,
+          'scheduled_claim_token', ${claimToken}::text
+        ),
+        false
+      FROM claimed_task
+      RETURNING id
+    )
+    UPDATE scheduled_tasks AS task
+    SET delivery_message_id = inserted_message.id
+    FROM inserted_message
+    WHERE task.id = ${taskId}
+      AND task.claim_token = ${claimToken}
+      AND task.claim_expires_at > now()
+      AND task.delivery_message_id IS NULL
+    RETURNING inserted_message.id`;
+  const messageId = rows[0]?.id;
+  return {
+    delivered: messageId != null,
+    messageId: messageId == null ? null : Number(messageId),
+  };
 }
 
 export async function renewScheduledTaskClaim(

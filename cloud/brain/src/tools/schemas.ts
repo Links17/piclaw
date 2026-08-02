@@ -137,7 +137,7 @@ export const CORE_TOOL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: "Agent",
       description:
-        "Launch a specialized subagent to perform a task. Supports background execution and resume.",
+        "Delegate immediate or background work to an independently managed agent profile. Prefer it for repository-dependent, multi-file, multi-step, or research work that benefits from its own context and lifecycle. Do not use it for a short self-contained answer, trivial exact edit, or persistent scheduled work.",
       parameters: {
         type: "object",
         properties: {
@@ -145,14 +145,14 @@ export const CORE_TOOL_DEFINITIONS: ToolDefinition[] = [
           description: { type: "string", description: "Short human-readable description of the task" },
           subagent_type: {
             type: "string",
-            enum: ["general-purpose", "explore", "plan"],
-            description: "Subagent type",
+            enum: ["general-purpose", "explore", "plan", "research"],
+            description:
+              "Agent profile. general-purpose uses a coding sandbox; explore, plan, and research use service execution without a coding sandbox.",
           },
           model: { type: "string", description: "Optional model override" },
           max_turns: { type: "number", description: "Maximum tool rounds for the subagent" },
           run_in_background: { type: "boolean", description: "Return immediately while subagent runs in background" },
           resume: { type: "string", description: "Resume a previous subagent run by run id" },
-          schedule: { type: "string", description: "Optional schedule e.g. cron, interval, +10m" },
         },
         required: ["prompt", "description", "subagent_type"],
       },
@@ -161,16 +161,43 @@ export const CORE_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: "function" as const,
     function: {
-      name: "coding_agent",
-      description: "Deprecated alias for Agent(subagent_type=general-purpose).",
+      name: "scheduled_tasks",
+      description:
+        "Create and manage durable scheduled agent work. Use create only when the user has asked to execute a future or recurring task. A successful create returns confirmed=true with a real task id and next_run; do not claim success without it.",
       parameters: {
         type: "object",
         properties: {
-          task: { type: "string", description: "Coding task description for the subagent" },
-          constraints: { type: "string", description: "Optional constraints or acceptance criteria" },
-          timeout_ms: { type: "number", description: "Optional timeout in milliseconds" },
+          action: {
+            type: "string",
+            enum: ["create", "list", "get", "pause", "resume", "delete"],
+            description: "Scheduled task action.",
+          },
+          id: { type: "string", description: "Task id for get, pause, resume, or delete." },
+          schedule_type: {
+            type: "string",
+            enum: ["cron", "interval", "once"],
+            description: "Schedule type for create.",
+          },
+          schedule_value: {
+            type: "string",
+            description:
+              "For cron, a five- or six-field cron expression; for interval, a positive duration in milliseconds; for once, an ISO-8601 timestamp with Z or explicit offset.",
+          },
+          timezone: {
+            type: "string",
+            description: "IANA timezone required for cron schedules, for example Asia/Shanghai.",
+          },
+          prompt: { type: "string", description: "The work prompt for the scheduled agent." },
+          description: { type: "string", description: "Short human-readable task description." },
+          subagent_type: {
+            type: "string",
+            enum: ["general-purpose", "explore", "plan", "research"],
+            description: "Agent profile for the scheduled invocation. Defaults to general-purpose.",
+          },
+          model: { type: "string", description: "Optional model override." },
+          max_turns: { type: "number", description: "Optional maximum tool rounds." },
         },
-        required: ["task"],
+        required: ["action"],
       },
     },
   },
@@ -255,12 +282,11 @@ const BASELINE_TOOL_NAMES = new Set([
   "question",
   "todo",
   "skill",
-  // Creating or modifying workspace code is the main Agent workflow. Keeping
-  // this narrow delegating alias available prevents a staged-discovery loop
-  // from consuming a real model's tool-round budget before it can delegate.
-  "coding_agent",
+  "Agent",
+  "scheduled_tasks",
   ...DISCOVERY_TOOL_DEFINITIONS.map((tool) => tool.function.name),
 ]);
+const COMPATIBILITY_TOOL_NAMES = new Set(["coding_agent"]);
 const PLAN_MODE_ALLOWED = new Set(["read", "question", "todo", "skill", ...DISCOVERY_TOOL_DEFINITIONS.map((tool) => tool.function.name)]);
 
 export type ToolCatalogEntry = Pick<ToolDefinition["function"], "name" | "description">;
@@ -292,7 +318,11 @@ export function toolNamesForMode(
   extra: ToolDefinition[] = [],
   activeNames: ReadonlySet<string> = new Set(),
 ): Set<string> {
-  return new Set(getToolDefinitionsForMode(mode, extra, activeNames).map((tool) => tool.function.name));
+  const names = new Set(getToolDefinitionsForMode(mode, extra, activeNames).map((tool) => tool.function.name));
+  if (mode === "execute") {
+    for (const name of COMPATIBILITY_TOOL_NAMES) names.add(name);
+  }
+  return names;
 }
 
 export function activatableToolNames(extra: ToolDefinition[] = []): Set<string> {

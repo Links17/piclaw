@@ -30,6 +30,20 @@ describe("resolveSessionLoopToolDefinitions", () => {
     expect(resolveSessionLoopToolDefinitions(sessionId, "execute", [mcpTool]).map((tool) => tool.function.name))
       .toContain("mcp__docs__search");
   });
+
+  test("preserves strict service capability boundaries", () => {
+    const strict = [{
+      type: "function" as const,
+      function: {
+        name: "mcp__web__search",
+        description: "Search the web",
+        parameters: { type: "object" },
+      },
+    }];
+
+    expect(resolveSessionLoopToolDefinitions("strict-service", "plan", strict, true))
+      .toEqual(strict);
+  });
 });
 
 describe("buildIncrementalCompactionMessages", () => {

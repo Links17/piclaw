@@ -9,6 +9,7 @@ export async function executeInternalScheduledTask(task: {
   prompt: string;
   schedule_type: string;
   schedule_value: string;
+  timezone?: string | null;
 }, signal?: AbortSignal): Promise<{ ok: boolean; summary: string; error?: string }> {
   if (signal?.aborted) throw signal.reason ?? new Error("scheduled execution aborted");
   const dreamToken = parseDreamPromptToken(task.prompt);
@@ -34,6 +35,7 @@ export async function finalizeScheduledTaskRun(task: {
   claim_token: string;
   schedule_type: string;
   schedule_value: string;
+  timezone?: string | null;
 }, startedAt: number, outcome: { ok: boolean; summary: string; error?: string }): Promise<void> {
   const durationMs = Date.now() - startedAt;
   if (outcome.ok) {
@@ -53,7 +55,10 @@ export async function finalizeScheduledTaskRun(task: {
   }
   const nextRun = task.schedule_type === "once"
     ? null
-    : computeNextRun(task.schedule_type, task.schedule_value, { currentDate: new Date() });
+    : computeNextRun(task.schedule_type, task.schedule_value, {
+        currentDate: new Date(),
+        timezone: task.timezone,
+      });
   if (outcome.ok) {
     await store.completeScheduledTaskClaim(task.id, task.claim_token, nextRun, outcome.summary);
   } else {

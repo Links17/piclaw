@@ -40,6 +40,7 @@ export async function handleInternalScheduledTaskExecute(
       prompt: claimed.prompt,
       schedule_type: claimed.schedule_type,
       schedule_value: claimed.schedule_value,
+      timezone: claimed.timezone,
     }, req.signal);
     return json({ ok: outcome.ok, summary: outcome.summary, error: outcome.error ?? null });
   } finally {

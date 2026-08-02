@@ -7,6 +7,7 @@ import {
   claimDueScheduledTasks,
   completeIdleSessionPauseClaim,
   completeScheduledTaskClaim,
+  deliverScheduledTaskOutcome,
   failScheduledTaskClaim,
   resetScheduledTaskExecutionForRetry,
   failIdleSessionPauseClaim,
@@ -52,6 +53,67 @@ async function createDueTask(suffix: string): Promise<string> {
 }
 
 describe("scheduled task leases", () => {
+  it("persists a trigger plus invocation template and returns both when claimed", async () => {
+    if (!pgAvailable) return;
+    const id = `${TEST_TASK_PREFIX}-invocation-template`;
+    const invocation = {
+      version: 1,
+      agentType: "research",
+      executionBackend: "service",
+      prompt: "Find important AI news",
+      description: "Daily AI news",
+    };
+    await upsertScheduledTask({
+      id,
+      sessionId: TEST_SESSION,
+      prompt: invocation.prompt,
+      scheduleType: "cron",
+      scheduleValue: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      invocation,
+      nextRun: new Date(Date.now() - 1_000).toISOString(),
+    });
+
+    const claimed = (await claimDueScheduledTasks(20, 60_000)).find((task) => task.id === id);
+
+    expect(claimed?.timezone).toBe("Asia/Shanghai");
+    expect(claimed?.invocation).toEqual(invocation);
+  });
+
+  it("preserves timezone and invocation when an older upsert omits them", async () => {
+    if (!pgAvailable) return;
+    const id = `${TEST_TASK_PREFIX}-preserve-template`;
+    const invocation = {
+      version: 1,
+      agentType: "research",
+      executionBackend: "service",
+      prompt: "Research",
+      description: "Research",
+    };
+    await upsertScheduledTask({
+      id,
+      sessionId: TEST_SESSION,
+      prompt: "Research",
+      scheduleType: "cron",
+      scheduleValue: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      invocation,
+      nextRun: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await upsertScheduledTask({
+      id,
+      sessionId: TEST_SESSION,
+      prompt: "Updated research",
+      scheduleType: "cron",
+      scheduleValue: "0 9 * * *",
+      nextRun: new Date(Date.now() + 120_000).toISOString(),
+    });
+
+    const rows = await sql`SELECT timezone, invocation FROM scheduled_tasks WHERE id = ${id}`;
+    expect(rows[0]?.timezone).toBe("Asia/Shanghai");
+    expect(rows[0]?.invocation).toEqual(invocation);
+  });
+
   it("atomically leases due work and does not issue a second live lease", async () => {
     if (!pgAvailable) return;
     const id = await createDueTask("exclusive");
@@ -76,6 +138,57 @@ describe("scheduled task leases", () => {
     ]);
 
     expect(starts.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("delivers a completed scheduled outcome once and fences stale claims", async () => {
+    if (!pgAvailable) throw new Error("PostgreSQL unavailable: scheduled delivery test requires a database");
+    const id = await createDueTask("outcome-delivery");
+    const claim = (await claimDueScheduledTasks(20, 60_000)).find((task) => task.id === id);
+    if (!claim) throw new Error("test task was not claimed");
+    expect(await beginScheduledTaskExecution(id, claim.claim_token)).toBe(true);
+
+    const deliveries = await Promise.all([
+      deliverScheduledTaskOutcome(id, claim.claim_token, "The scheduled report is ready."),
+      deliverScheduledTaskOutcome(id, claim.claim_token, "The scheduled report is ready."),
+    ]);
+
+    const messageId = deliveries.find((delivery) => delivery.delivered)?.messageId;
+    expect(messageId).toBeNumber();
+    expect(deliveries.filter((delivery) => delivery.delivered)).toHaveLength(1);
+    expect(await deliverScheduledTaskOutcome(id, "stale-token", "stale")).toEqual({
+      delivered: false,
+      messageId: null,
+    });
+    const rows = await sql`
+      SELECT role, content
+      FROM messages
+      WHERE session_id = ${TEST_SESSION} AND id = ${messageId}`;
+    expect(rows).toEqual([{ role: "assistant", content: "The scheduled report is ready." }]);
+  });
+
+  it("rearms outcome delivery when a recurring task receives its next claim", async () => {
+    if (!pgAvailable) throw new Error("PostgreSQL unavailable: recurring delivery test requires a database");
+    const id = await createDueTask("outcome-delivery-recurrence");
+    const first = (await claimDueScheduledTasks(20, 60_000)).find((task) => task.id === id);
+    if (!first) throw new Error("test task was not claimed");
+    expect(await beginScheduledTaskExecution(id, first.claim_token)).toBe(true);
+    expect(await deliverScheduledTaskOutcome(id, first.claim_token, "First report")).toMatchObject({
+      delivered: true,
+    });
+    expect(await completeScheduledTaskClaim(
+      id,
+      first.claim_token,
+      new Date(Date.now() + 60_000).toISOString(),
+      "First report",
+    )).toBe(true);
+    await sql`UPDATE scheduled_tasks SET next_run = now() - interval '1 second' WHERE id = ${id}`;
+
+    const second = (await claimDueScheduledTasks(20, 60_000)).find((task) => task.id === id);
+    if (!second) throw new Error("test task was not reclaimed");
+    expect(await beginScheduledTaskExecution(id, second.claim_token)).toBe(true);
+    expect(await deliverScheduledTaskOutcome(id, second.claim_token, "Second report")).toMatchObject({
+      delivered: true,
+    });
   });
 
   it("reclaims an expired lease with a new claim token", async () => {

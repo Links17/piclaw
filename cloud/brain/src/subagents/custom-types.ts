@@ -11,7 +11,7 @@ export interface CustomAgentType {
   description: string;
   prompt: string;
   skills: string[];
-  subagentType: "general-purpose" | "explore" | "plan";
+  subagentType: "general-purpose" | "explore" | "plan" | "research";
   tools?: string[];
   promptMode?: "replace" | "append";
   maxTurns?: number;
@@ -38,7 +38,9 @@ function parseAgentFrontmatter(content: string): Partial<CustomAgentType> {
     name,
     description,
     subagentType:
-      subagentType === "explore" || subagentType === "plan" ? subagentType : "general-purpose",
+      subagentType === "explore" || subagentType === "plan" || subagentType === "research"
+        ? subagentType
+        : "general-purpose",
     skills: skills ? skills.split(",").map((item) => item.trim().replace(/^['"]|['"]$/g, "")) : [],
     tools: tools ? tools.split(",").map((item) => item.trim().replace(/^['"]|['"]$/g, "")) : undefined,
     promptMode: promptMode === "append" ? "append" : promptMode === "replace" ? "replace" : undefined,
@@ -81,6 +83,20 @@ export async function discoverCustomAgentTypes(sessionId: string): Promise<Custo
   return agents;
 }
 
+export async function discoverCustomAgentTypesIfNeeded(
+  sessionId: string,
+  requestedType: string,
+): Promise<CustomAgentType[]> {
+  if (requestedType === "general-purpose"
+    || requestedType === "explore"
+    || requestedType === "plan"
+    || requestedType === "research"
+    || requestedType === "coding") {
+    return [];
+  }
+  return discoverCustomAgentTypes(sessionId);
+}
+
 export async function scheduleAgentTask(
   sessionId: string,
   row: {
@@ -89,14 +105,19 @@ export async function scheduleAgentTask(
     scheduleType: string;
     scheduleValue: string;
     nextRun?: Date | null;
+    timezone?: string | null;
+    invocation?: object | null;
   },
 ): Promise<void> {
-  await store.createScheduledTask({
+  const task: Parameters<typeof store.createScheduledTask>[0] = {
     id: row.id,
     sessionId,
     prompt: row.prompt,
     scheduleType: row.scheduleType,
     scheduleValue: row.scheduleValue,
     nextRun: row.nextRun ?? null,
-  });
+  };
+  if (Object.prototype.hasOwnProperty.call(row, "timezone")) task.timezone = row.timezone ?? null;
+  if (Object.prototype.hasOwnProperty.call(row, "invocation")) task.invocation = row.invocation ?? null;
+  await store.createScheduledTask(task);
 }

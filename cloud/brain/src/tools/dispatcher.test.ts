@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { dispatchTool } from "./dispatcher.ts";
 import { resetActiveToolNames } from "./active.ts";
+import { toolNamesForMode } from "./schemas.ts";
 
 describe("tool discovery dispatcher", () => {
   const sessionId = "tool-discovery-test";
@@ -49,5 +50,55 @@ describe("tool discovery dispatcher", () => {
 
     const result = await dispatchTool(sessionId, "bash", { command: "pwd" });
     expect(result.isError).toBe(true);
+  });
+
+  test("strict profiles reject tools outside their exact allowlist", async () => {
+    resetActiveToolNames(sessionId);
+    await dispatchTool(sessionId, "activate_tools", { names: ["bash"] });
+
+    const result = await dispatchTool(
+      sessionId,
+      "bash",
+      { command: "pwd" },
+      "plan",
+      [],
+      new Set(["question"]),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain("strict profile");
+  });
+
+  test("rejects incomplete scheduled task creation before any persistence", async () => {
+    const result = await dispatchTool(
+      sessionId,
+      "scheduled_tasks",
+      { action: "create", schedule_type: "cron", schedule_value: "0 10 * * *" },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.output)).toMatchObject({
+      action: "create",
+      confirmed: false,
+      error: "schedule_type, schedule_value, and prompt are required",
+    });
+  });
+
+  test("makes scheduled task management available to the main agent", () => {
+    expect(toolNamesForMode("execute")).toContain("scheduled_tasks");
+  });
+
+  test("rejects scheduled task management from a strict service profile", async () => {
+    const result = await dispatchTool(
+      sessionId,
+      "scheduled_tasks",
+      { action: "list" },
+      "execute",
+      [],
+      new Set(["question"]),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain("strict profile");
   });
 });

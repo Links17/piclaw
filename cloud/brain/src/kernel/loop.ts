@@ -18,16 +18,18 @@ import { hydrateWithCompaction } from "./smart-compaction.ts";
 async function buildTurnContext(sessionId: string) {
   const session = await store.getSession(sessionId);
   const userId = session?.user_id ?? "default-user";
-  const [mode, planText, skillsSection, mcpTools] = await Promise.all([
+  const [mode, planText, skillsSection, mcpTools, generalSettings] = await Promise.all([
     store.getSessionMode(sessionId),
     store.getSessionPlanText(sessionId),
     buildSkillsPromptSection(sessionId, userId),
     getDispatchMcpTools(),
+    store.getGeneralSettingsSnapshot(userId),
   ]);
   return {
     mode,
     planText,
     skillsSection,
+    timezone: generalSettings.timezone,
     tools: getAllToolDefinitions(mcpTools),
   };
 }
@@ -64,6 +66,7 @@ export async function runKernelToolLoop(
     mode: turnContext.mode,
     skillsSection: turnContext.skillsSection,
     planText: turnContext.planText,
+    timezone: turnContext.timezone,
   });
 
   const result = await runAgentSessionLoop({

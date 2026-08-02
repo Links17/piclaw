@@ -20,12 +20,15 @@ describe("tool schemas", () => {
     expect(names).not.toContain("Agent");
   });
 
-  test("execute mode starts with discovery baseline instead of all tools", () => {
+  test("execute mode exposes the canonical Agent orchestrator", () => {
     const names = [...toolNamesForMode("execute")];
     expect(names).toContain("list_tools");
-    expect(names).toContain("coding_agent");
+    expect(names).toContain("Agent");
+    expect(names).toContain("scheduled_tasks");
     expect(names).not.toContain("bash");
-    expect(names).not.toContain("Agent");
+    expect(names).toContain("coding_agent");
+    expect(getToolDefinitionsForMode("execute").map((tool) => tool.function.name))
+      .not.toContain("coding_agent");
   });
 
   test("active tools augment the baseline without exposing inactive tools", () => {
@@ -47,8 +50,45 @@ describe("tool schemas", () => {
       },
     ]);
     expect(catalog.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining(["Agent", "coding_agent", "mcp__docs__search"]),
+      expect.arrayContaining(["Agent", "mcp__docs__search"]),
     );
+    expect(catalog.map((tool) => tool.name)).not.toContain("coding_agent");
+  });
+
+  test("Agent describes immediate delegation boundaries and research execution", () => {
+    const execute = getToolDefinitionsForMode("execute", []);
+    const agent = execute.find((tool) => tool.function.name === "Agent");
+    const parameters = agent?.function.parameters as {
+      properties?: { subagent_type?: { enum?: string[] }; schedule?: unknown; timezone?: unknown };
+    } | undefined;
+
+    expect(agent).toBeDefined();
+    expect(parameters?.properties?.subagent_type?.enum).toContain("research");
+    expect(agent?.function.description).toContain("repository-dependent");
+    expect(agent?.function.description).toContain("persistent scheduled work");
+    expect(parameters?.properties?.schedule).toBeUndefined();
+    expect(parameters?.properties?.timezone).toBeUndefined();
+  });
+
+  test("scheduled_tasks is a first-class execution tool with structured actions", () => {
+    const execute = getToolDefinitionsForMode("execute", []);
+    const scheduledTasks = execute.find((tool) => tool.function.name === "scheduled_tasks");
+    const parameters = scheduledTasks?.function.parameters as {
+      properties?: {
+        action?: { enum?: string[] };
+        schedule_type?: { enum?: string[] };
+        timezone?: { description?: string };
+      };
+    } | undefined;
+
+    expect(scheduledTasks).toBeDefined();
+    expect(parameters?.properties?.action?.enum).toEqual(
+      expect.arrayContaining(["create", "list", "get", "pause", "resume", "delete"]),
+    );
+    expect(parameters?.properties?.schedule_type?.enum).toEqual(
+      expect.arrayContaining(["cron", "interval", "once"]),
+    );
+    expect(parameters?.properties?.timezone?.description).toContain("IANA");
   });
 
   test("todo_update maps to agent_draft plan panel", () => {

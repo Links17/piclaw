@@ -23,6 +23,124 @@
 - `bun test <path>` — run tests
 - `make ci-fast` — full CI gate
 
+## Agent architecture
+
+PiClaw uses an orchestration-first agent architecture. Keep conversation
+reasoning, reliable scheduling, business execution, and execution
+infrastructure as separate concerns.
+
+### Main agent
+
+The main agent is the user-facing orchestrator. It should:
+
+- understand intent and distinguish discussion, immediate execution, background
+  execution, and scheduled execution
+- ask focused clarification questions when required inputs are missing
+- select an agent profile or workflow and construct a normalized invocation
+- submit work to the common invocation dispatcher
+- summarize progress and results for the user
+
+The main agent should not absorb business implementations that need their own
+lifecycle, permissions, retries, accounting, or execution context. It may still
+answer conceptual questions, discuss designs, summarize results, and handle
+trivial self-contained work when delegation would cost more than the work.
+
+### Scheduler
+
+The scheduler is a reliable control plane, not a subagent. It owns:
+
+- persisted `once`, `interval`, and `cron` triggers
+- timezone-aware `next_run` calculation
+- claims, leases, heartbeats, retries, pause/cancel, and failure recovery
+- idempotent dispatch of the invocation attached to a due task
+- run status, result metadata, and recurrence calculation
+
+A scheduled task is a trigger plus an invocation template:
+
+```text
+ScheduledTask = Trigger + AgentInvocationTemplate
+```
+
+The scheduler must not interpret business intent, call an LLM to decide what
+the task means, or implement the task itself. When a task becomes due, it
+dispatches the stored invocation through the same path used by immediate and
+background work.
+
+### Agent runtime and execution backends
+
+A subagent is an independently managed work unit with its own context,
+capabilities, lifecycle, permissions, budget, accounting, and result. A
+subagent does not imply a sandbox.
+
+Agent profiles declare an execution backend:
+
+- `sandbox` — isolated filesystem, shell, coding, builds, and tests
+- `service` — restricted in-process capabilities without a sandbox
+- `remote` — MCP, HTTP, or a dedicated external worker
+- `workflow` — deterministic business steps with optional agent reasoning at
+  defined points
+
+For example, a coding agent normally uses `sandbox`; a research agent can use
+`service` or `remote`; notification and maintenance work should usually use a
+deterministic `workflow`.
+
+### Unified invocation contract
+
+Immediate, background, and scheduled work must converge on one invocation
+dispatcher and one lifecycle model. An invocation should carry, at minimum:
+
+- user and session ownership
+- agent profile and task input
+- execution backend and run mode
+- model, turn, timeout, and token budgets where applicable
+- stable operation ID and attempt number
+- owner token and generation for fencing
+
+The run modes differ only in admission and delivery:
+
+```text
+immediate -> invocation dispatcher
+background -> invocation queue -> invocation dispatcher
+scheduled -> scheduler -> invocation queue -> invocation dispatcher
+```
+
+Token reservation, usage receipts, quota settlement, heartbeat, drain,
+cancelation, and recovery should apply consistently across all execution
+backends, including agents that do not use a sandbox.
+
+### Extending the system
+
+Do not create a new subagent type for every business request. Choose the
+smallest reusable extension point:
+
+- add a **capability/tool** for a new atomic operation
+- add an **agent profile** for a distinct reasoning role, capability set,
+  permission boundary, or execution policy
+- add a **workflow** for a stable, repeatable business process
+- add a **scheduled task** when an existing invocation must run later or recur
+
+Prefer composing reusable capabilities into a small set of well-defined agent
+profiles. For example, daily and weekly news jobs should normally share a
+research agent and differ in their prompt and trigger rather than becoming
+separate agent types.
+
+### Scheduling contract
+
+Natural-language time expressions may be interpreted by the main agent, but
+they must be normalized and validated before persistence. Store structured
+trigger type, value, and IANA timezone; never persist an ambiguous phrase as
+the executable schedule.
+
+Timezone precedence is:
+
+1. timezone explicitly supplied in the current request
+2. the user's saved IANA timezone
+3. clarification through the question flow
+
+Only report that a task was created after persistence succeeds and a real task
+ID is returned. Discussion about reminders or scheduling must not create a
+task.
+
 ## Release process
 
 Releases follow a two-phase tag workflow. **No release ships without passing UX tests.**

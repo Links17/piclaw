@@ -8,9 +8,9 @@ import { isLlmMockEnabled } from "../llm.ts";
 import { publish } from "../events.ts";
 import { publishWorkspaceUpdates } from "../workspace/publish.ts";
 import { notifySubagentCompletion } from "./channels.ts";
-import { discoverCustomAgentTypes, scheduleAgentTask } from "./custom-types.ts";
+import { discoverCustomAgentTypesIfNeeded, scheduleAgentTask } from "./custom-types.ts";
 import { allocateSubagentRunId, normalizeSubagentRunId } from "./run-id.ts";
-import { isDeferredSchedule } from "./schedule.ts";
+import { isDeferredSchedule, normalizeAgentSchedule } from "./schedule.ts";
 import { buildSkillPreloadSection } from "../skills/registry.ts";
 import { runSubagentLoop } from "./subagent-loop.ts";
 import { runSandboxPiWorker, SandboxWorkerError } from "./sandbox-worker.ts";
@@ -25,6 +25,8 @@ import { TurnAbortedError } from "../turn-abort.ts";
 import { realtimeKernelUsageEntry, usageEntriesForSubagentOutcome } from "./usage-ledger.ts";
 import { beginOperation, beginOperationIfAccepting } from "../operations.ts";
 import { QuotaExceededError } from "../quota.ts";
+import { createAgentInvocation, createAgentInvocationTemplate } from "./invocation.ts";
+import { resolveSubagentProfile } from "./profiles.ts";
 
 export { usageEntriesForSubagentOutcome } from "./usage-ledger.ts";
 
@@ -195,16 +197,31 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
     replica: config.replicaId,
   });
 
-    if (
-      options.subagentType === "explore" ||
-      options.subagentType === "plan" ||
-      (options.subagentType === "general-purpose" && !shouldUseSandboxWorker(options.prompt))
-    ) {
+    const profile = await resolveSubagentProfile(
+      options.subagentType,
+      sessionId,
+      options.profileOverrides,
+    );
+    const invocation = createAgentInvocation({
+      operationId: activeInvocationId,
+      userId: owner.user_id,
+      sessionId,
+      agentType: options.subagentType,
+      executionBackend: profile.executionBackend,
+      runMode: options.runInBackground ? "background" : "foreground",
+      prompt: options.prompt,
+      description: options.description,
+      model: options.model,
+      maxTurns: options.maxTurns,
+      timeoutMs: options.timeoutMs,
+    });
+
+    if (profile.runner === "kernel") {
       const loop = await runSubagentLoop(sessionId, runId, {
-        agentType: options.subagentType,
-        prompt: options.prompt,
-        constraints: options.description,
-        maxTurns: options.maxTurns,
+        agentType: invocation.agentType,
+        prompt: invocation.prompt,
+        constraints: invocation.description,
+        maxTurns: invocation.maxTurns,
         profileOverrides: options.profileOverrides,
         invocationId: activeInvocationId,
         signal,
@@ -238,7 +255,11 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
       return finishSubagentOutcome(sessionId, runId, outcome, invocationId, invocationFence);
     }
 
-    if (shouldUseSandboxWorker(options.prompt)) {
+    if (profile.runner !== "coding-worker" || invocation.executionBackend !== "sandbox") {
+      throw new Error(`unsupported agent execution backend: ${invocation.executionBackend}`);
+    }
+
+    if (shouldUseSandboxWorker(invocation.prompt)) {
       sandboxReservation = await store.reserveTokenBudget({
         userId: owner.user_id,
         operationId: reservationOperationId,
@@ -263,9 +284,9 @@ async function executeRun(sessionId: string, runId: string, options: AgentToolOp
     let coding: CodingSubagentResult;
     try {
       coding = await runCodingSubagent(sessionId, {
-        task: options.prompt,
-        constraints: options.description,
-        timeoutMs: options.timeoutMs,
+        task: invocation.prompt,
+        constraints: invocation.description,
+        timeoutMs: invocation.timeoutMs,
         runId,
         agentType: options.subagentType === "general-purpose" ? "general-purpose" : "coding",
         description: options.description,
@@ -424,18 +445,59 @@ async function drainQueuedRuns(sessionId: string): Promise<void> {
 export async function spawnAgent(sessionId: string, options: AgentToolOptions): Promise<SubagentRunOutcome> {
   const deferredSchedule = options.schedule?.trim() ?? "";
   if (isDeferredSchedule(deferredSchedule)) {
+    const session = await store.getSession(sessionId);
+    if (!session) throw new Error(`unknown session ${sessionId}`);
+    const generalSettings = await store.getGeneralSettingsSnapshot(session.user_id);
+    const customTypes = await discoverCustomAgentTypesIfNeeded(sessionId, options.subagentType);
+    const custom = customTypes.find((entry) => entry.name === options.subagentType);
+    const effectiveAgentType = custom?.subagentType ?? options.subagentType;
+    const profile = await resolveSubagentProfile(effectiveAgentType, sessionId, custom
+      ? {
+          promptMode: custom.promptMode,
+          maxTurns: custom.maxTurns ?? options.maxTurns,
+          toolNames: custom.tools,
+        }
+      : options.profileOverrides);
+    const schedule = normalizeAgentSchedule(deferredSchedule, {
+      timezone: options.timezone ?? generalSettings.timezone,
+    });
+    const scheduledPrompt = custom
+      ? [
+          custom.prompt,
+          custom.skills?.length ? await buildSkillPreloadSection(session.user_id, custom.skills) : "",
+          `Task:\n${options.prompt}`,
+        ].filter(Boolean).join("\n\n")
+      : options.prompt;
+    const invocation = createAgentInvocationTemplate({
+      agentType: effectiveAgentType,
+      executionBackend: profile.executionBackend,
+      prompt: scheduledPrompt,
+      description: custom?.description || options.description,
+      model: custom?.model || options.model,
+      maxTurns: custom?.maxTurns ?? options.maxTurns,
+      timeoutMs: options.timeoutMs,
+      profileOverrides: custom
+        ? {
+            promptMode: custom.promptMode,
+            maxTurns: custom.maxTurns,
+            toolNames: custom.tools,
+          }
+        : options.profileOverrides,
+    });
     const taskId = `sched-${crypto.randomUUID()}`;
     await scheduleAgentTask(sessionId, {
       id: taskId,
-      prompt: options.prompt,
-      scheduleType: deferredSchedule.includes("cron") ? "cron" : "interval",
-      scheduleValue: deferredSchedule,
-      nextRun: new Date(Date.now() + 60_000),
+      prompt: scheduledPrompt,
+      scheduleType: schedule.type,
+      scheduleValue: schedule.value,
+      timezone: schedule.timezone,
+      nextRun: new Date(schedule.nextRun),
+      invocation,
     });
     return {
       runId: taskId,
       status: "queued",
-      summary: `Scheduled subagent (${options.schedule})`,
+      summary: `Scheduled agent ${taskId} (${schedule.type})`,
       artifacts: [],
       usage: { inputTokens: 0, outputTokens: 0 },
       background: true,
@@ -445,7 +507,7 @@ export async function spawnAgent(sessionId: string, options: AgentToolOptions): 
   const session = await store.getSession(sessionId);
   if (!session) throw new Error(`unknown session ${sessionId}`);
 
-  const customTypes = await discoverCustomAgentTypes(sessionId);
+  const customTypes = await discoverCustomAgentTypesIfNeeded(sessionId, options.subagentType);
   const custom = customTypes.find((entry) => entry.name === options.subagentType);
   const skillPreload = custom?.skills?.length
     ? await buildSkillPreloadSection(session.user_id, custom.skills)

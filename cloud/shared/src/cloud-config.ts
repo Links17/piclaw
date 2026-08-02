@@ -86,7 +86,13 @@ export interface CloudConfig {
     timeoutMs: number;
   };
   mcp?: {
-    servers: Array<{ name: string; url: string; headers?: Record<string, string> }>;
+    servers: Array<{
+      name: string;
+      url: string;
+      headers?: Record<string, string>;
+      toolNames?: string[];
+      timeoutMs?: number;
+    }>;
   };
   subagentMaxConcurrent: number;
   subagentMaxTurns: number;

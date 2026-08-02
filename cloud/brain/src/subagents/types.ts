@@ -3,7 +3,7 @@
  */
 import type { ProfileOverrides } from "./profiles.ts";
 
-export type SubagentType = "general-purpose" | "explore" | "plan" | "coding";
+export type SubagentType = "general-purpose" | "explore" | "plan" | "research" | "coding";
 
 export interface AgentToolOptions {
   prompt: string;
@@ -15,6 +15,7 @@ export interface AgentToolOptions {
   resume?: string;
   timeoutMs?: number;
   schedule?: string;
+  timezone?: string | null;
   profileOverrides?: ProfileOverrides;
   signal?: AbortSignal;
   requireImmediateStart?: boolean;

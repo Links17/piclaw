@@ -48,6 +48,7 @@ function normalizeGeneralSettings(data: Record<string, any> = {}) {
         userAvatar: data.userAvatar || '',
         assistantName: data.assistantName || '',
         assistantAvatar: data.assistantAvatar || '',
+        timezone: typeof data.timezone === 'string' ? data.timezone : '',
         composeUploadLimitMb: data.composeUploadLimitMb ?? 32,
         workspaceUploadLimitMb: data.workspaceUploadLimitMb ?? 256,
         automaticRecoveryEnabled: data.automaticRecoveryEnabled ?? true,
@@ -98,6 +99,8 @@ export function GeneralSection({ settingsData, setStatus, mergeSettingsData }) {
     const [userAvatar, setUserAvatar] = useState('');
     const [assistantName, setAssistantName] = useState('');
     const [assistantAvatar, setAssistantAvatar] = useState('');
+    const [timezone, setTimezone] = useState('');
+    const [timezoneError, setTimezoneError] = useState('');
     const [composeUploadLimitMb, setComposeUploadLimitMb] = useState(32);
     const [workspaceUploadLimitMb, setWorkspaceUploadLimitMb] = useState(256);
     const [automaticRecoveryEnabled, setAutomaticRecoveryEnabled] = useState(true);
@@ -124,6 +127,7 @@ export function GeneralSection({ settingsData, setStatus, mergeSettingsData }) {
         setUserAvatar(next.userAvatar);
         setAssistantName(next.assistantName);
         setAssistantAvatar(next.assistantAvatar);
+        setTimezone(next.timezone);
         setComposeUploadLimitMb(next.composeUploadLimitMb);
         setWorkspaceUploadLimitMb(next.workspaceUploadLimitMb);
         setAutomaticRecoveryEnabled(next.automaticRecoveryEnabled);
@@ -147,10 +151,12 @@ export function GeneralSection({ settingsData, setStatus, mergeSettingsData }) {
 
     const currentSnapshot = useMemo(() => JSON.stringify(normalizeGeneralSettings({
         userName, userAvatar, assistantName, assistantAvatar,
+        timezone,
         composeUploadLimitMb, workspaceUploadLimitMb,
         automaticRecoveryEnabled, automaticRecoveryMaxAttempts, automaticRecoveryTotalBudgetMs,
     })), [
         userName, userAvatar, assistantName, assistantAvatar,
+        timezone,
         composeUploadLimitMb, workspaceUploadLimitMb,
         automaticRecoveryEnabled, automaticRecoveryMaxAttempts, automaticRecoveryTotalBudgetMs,
     ]);
@@ -170,7 +176,11 @@ export function GeneralSection({ settingsData, setStatus, mergeSettingsData }) {
                 });
                 const payload = await response.json().catch(() => ({}));
                 if (!mountedRef.current) return;
-                if (!response.ok || !payload?.ok || !payload?.settings) return;
+                if (!response.ok || !payload?.ok || !payload?.settings) {
+                    setTimezoneError(payload?.field === 'timezone' ? (payload.error || 'Invalid timezone.') : '');
+                    return;
+                }
+                setTimezoneError('');
                 savedSnapshotRef.current = currentSnapshot;
                 mergeSettingsData?.(payload.settings);
                 setAppliedHint(true);
@@ -267,6 +277,19 @@ export function GeneralSection({ settingsData, setStatus, mergeSettingsData }) {
             `}
 
             <h3 style="margin-top:20px">${t('settings.general.display')}</h3>
+            <div class="settings-row">
+                <label>Timezone</label>
+                <input
+                    type="text"
+                    value=${timezone}
+                    onInput=${e => setTimezone(e.target.value)}
+                    placeholder=${typeof Intl !== 'undefined'
+                        ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+                        : 'Asia/Shanghai'}
+                />
+                <span class="settings-hint" style="margin:0">IANA timezone used for scheduled work, for example Asia/Shanghai.</span>
+                ${timezoneError && html`<span class="settings-hint" style="margin:0; color:var(--error-color, #e55)">${timezoneError}</span>`}
+            </div>
             <div class="settings-row">
                 <label>${t('settings.general.systemMeters')}</label>
                 <div style="display:flex; align-items:center; gap:10px;">

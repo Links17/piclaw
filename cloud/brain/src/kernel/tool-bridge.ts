@@ -53,12 +53,41 @@ const agentSchema = Type.Object({
     Type.Literal("general-purpose"),
     Type.Literal("explore"),
     Type.Literal("plan"),
+    Type.Literal("research"),
   ]),
   model: Type.Optional(Type.String()),
   max_turns: Type.Optional(Type.Number()),
   run_in_background: Type.Optional(Type.Boolean()),
   resume: Type.Optional(Type.String()),
-  schedule: Type.Optional(Type.String()),
+});
+
+const scheduledTasksSchema = Type.Object({
+  action: Type.Union([
+    Type.Literal("create"),
+    Type.Literal("list"),
+    Type.Literal("get"),
+    Type.Literal("pause"),
+    Type.Literal("resume"),
+    Type.Literal("delete"),
+  ]),
+  id: Type.Optional(Type.String()),
+  schedule_type: Type.Optional(Type.Union([
+    Type.Literal("cron"),
+    Type.Literal("interval"),
+    Type.Literal("once"),
+  ])),
+  schedule_value: Type.Optional(Type.String()),
+  timezone: Type.Optional(Type.String()),
+  prompt: Type.Optional(Type.String()),
+  description: Type.Optional(Type.String()),
+  subagent_type: Type.Optional(Type.Union([
+    Type.Literal("general-purpose"),
+    Type.Literal("explore"),
+    Type.Literal("plan"),
+    Type.Literal("research"),
+  ])),
+  model: Type.Optional(Type.String()),
+  max_turns: Type.Optional(Type.Number()),
 });
 
 const codingAgentSchema = Type.Object({
@@ -87,6 +116,7 @@ const KNOWN_SCHEMAS: Record<string, ReturnType<typeof Type.Object>> = {
   skill: skillSchema,
   todo: todoSchema,
   Agent: agentSchema,
+  scheduled_tasks: scheduledTasksSchema,
   coding_agent: codingAgentSchema,
   get_subagent_result: getSubagentResultSchema,
   steer_subagent: steerSubagentSchema,
@@ -103,6 +133,7 @@ export function buildAgentTools(
   sessionMode: "plan" | "execute",
   definitions: ToolDefinition[],
   availableDefinitions: ToolDefinition[] = definitions,
+  strictAllowedNames?: ReadonlySet<string>,
 ): AgentTool[] {
   return definitions.map((definition) => {
     const name = definition.function.name;
@@ -127,6 +158,7 @@ export function buildAgentTools(
           params as Record<string, unknown>,
           sessionMode,
           availableDefinitions,
+          strictAllowedNames,
         );
         return {
           content: [{ type: "text" as const, text: result.output }],

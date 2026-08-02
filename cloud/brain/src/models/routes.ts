@@ -31,8 +31,16 @@ export async function handleGeneralSettingsRoute(req: Request, userId: string): 
   }
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
-  const saved = await store.saveGeneralSettingsPatch(body as Partial<GeneralSettingsSnapshot>, userId);
-  return json({ ok: true, settings: saved });
+  try {
+    const saved = await store.saveGeneralSettingsPatch(body as Partial<GeneralSettingsSnapshot>, userId);
+    return json({ ok: true, settings: saved });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("IANA timezone")) {
+      return json({ ok: false, error: message, field: "timezone" }, 422);
+    }
+    throw error;
+  }
 }
 
 export async function handleCompactionSettingsRoute(req: Request, userId: string): Promise<Response> {
