@@ -341,16 +341,24 @@ export async function spawnSubagentViaApi(
   const subagentType = String(body.subagent_type ?? "general-purpose") as
     | "general-purpose"
     | "explore"
-    | "plan";
+    | "plan"
+    | "research";
   if (!prompt) return { success: false, error: "prompt required" };
   const outcome = await spawnAgent(sessionId, {
     prompt,
     description,
     subagentType,
+    model: typeof body.model === "string" ? body.model : undefined,
     maxTurns: typeof body.max_turns === "number" ? body.max_turns : undefined,
+    timeoutMs: typeof body.timeout_ms === "number" ? body.timeout_ms : undefined,
     runInBackground: Boolean(body.run_in_background),
     resume: typeof body.resume === "string" ? body.resume : undefined,
+    timezone: typeof body.timezone === "string" ? body.timezone : undefined,
+    schedule: typeof body.schedule === "string" ? body.schedule : undefined,
     requireImmediateStart: Boolean(body.require_immediate_start),
+    profileOverrides: body.profile_overrides && typeof body.profile_overrides === "object"
+      ? body.profile_overrides as never
+      : undefined,
     signal,
   });
   return { success: true, data: outcome };

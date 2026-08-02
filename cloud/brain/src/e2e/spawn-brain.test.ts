@@ -4,7 +4,7 @@ import { writeTempBrainConfig } from "./spawn-brain.ts";
 describe("spawn-brain config helper", () => {
   test("writes a temp config that overrides server and limits", async () => {
     const path = await writeTempBrainConfig(
-      new URL("../../../brain.config.llm-e2e.json", import.meta.url).pathname,
+      new URL("../../../brain.config.example.json", import.meta.url).pathname,
       {
         server: {
           port: 17999,

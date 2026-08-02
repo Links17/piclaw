@@ -9,7 +9,7 @@ import { AuthError, requireSessionAccess, resolveRequestUser } from "./auth.ts";
 import { config } from "./config.ts";
 import { applyCors, handleCorsPreflight } from "./cors.ts";
 import { QuotaExceededError } from "./quota.ts";
-import { subscribe, type SessionEvent } from "./events.ts";
+import { publish, subscribe, type SessionEvent } from "./events.ts";
 import { serveStaticRequest } from "./static.ts";
 import { submitMessage, sweepInflight } from "./turn.ts";
 import { assertSidePromptQuota, createSidePromptAbortController, runSidePrompt } from "./side-prompt.ts";
@@ -576,19 +576,53 @@ export function startServer(): ReturnType<typeof Bun.serve> {
             !task
             || task.task_kind === "internal"
             || task.session_id !== sessionId
-            || !(await store.beginScheduledTaskExecution(taskId, claimToken))
+            || task.claim_token !== claimToken
+            || !task.claim_expires_at
+            || new Date(task.claim_expires_at).getTime() <= Date.now()
           ) {
-            return respond(json({ error: "invalid or already executing scheduled task claim" }, 409));
+            return respond(json({ error: "invalid or expired scheduled task claim" }, 409));
           }
-          const result = await spawnSubagentViaApi(sessionId, {
+          const invocation = task.invocation ?? {
+            version: 1,
+            agentType: "general-purpose",
+            executionBackend: "sandbox",
             prompt: task.prompt,
             description: `scheduled:${task.id}`,
-            subagent_type: "general-purpose",
+          };
+          const agentType = typeof invocation.agentType === "string"
+            ? invocation.agentType
+            : "general-purpose";
+          const profile = await import("./subagents/profiles.ts")
+            .then(({ resolveSubagentProfile }) => resolveSubagentProfile(agentType as never, sessionId));
+          if (
+            typeof invocation.executionBackend === "string"
+            && invocation.executionBackend !== profile.executionBackend
+          ) {
+            return respond(json({
+              success: false,
+              error: `scheduled invocation backend mismatch: stored=${invocation.executionBackend}, profile=${profile.executionBackend}`,
+            }, 409));
+          }
+          if (!(await store.beginScheduledTaskExecution(taskId, claimToken))) {
+            return respond(json({ error: "scheduled task claim already executing" }, 409));
+          }
+          const result = await spawnSubagentViaApi(sessionId, {
+            prompt: typeof invocation.prompt === "string" ? invocation.prompt : task.prompt,
+            description: typeof invocation.description === "string"
+              ? invocation.description
+              : `scheduled:${task.id}`,
+            subagent_type: agentType,
+            model: typeof invocation.model === "string" ? invocation.model : undefined,
+            max_turns: typeof invocation.maxTurns === "number" ? invocation.maxTurns : undefined,
+            timeout_ms: typeof invocation.timeoutMs === "number" ? invocation.timeoutMs : undefined,
+            profile_overrides: invocation.profileOverrides && typeof invocation.profileOverrides === "object"
+              ? invocation.profileOverrides
+              : undefined,
             run_in_background: false,
             require_immediate_start: true,
           }, req.signal);
           if (!result.success) return respond(json({ success: false, error: result.error }, 400));
-          const outcome = result.data as { status?: string; error?: string } | undefined;
+          const outcome = result.data as { status?: string; summary?: string; error?: string } | undefined;
           if (outcome?.status === "queued") {
             const reset = await store.resetScheduledTaskExecutionForRetry(taskId, claimToken);
             if (!reset) {
@@ -604,7 +638,36 @@ export function startServer(): ReturnType<typeof Bun.serve> {
               error: outcome.error ?? "subagent capacity unavailable",
             }, 503));
           }
-          return respond(json({ success: true, data: result.data }));
+          if (outcome?.status !== "completed") {
+            return respond(json({
+              success: false,
+              retryable: false,
+              error: outcome?.error ?? `scheduled agent ended with status ${outcome?.status ?? "unknown"}`,
+            }, 500));
+          }
+          const delivery = await store.deliverScheduledTaskOutcome(
+            taskId,
+            claimToken,
+            outcome.summary ?? "",
+          );
+          if (!delivery.delivered || delivery.messageId == null) {
+            return respond(json({
+              success: false,
+              retryable: false,
+              error: "scheduled task claim lost before outcome delivery",
+            }, 409));
+          }
+          await publish(sessionId, {
+            type: "message",
+            id: delivery.messageId,
+            role: "assistant",
+            content: outcome.summary ?? "",
+          });
+          return respond(json({
+            success: true,
+            summary: outcome.summary ?? "",
+            data: result.data,
+          }));
         }
 
         if (req.method === "GET" && url.pathname === "/agent/settings-data") {

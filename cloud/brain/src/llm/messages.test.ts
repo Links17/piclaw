@@ -1,12 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { BASE_SYSTEM_PROMPT, historyToOpenAi } from "./messages.ts";
+import { BASE_SYSTEM_PROMPT, buildSystemPrompt, historyToOpenAi } from "./messages.ts";
 import type { MessageRow } from "@piclaw-cloud/store";
 
 describe("historyToOpenAi", () => {
   test("tells the agent to discover and activate optional tools", () => {
     expect(BASE_SYSTEM_PROMPT).toContain("list_tools");
     expect(BASE_SYSTEM_PROMPT).toContain("activate_tools");
-    expect(BASE_SYSTEM_PROMPT).toContain("coding_agent");
+    expect(BASE_SYSTEM_PROMPT).not.toContain("activate coding_agent");
+  });
+
+  test("defines the main agent as orchestrator with delegation boundaries", () => {
+    expect(BASE_SYSTEM_PROMPT).toContain("user-facing orchestrator");
+    expect(BASE_SYSTEM_PROMPT).toContain("repository context");
+    expect(BASE_SYSTEM_PROMPT).toContain("short self-contained");
+    expect(BASE_SYSTEM_PROMPT).toContain("Do not claim that scheduled work was created");
+    expect(BASE_SYSTEM_PROMPT).toContain("scheduled_tasks");
+    expect(BASE_SYSTEM_PROMPT).toContain("must not claim scheduling is unavailable");
+  });
+
+  test("injects saved timezone or requires clarification", () => {
+    expect(buildSystemPrompt({ mode: "execute", timezone: "Asia/Shanghai" }))
+      .toContain("Saved user timezone: Asia/Shanghai");
+    expect(buildSystemPrompt({ mode: "execute", timezone: null }))
+      .toContain("ask with the question tool before creating timezone-sensitive work");
   });
 
   test("includes assistant tool_calls and tool results", () => {

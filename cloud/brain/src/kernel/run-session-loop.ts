@@ -520,6 +520,7 @@ export interface RunAgentSessionLoopOptions {
   systemPrompt: string;
   mode: "plan" | "execute";
   toolDefinitions: ToolDefinition[];
+  strictToolDefinitions?: boolean;
   model?: Model<string>;
   models?: NonNullable<ReturnType<typeof getKernelRuntime>>["models"];
   apiKey?: string;
@@ -606,7 +607,9 @@ export function resolveSessionLoopToolDefinitions(
   sessionId: string,
   mode: "plan" | "execute",
   toolDefinitions: ToolDefinition[],
+  strict = false,
 ): ToolDefinition[] {
+  if (strict) return toolDefinitions;
   const mcpTools = toolDefinitions.filter((tool) => tool.function.name.startsWith("mcp__"));
   return getToolDefinitionsForMode(mode, mcpTools, getActiveToolNames(sessionId));
 }
@@ -698,13 +701,24 @@ export async function runAgentSessionLoop(
   const hardStopTurns = options.maxTurns + graceTurns;
 
   const mcpTools = options.toolDefinitions.filter((tool) => tool.function.name.startsWith("mcp__"));
-  const availableToolDefinitions = getAllToolDefinitions(mcpTools);
+  const availableToolDefinitions = options.strictToolDefinitions
+    ? options.toolDefinitions
+    : getAllToolDefinitions(mcpTools);
+  const strictAllowedNames = options.strictToolDefinitions
+    ? new Set(options.toolDefinitions.map((tool) => tool.function.name))
+    : undefined;
   const buildCurrentTools = () =>
     buildAgentTools(
       sessionId,
       options.mode,
-      resolveSessionLoopToolDefinitions(sessionId, options.mode, options.toolDefinitions),
+      resolveSessionLoopToolDefinitions(
+        sessionId,
+        options.mode,
+        options.toolDefinitions,
+        options.strictToolDefinitions,
+      ),
       availableToolDefinitions,
+      strictAllowedNames,
     );
   const agentTools = buildCurrentTools();
 
@@ -931,9 +945,6 @@ export async function runAgentSessionLoop(
             event.toolName === "skill" && typeof event.args?.name === "string"
               ? String(event.args.name)
               : undefined;
-          if (event.toolName === "question") {
-            questionCallsThisTurn += 1;
-          }
           if (isSubagent && runId) {
             await publish(sessionId, {
               type: "subagent_tool_start",
@@ -955,6 +966,9 @@ export async function runAgentSessionLoop(
           break;
         }
         case "tool_execution_end":
+          if (event.toolName === "question" && !event.isError) {
+            questionCallsThisTurn += 1;
+          }
           if (event.toolName === "activate_tools" || event.toolName === "reset_active_tools") {
             context.tools = buildCurrentTools();
           }

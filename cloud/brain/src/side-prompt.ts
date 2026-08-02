@@ -146,10 +146,12 @@ export async function runSidePrompt(
   }
 
   const runtime = await resolveSessionKernelModel(sessionId);
+  const generalSettings = await store.getGeneralSettingsSnapshot(session.user_id);
   const llmContext = {
     systemPrompt: [buildSystemPrompt({
       mode: await store.getSessionMode(sessionId),
       planText: await store.getSessionPlanText(sessionId),
+      timezone: generalSettings.timezone,
     }), options.systemPrompt?.trim() || ""].filter(Boolean).join("\n\n"),
     messages: [{
       role: "user" as const,

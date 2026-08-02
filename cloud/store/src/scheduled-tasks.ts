@@ -23,6 +23,8 @@ export interface ScheduledTaskRow {
   claim_expires_at: string | null;
   attempt_count: number;
   last_error: string | null;
+  timezone: string | null;
+  invocation: Record<string, unknown> | null;
 }
 
 export interface TaskRunLogRow {
@@ -56,6 +58,10 @@ function mapTask(row: Record<string, unknown>): ScheduledTaskRow {
     claim_expires_at: row.claim_expires_at != null ? String(row.claim_expires_at) : null,
     attempt_count: Number(row.attempt_count ?? 0),
     last_error: row.last_error != null ? String(row.last_error) : null,
+    timezone: row.timezone != null ? String(row.timezone) : null,
+    invocation: row.invocation && typeof row.invocation === "object"
+      ? row.invocation as Record<string, unknown>
+      : null,
   };
 }
 
@@ -76,6 +82,8 @@ export function taskToApi(task: ScheduledTaskRow, chatJid?: string) {
     created_at: task.created_at,
     notify_on_complete: task.notify_on_complete,
     last_result: task.last_result,
+    timezone: task.timezone,
+    invocation: task.invocation,
   };
 }
 
@@ -319,10 +327,15 @@ export async function upsertScheduledTask(row: {
   taskKind?: ScheduledTaskKind;
   model?: string | null;
   status?: ScheduledTaskStatus;
+  timezone?: string | null;
+  invocation?: object | null;
 }): Promise<void> {
+  const hasTimezone = Object.prototype.hasOwnProperty.call(row, "timezone");
+  const hasInvocation = Object.prototype.hasOwnProperty.call(row, "invocation");
   await sql`
     INSERT INTO scheduled_tasks (
-      id, session_id, prompt, schedule_type, schedule_value, next_run, status, task_kind, model
+      id, session_id, prompt, schedule_type, schedule_value, next_run, status, task_kind, model,
+      timezone, invocation
     )
     VALUES (
       ${row.id},
@@ -333,7 +346,9 @@ export async function upsertScheduledTask(row: {
       ${row.nextRun ?? null},
       ${row.status ?? "active"},
       ${row.taskKind ?? "agent"},
-      ${row.model ?? null}
+      ${row.model ?? null},
+      ${row.timezone ?? null},
+      ${row.invocation ? JSON.stringify(row.invocation) : null}::text::jsonb
     )
     ON CONFLICT (id) DO UPDATE SET
       session_id = EXCLUDED.session_id,
@@ -344,6 +359,8 @@ export async function upsertScheduledTask(row: {
       status = EXCLUDED.status,
       task_kind = EXCLUDED.task_kind,
       model = EXCLUDED.model,
+      timezone = CASE WHEN ${hasTimezone} THEN EXCLUDED.timezone ELSE scheduled_tasks.timezone END,
+      invocation = CASE WHEN ${hasInvocation} THEN EXCLUDED.invocation ELSE scheduled_tasks.invocation END,
       claimed_at = NULL,
       claim_token = NULL,
       claim_expires_at = NULL,

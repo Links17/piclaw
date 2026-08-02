@@ -82,6 +82,7 @@ export async function runSubagentLoop(
     systemPrompt: profile.systemPrompt,
     mode: profile.mode,
     toolDefinitions: tools,
+    strictToolDefinitions: profile.executionBackend === "service",
     maxTurns: profile.maxTurns,
     pollSteer: () => pollSteerMessage(runId),
     onSteerApplied: async (message) => {

@@ -52,7 +52,17 @@
     "timeoutMs": 300000
   },
   "mcp": {
-    "servers": []
+    "servers": [
+      {
+        "name": "exa",
+        "url": "https://mcp.exa.ai/mcp",
+        "toolNames": [
+          "web_search_exa",
+          "web_search_advanced_exa"
+        ],
+        "timeoutMs": 30000
+      }
+    ]
   },
   "subagentMaxConcurrent": 4,
   "subagentMaxTurns": 8,

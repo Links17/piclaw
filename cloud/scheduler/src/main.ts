@@ -197,7 +197,10 @@ async function sweepScheduledTasks(): Promise<void> {
         if (res.ok && body.ok) {
           const nextRun = task.schedule_type === "once"
             ? null
-            : computeNextRun(task.schedule_type, task.schedule_value, { currentDate: new Date() });
+            : computeNextRun(task.schedule_type, task.schedule_value, {
+                currentDate: new Date(),
+                timezone: task.timezone,
+              });
           const completed = await store.completeScheduledTaskClaim(
             task.id,
             task.claim_token,
@@ -234,8 +237,13 @@ async function sweepScheduledTasks(): Promise<void> {
         return;
       }
       if (res.ok) {
-        const body = await res.json().catch(() => ({})) as { success?: boolean; data?: { run_id?: string } };
-        const resultSummary = body.data?.run_id ? `spawned subagent ${body.data.run_id}` : "spawned subagent";
+        const body = await res.json().catch(() => ({})) as {
+          success?: boolean;
+          summary?: string;
+          data?: { run_id?: string };
+        };
+        const resultSummary = body.summary
+          ?? (body.data?.run_id ? `spawned subagent ${body.data.run_id}` : "spawned subagent");
         await store.appendTaskRunLog({
           taskId: task.id,
           durationMs,
@@ -244,7 +252,10 @@ async function sweepScheduledTasks(): Promise<void> {
         });
         const nextRun = task.schedule_type === "once"
           ? null
-          : computeNextRun(task.schedule_type, task.schedule_value, { currentDate: new Date() });
+          : computeNextRun(task.schedule_type, task.schedule_value, {
+              currentDate: new Date(),
+              timezone: task.timezone,
+            });
         const completed = await store.completeScheduledTaskClaim(task.id, task.claim_token, nextRun, resultSummary);
         if (completed) {
           console.log(`[scheduler] spawned scheduled subagent for ${task.session_id} (${task.id})`);

@@ -79,9 +79,10 @@ export async function handleScheduledTasksList(req: Request, url: URL, userId: s
     return json({ ok: true, found: true, task: await enrichTask(task, userId, true, runLogLimit) });
   }
 
-  if (!chatJid) return json({ ok: false, error: "chat_jid required" }, 400);
-  const session = await store.getSessionForUser(chatJid, userId);
-  if (!session) return json({ ok: false, error: "scheduled task access denied" }, 401);
+  if (chatJid) {
+    const session = await store.getSessionForUser(chatJid, userId);
+    if (!session) return json({ ok: false, error: "scheduled task access denied" }, 401);
+  }
   const tasks = await store.listScheduledTasksForUser({
     userId,
     sessionId: chatJid ?? undefined,
@@ -125,7 +126,9 @@ export async function handleScheduledTasksAction(req: Request, userId: string): 
     if (task.status !== "paused") await store.updateScheduledTaskForUser(id, userId, { status: "paused" });
   } else if (action === "resume") {
     if (!task.next_run && task.schedule_type !== "interval") {
-      const nextRun = computeNextRun(task.schedule_type, task.schedule_value);
+      const nextRun = computeNextRun(task.schedule_type, task.schedule_value, {
+        timezone: task.timezone,
+      });
       if (!nextRun) {
         return json({ ok: false, action, error: `Task ${id} has no next_run and cannot be resumed.`, id, status: task.status }, 409);
       }
